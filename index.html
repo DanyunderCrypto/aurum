@@ -477,6 +477,135 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   color: var(--gold);
   font-weight: 600;
 }
+
+/* View toggle (Buckets / List / Mempool) — same pattern */
+.btn-view {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border2);
+  padding: 0.4rem 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-view:last-child { border-right: none; }
+.btn-view:hover { background: var(--surface-soft); color: var(--text); }
+.btn-view.active {
+  background: rgba(212,175,122,0.18);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* Lot Bucket (Sprint 8.4.2 — view C+B) */
+.lot-bucket {
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+  margin-bottom: 0.9rem;
+  border-left: 3px solid var(--gold);
+  overflow: hidden;
+}
+.lot-bucket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.lot-bucket-head:hover { background: rgba(212,175,122,0.04); }
+.lot-bucket-body {
+  padding: 0 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Horizontal lot card inside bucket */
+.lot-card-h {
+  display: grid;
+  grid-template-columns: 80px 1fr 130px;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.7rem 0.85rem;
+  background: var(--bg1, rgba(255,255,255,0.02));
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.lot-card-h:hover {
+  border-color: rgba(212,175,122,0.3);
+}
+.lot-card-asset {
+  text-align: center;
+}
+.lot-card-asset-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.lot-card-asset-chain {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.15rem;
+}
+.lot-card-asset-tag {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.62rem;
+  background: rgba(94,184,255,0.12);
+  border: 1px solid rgba(94,184,255,0.3);
+  color: #5EB8FF;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+.lot-card-mid { min-width: 0; }
+.lot-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  margin-bottom: 0.35rem;
+}
+.lot-card-prog {
+  height: 7px;
+  background: var(--bg2, rgba(255,255,255,0.05));
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+}
+.lot-card-prog-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.lot-card-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+.lot-card-val {
+  text-align: right;
+}
+.lot-card-val-eur {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.lot-card-val-qty {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
 .btn-row-menu:hover {
   background: var(--surface-soft);
   border-color: var(--border2);
@@ -8667,35 +8796,190 @@ function renderStrategy(w) {
       if(filt!=='all') displayCols = displayCols.filter(c=>c._status===filt);
       // Apply sort
       const sortMode = window.mempoolSort || 'urgency';
-      if(sortMode==='urgency') displayCols.sort((a,b)=>a._held-b._held); // most days remaining first (least mature first)
+      if(sortMode==='urgency') displayCols.sort((a,b)=>a._held-b._held);
       else if(sortMode==='value') displayCols.sort((a,b)=>(+b.eur||0)-(+a.eur||0));
       else if(sortMode==='date') displayCols.sort((a,b)=>a.acqDate.localeCompare(b.acqDate));
-      // For urgency, we want most urgent (closest to 365 but not yet) first
       if(sortMode==='urgency') {
         displayCols.sort((a,b)=>{
-          // exempt last; pending sorted by remaining days asc
           if(a._held>=365 && b._held<365) return 1;
           if(b._held>=365 && a._held<365) return -1;
-          return b._held - a._held; // higher held = closer to exempt = more urgent
+          return b._held - a._held;
         });
       }
 
-      // Timeline data: group by month
-      const now = new Date();
+      // Timeline data
       const buckets = { '<3m':0, '3-6m':0, '6-9m':0, '9-12m':0, 'exempt':0 };
       cols.forEach(c=>{
-        const h = daysHeld(c.acqDate);
-        const eur = +c.eur || 0;
+        const h = daysHeld(c.acqDate); const eur = +c.eur || 0;
         if(h>=365) buckets.exempt += eur;
-        else {
-          const left = 365 - h;
-          if(left<=90) buckets['<3m'] += eur;
-          else if(left<=180) buckets['3-6m'] += eur;
-          else if(left<=270) buckets['6-9m'] += eur;
-          else buckets['9-12m'] += eur;
-        }
+        else { const left=365-h; if(left<=90) buckets['<3m']+=eur; else if(left<=180) buckets['3-6m']+=eur; else if(left<=270) buckets['6-9m']+=eur; else buckets['9-12m']+=eur; }
       });
 
+      const view = state.lotView || 'buckets';
+
+      // Common toolbar (view toggle + sort + filter pills)
+      const toolbar = `
+        <div class="mempool-toolbar" style="flex-wrap:wrap;gap:0.7rem">
+          <div style="display:inline-flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden">
+            <button class="btn-view ${view==='buckets'?'active':''}" onclick="state.lotView='buckets';saveState();render()" title="Buckets por urgência (recomendado)">📊 Buckets</button>
+            <button class="btn-view ${view==='list'?'active':''}" onclick="state.lotView='list';saveState();render()" title="Lista densa (power users)">📋 Lista</button>
+            <button class="btn-view ${view==='mempool'?'active':''}" onclick="state.lotView='mempool';saveState();render()" title="Mempool blocks (vista visual original)">🧱 Mempool</button>
+          </div>
+          <div class="mempool-pills">
+            <button class="mempool-pill ${filt==='all'?'active':''}" onclick="setMempoolFilter('all')">Todos<span class="count">${counts.all}</span></button>
+            <button class="mempool-pill ${filt==='exempt'?'active':''}" onclick="setMempoolFilter('exempt')">Isentos<span class="count">${counts.exempt}</span></button>
+            <button class="mempool-pill ${filt==='imminent'?'active':''}" onclick="setMempoolFilter('imminent')">Urgentes<span class="count">${counts.imminent}</span></button>
+            <button class="mempool-pill ${filt==='maturing'?'active':''}" onclick="setMempoolFilter('maturing')">A amadurecer<span class="count">${counts.maturing}</span></button>
+            <button class="mempool-pill ${filt==='aging'?'active':''}" onclick="setMempoolFilter('aging')">A envelhecer<span class="count">${counts.aging}</span></button>
+            <button class="mempool-pill ${filt==='fresh'?'active':''}" onclick="setMempoolFilter('fresh')">Recentes<span class="count">${counts.fresh}</span></button>
+          </div>
+          <div class="mempool-sort">
+            <span class="mempool-sort-label">Ordenar</span>
+            <button class="mempool-pill ${sortMode==='urgency'?'active':''}" onclick="setMempoolSort('urgency')">Urgência</button>
+            <button class="mempool-pill ${sortMode==='value'?'active':''}" onclick="setMempoolSort('value')">Valor</button>
+            <button class="mempool-pill ${sortMode==='date'?'active':''}" onclick="setMempoolSort('date')">Data</button>
+          </div>
+        </div>
+      `;
+
+      // ─── VIEW: BUCKETS (default, C+B) ─────────────────────────
+      if (view === 'buckets') {
+        // Group displayCols by status bucket
+        const groups = {
+          imminent: displayCols.filter(c=>c._status==='imminent'),
+          maturing: displayCols.filter(c=>c._status==='maturing' || c._status==='aging'),
+          fresh: displayCols.filter(c=>c._status==='fresh'),
+          exempt: displayCols.filter(c=>c._status==='exempt'),
+        };
+        const bucketsMeta = [
+          { key:'imminent', icon:'⚡', label:'Imminentes', sub:'<90 dias para isenção', color:'#FF7A4D', defaultOpen:true },
+          { key:'maturing', icon:'🌱', label:'A Amadurecer', sub:'90-365 dias', color:'#D4AF7A', defaultOpen:true },
+          { key:'fresh',    icon:'🆕', label:'Recentes',    sub:'adquiridos recentemente', color:'#5EB8FF', defaultOpen:false },
+          { key:'exempt',   icon:'✓',  label:'Isentos',     sub:'≥365d · Anexo G1', color:'#00E89E', defaultOpen:false },
+        ];
+
+        const renderCard = (c) => {
+          const held = c._held;
+          const isento = held >= 365;
+          const left = Math.max(0, 365 - held);
+          const pct = Math.min(100, (held/365)*100);
+          const exemptDate = new Date((new Date(c.acqDate+'T12:00:00')).getTime() + 365*86400000);
+          const exemptDateStr = exemptDate.toLocaleDateString('pt-PT');
+          const acqDateStr = new Date(c.acqDate+'T12:00:00').toLocaleDateString('pt-PT');
+          const colors = mempoolBlockColors(c._status);
+          const eur = +c.eur || 0;
+          const isMonthAgg = c._aggregated;
+          const isDayAgg = c._count > 1 && !isMonthAgg;
+          return `
+            <div class="lot-card-h">
+              <div class="lot-card-asset">
+                <div class="lot-card-asset-name">${c.asset || '?'}</div>
+                <div class="lot-card-asset-chain">${c.chain || ''}</div>
+                ${isMonthAgg ? `<div class="lot-card-asset-tag" style="background:rgba(212,175,122,0.15);color:var(--gold);border-color:rgba(212,175,122,0.4)">Σ ${c._aggregatedCount} mês</div>` : (isDayAgg ? `<div class="lot-card-asset-tag">Σ ${c._count} dia</div>` : '')}
+              </div>
+              <div class="lot-card-mid">
+                <div class="lot-card-meta">
+                  <span style="color:var(--text-muted)">Adquirido ${acqDateStr}</span>
+                  <span style="margin-left:auto;color:${isento?'#3B6D11':colors.top};font-weight:500">${isento ? '✓ Isento (G1)' : `faltam ${left} dias`}</span>
+                </div>
+                <div class="lot-card-prog">
+                  <div class="lot-card-prog-bar" style="width:${pct}%;background:${colors.top}"></div>
+                </div>
+                <div class="lot-card-sub">
+                  ${isento ? `Isento desde ${exemptDateStr}` : `Será isento em ${exemptDateStr}`}
+                  ${c.origin ? ` · <span style="color:var(--text-muted)">origem: ${c.origin}</span>` : ''}
+                </div>
+              </div>
+              <div class="lot-card-val">
+                <div class="lot-card-val-eur">€${fmt(eur)}</div>
+                <div class="lot-card-val-qty">${fmt(c.qty || 0, 6)} ${c.asset||''}</div>
+              </div>
+            </div>
+          `;
+        };
+
+        const renderBucket = (meta) => {
+          const items = groups[meta.key] || [];
+          if (items.length === 0) return '';
+          const total = items.reduce((s,c)=>s+(+c.eur||0), 0);
+          const openKey = `_lotBucketOpen_${meta.key}`;
+          const isOpen = window[openKey] === undefined ? meta.defaultOpen : window[openKey];
+          return `
+            <div class="lot-bucket" style="border-left:3px solid ${meta.color}">
+              <div class="lot-bucket-head" onclick="window['${openKey}']=!(${isOpen});render()">
+                <div>
+                  <span style="font-weight:500;color:${meta.color};margin-right:0.4rem">${meta.icon} ${meta.label}</span>
+                  <span style="font-size:0.74rem;color:var(--text-muted)">${meta.sub}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.7rem">
+                  <span style="font-family:var(--mono);font-size:0.78rem">${items.length} lot${items.length>1?'s':''} · €${fmt(total)}</span>
+                  <span style="font-size:0.7rem;color:var(--text-muted);transition:transform 0.2s;display:inline-block;transform:rotate(${isOpen?'90':'0'}deg)">▶</span>
+                </div>
+              </div>
+              ${isOpen ? `<div class="lot-bucket-body">${items.map(renderCard).join('')}</div>` : ''}
+            </div>
+          `;
+        };
+
+        return `
+          <div class="mempool-section">
+            ${toolbar}
+            ${displayCols.length ?
+              bucketsMeta.map(renderBucket).join('') || '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'
+              : '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'}
+          </div>
+        `;
+      }
+
+      // ─── VIEW: LIST (densa, A) ────────────────────────────────
+      if (view === 'list') {
+        return `
+          <div class="mempool-section">
+            ${toolbar}
+            ${displayCols.length ? `
+              <div class="table-wrap" style="margin-top:1rem">
+                <table>
+                  <thead><tr>
+                    <th>Asset</th><th>Chain</th>
+                    <th style="text-align:right">Qty</th>
+                    <th style="text-align:right">Basis €</th>
+                    <th>Adquirido</th>
+                    <th>Holding</th>
+                    <th style="text-align:right">Estado</th>
+                  </tr></thead>
+                  <tbody>
+                    ${displayCols.map(c=>{
+                      const held = c._held;
+                      const isento = held >= 365;
+                      const left = Math.max(0, 365-held);
+                      const pct = Math.min(100, (held/365)*100);
+                      const colors = mempoolBlockColors(c._status);
+                      return `<tr>
+                        <td><strong>${c.asset || '?'}</strong>${c._count>1?` <span style="font-size:0.65rem;background:rgba(212,175,122,0.18);padding:0.1rem 0.4rem;border-radius:999px;color:var(--gold);margin-left:0.3rem">Σ${c._count}</span>`:''}</td>
+                        <td style="font-size:0.7rem;color:var(--text-muted)">${c.chain||''}</td>
+                        <td style="text-align:right;font-family:var(--mono);font-size:0.78rem">${fmt(c.qty||0, 6)}</td>
+                        <td style="text-align:right;font-family:var(--mono);font-size:0.82rem;font-weight:500">€${fmt(c.eur||0)}</td>
+                        <td style="font-size:0.74rem">${new Date(c.acqDate+'T12:00:00').toLocaleDateString('pt-PT')}</td>
+                        <td>
+                          <div style="display:flex;align-items:center;gap:0.5rem">
+                            <div style="flex:1;max-width:100px;height:5px;background:var(--bg2);border-radius:3px;overflow:hidden">
+                              <div style="width:${pct}%;height:100%;background:${colors.top}"></div>
+                            </div>
+                            <span style="font-size:0.7rem;color:var(--text-muted)">${held}d</span>
+                          </div>
+                        </td>
+                        <td style="text-align:right;font-size:0.72rem;color:${isento?'#3B6D11':colors.top};font-weight:500">${isento?'✓ Isento':`${left}d`}</td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'}
+          </div>
+        `;
+      }
+
+      // ─── VIEW: MEMPOOL (cubos isométricos legacy) ─────────────
       const timelineMarkers = cols.filter(c=>daysHeld(c.acqDate)<365).map(c=>{
         const left = 365 - daysHeld(c.acqDate);
         const pct = 100 - (left/365)*100;
@@ -8707,22 +8991,7 @@ function renderStrategy(w) {
 
       return `
         <div class="mempool-section">
-          <div class="mempool-toolbar">
-            <div class="mempool-pills">
-              <button class="mempool-pill ${filt==='all'?'active':''}" onclick="setMempoolFilter('all')">Todos<span class="count">${counts.all}</span></button>
-              <button class="mempool-pill ${filt==='exempt'?'active':''}" onclick="setMempoolFilter('exempt')">Isentos<span class="count">${counts.exempt}</span></button>
-              <button class="mempool-pill ${filt==='imminent'?'active':''}" onclick="setMempoolFilter('imminent')">Urgentes<span class="count">${counts.imminent}</span></button>
-              <button class="mempool-pill ${filt==='maturing'?'active':''}" onclick="setMempoolFilter('maturing')">A amadurecer<span class="count">${counts.maturing}</span></button>
-              <button class="mempool-pill ${filt==='aging'?'active':''}" onclick="setMempoolFilter('aging')">A envelhecer<span class="count">${counts.aging}</span></button>
-              <button class="mempool-pill ${filt==='fresh'?'active':''}" onclick="setMempoolFilter('fresh')">Recentes<span class="count">${counts.fresh}</span></button>
-            </div>
-            <div class="mempool-sort">
-              <span class="mempool-sort-label">Ordenar por</span>
-              <button class="mempool-pill ${sortMode==='urgency'?'active':''}" onclick="setMempoolSort('urgency')">Urgência</button>
-              <button class="mempool-pill ${sortMode==='value'?'active':''}" onclick="setMempoolSort('value')">Valor</button>
-              <button class="mempool-pill ${sortMode==='date'?'active':''}" onclick="setMempoolSort('date')">Data</button>
-            </div>
-          </div>
+          ${toolbar}
 
           <div class="mempool-grid">
             ${displayCols.length ? displayCols.map(c=>{
@@ -8730,26 +8999,13 @@ function renderStrategy(w) {
               const depth = mempoolBlockDepth(c._held, size);
               const colors = mempoolBlockColors(c._status);
               const lotJson = JSON.stringify({id:c.id, asset:c.asset, eur:c.eur, qty:c.qty, acqDate:c.acqDate, chain:c.chain, txhash:(c.txhashes&&c.txhashes[0])||c.txhash||'', _count:c._count||1, txCount:(c.txhashes||[]).length}).replace(/"/g,'&quot;');
-              // SVG isometric cube — clean 3D look
-              // Use square face (base size) + depth for height
-              const baseW = size;
-              const depthH = depth;
-              // SVG viewBox calculated to fit the iso projection
-              // Isometric: 30° angle. Width on screen = baseW * cos(30) * 2 ≈ baseW * 1.732
-              // Height on screen = baseW * sin(30) * 2 + depthH ≈ baseW + depthH
+              const baseW = size, depthH = depth;
               const svgW = Math.round(baseW * 1.732);
               const svgH = Math.round(baseW + depthH);
-              const halfW = svgW/2;
-              const topY = 0;
-              const midY = baseW/2;
-              const botY = baseW;
-              // Top face (rhombus): center top → right → center mid → left → back to top
+              const halfW = svgW/2, topY = 0, midY = baseW/2, botY = baseW;
               const topPath = `M ${halfW},${topY} L ${svgW},${midY} L ${halfW},${botY} L 0,${midY} Z`;
-              // Right face (parallelogram): right top edge → down depth → diagonal back
               const rightPath = `M ${svgW},${midY} L ${svgW},${midY+depthH} L ${halfW},${botY+depthH} L ${halfW},${botY} Z`;
-              // Left face (parallelogram): left bottom → down → right
               const leftPath = `M 0,${midY} L 0,${midY+depthH} L ${halfW},${botY+depthH} L ${halfW},${botY} Z`;
-              // Label position: center of top face
               const labelText = (+c.eur>=1000) ? (+c.eur/1000).toFixed(1)+'k' : Math.round(+c.eur||0);
               const labelSize = Math.max(10, Math.min(18, baseW/7));
 
@@ -8758,13 +9014,9 @@ function renderStrategy(w) {
                 onmousemove="mempoolShowTooltip(event, ${lotJson})"
                 onmouseleave="mempoolHideTooltip()">
                 <svg viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" style="overflow:visible">
-                  <!-- Front face (left in iso view) -->
                   <path d="${leftPath}" fill="${colors.side}" stroke="rgba(0,0,0,0.3)" stroke-width="0.5"/>
-                  <!-- Right face (darker) -->
                   <path d="${rightPath}" fill="${colors.top}" stroke="rgba(0,0,0,0.3)" stroke-width="0.5" style="filter:brightness(0.7)"/>
-                  <!-- Top face -->
                   <path d="${topPath}" fill="${colors.top}" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/>
-                  <!-- Label on top face -->
                   <text x="${halfW}" y="${midY+labelSize/3}" text-anchor="middle"
                     style="font-family:var(--mono);font-size:${labelSize}px;font-weight:700;fill:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.5);pointer-events:none">€${labelText}</text>
                 </svg>
@@ -8792,26 +9044,11 @@ function renderStrategy(w) {
               <span>HOJE</span><span>3M</span><span>6M</span><span>9M</span><span>12M · ISENÇÃO</span>
             </div>
             <div class="mempool-timeline-totals">
-              <div class="mempool-timeline-bucket">
-                <span style="color:#FF7A4D">&lt; 3 MESES</span>
-                <span class="mempool-timeline-bucket-value" style="color:#FF7A4D">€${fmt(buckets['<3m'])}</span>
-              </div>
-              <div class="mempool-timeline-bucket">
-                <span style="color:#D4AF7A">3 - 6 MESES</span>
-                <span class="mempool-timeline-bucket-value" style="color:#D4AF7A">€${fmt(buckets['3-6m'])}</span>
-              </div>
-              <div class="mempool-timeline-bucket">
-                <span style="color:#7B6FFF">6 - 9 MESES</span>
-                <span class="mempool-timeline-bucket-value" style="color:#7B6FFF">€${fmt(buckets['6-9m'])}</span>
-              </div>
-              <div class="mempool-timeline-bucket">
-                <span style="color:#5EB8FF">9 - 12 MESES</span>
-                <span class="mempool-timeline-bucket-value" style="color:#5EB8FF">€${fmt(buckets['9-12m'])}</span>
-              </div>
-              <div class="mempool-timeline-bucket">
-                <span style="color:#00E89E">✓ ISENTO</span>
-                <span class="mempool-timeline-bucket-value" style="color:#00E89E">€${fmt(buckets.exempt)}</span>
-              </div>
+              <div class="mempool-timeline-bucket"><span style="color:#FF7A4D">&lt; 3 MESES</span><span class="mempool-timeline-bucket-value" style="color:#FF7A4D">€${fmt(buckets['<3m'])}</span></div>
+              <div class="mempool-timeline-bucket"><span style="color:#D4AF7A">3 - 6 MESES</span><span class="mempool-timeline-bucket-value" style="color:#D4AF7A">€${fmt(buckets['3-6m'])}</span></div>
+              <div class="mempool-timeline-bucket"><span style="color:#7B6FFF">6 - 9 MESES</span><span class="mempool-timeline-bucket-value" style="color:#7B6FFF">€${fmt(buckets['6-9m'])}</span></div>
+              <div class="mempool-timeline-bucket"><span style="color:#5EB8FF">9 - 12 MESES</span><span class="mempool-timeline-bucket-value" style="color:#5EB8FF">€${fmt(buckets['9-12m'])}</span></div>
+              <div class="mempool-timeline-bucket"><span style="color:#00E89E">✓ ISENTO</span><span class="mempool-timeline-bucket-value" style="color:#00E89E">€${fmt(buckets.exempt)}</span></div>
             </div>
           </div>
         </div>
