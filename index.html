@@ -8734,16 +8734,23 @@ function renderStrategy(w) {
           acqDate: ym + '-15', // mid-month for display purposes
           qty: 0,
           eur: 0,
-          _aggregated: true,
+          _aggregated: 'month',
           _aggregatedCount: 0,
-          _originLots: [],
+          _originIds: [],          // raw lot IDs from fifoEngine (for drill-down)
+          _originDates: new Set(), // unique acqDates contained
         });
       }
       const g = monthGroups.get(key);
       g.qty += (+c.qty || 0);
       g.eur += (+c.eur || 0);
       g._aggregatedCount++;
-      g._originLots.push(c.id);
+      // c.id may be 'auto_L42' (from autoCols) or a manual lot id
+      g._originIds.push(c.id);
+      if (c.acqDate) g._originDates.add(c.acqDate);
+    }
+    // Convert set to array for serialisation
+    for (const g of monthGroups.values()) {
+      g._originDates = [...g._originDates].sort();
     }
     cols = [...monthGroups.values()];
   }
@@ -8817,6 +8824,10 @@ function renderStrategy(w) {
 
       const view = state.lotView || 'buckets';
 
+      // Store displayCols globally so drill-down modal can find lots by id
+      window._lastStrategyDisplayCols = displayCols;
+      window._lastStrategyFifoState = fifoState;
+
       // Common toolbar (view toggle + sort + filter pills)
       const toolbar = `
         <div class="mempool-toolbar" style="flex-wrap:wrap;gap:0.7rem">
@@ -8868,10 +8879,12 @@ function renderStrategy(w) {
           const acqDateStr = new Date(c.acqDate+'T12:00:00').toLocaleDateString('pt-PT');
           const colors = mempoolBlockColors(c._status);
           const eur = +c.eur || 0;
-          const isMonthAgg = c._aggregated;
+          const isMonthAgg = c._aggregated === 'month';
           const isDayAgg = c._count > 1 && !isMonthAgg;
+          // Drill-down ids: month-agg has _originIds (raw lot IDs); day-agg has ids (from mempoolGroupLots); single lot has its own id
+          const drillKey = c.id || '';
           return `
-            <div class="lot-card-h">
+            <div class="lot-card-h" onclick="openLotDrillDown('${drillKey}')" style="cursor:pointer" title="Click para ver as transactions originais">
               <div class="lot-card-asset">
                 <div class="lot-card-asset-name">${c.asset || '?'}</div>
                 <div class="lot-card-asset-chain">${c.chain || ''}</div>
@@ -8954,7 +8967,8 @@ function renderStrategy(w) {
                       const left = Math.max(0, 365-held);
                       const pct = Math.min(100, (held/365)*100);
                       const colors = mempoolBlockColors(c._status);
-                      return `<tr>
+                      const drillKey = c.id || '';
+                      return `<tr onclick="openLotDrillDown('${drillKey}')" style="cursor:pointer" title="Click para drill-down">
                         <td><strong>${c.asset || '?'}</strong>${c._count>1?` <span style="font-size:0.65rem;background:rgba(212,175,122,0.18);padding:0.1rem 0.4rem;border-radius:999px;color:var(--gold);margin-left:0.3rem">Σ${c._count}</span>`:''}</td>
                         <td style="font-size:0.7rem;color:var(--text-muted)">${c.chain||''}</td>
                         <td style="text-align:right;font-family:var(--mono);font-size:0.78rem">${fmt(c.qty||0, 6)}</td>
@@ -9971,6 +9985,168 @@ function saveNote(eventId) {
   render();
 }
 window.saveNote = saveNote;
+
+// ══════════════════════════════════════════════════════════
+// Sprint 8.4.3: Lot drill-down modal — show original transactions
+// behind an aggregated/grouped lot card
+// ══════════════════════════════════════════════════════════
+
+function openLotDrillDown(lotKey) {
+  if (!lotKey) return;
+  const displayCols = window._lastStrategyDisplayCols || [];
+  const fifoState = window._lastStrategyFifoState;
+  const lot = displayCols.find(c => c.id === lotKey);
+  if (!lot) {
+    toast('Lot não encontrado', 'warn');
+    return;
+  }
+
+  // Resolve which raw fifo-lots / events are behind this card
+  // 3 cases:
+  //   1) Single lot (no aggregation): lotKey = "auto_L42" → 1 fifo lot
+  //   2) Day-agg (mempoolGroupLots): lot.ids = ['auto_L42', 'auto_L43', ...]
+  //   3) Month-agg: lot._originIds = ['group_2025-09-15|USDC|base|w1', ...]
+  //      (each origin is itself a day-agg group; need second resolution)
+  const rawLotIds = new Set();
+  if (lot._aggregated === 'month' && Array.isArray(lot._originIds)) {
+    // Month-agg points to day-agg group ids. We need to also descend into ids of those.
+    // But we lost direct day-agg refs — recompute by looking up the autoCols/manualCols
+    // For simplicity here, use _originIds + try to also unpack mempool group ids
+    lot._originIds.forEach(id => rawLotIds.add(id));
+  } else if (Array.isArray(lot.ids)) {
+    // Day-agg: ids is the array of original IDs (from mempoolGroupLots)
+    lot.ids.forEach(id => rawLotIds.add(id));
+  } else {
+    rawLotIds.add(lot.id);
+  }
+
+  // Resolve auto_L* → real fifo lot
+  const fifoLots = (fifoState?.lots) || [];
+  const resolvedLots = [];
+  for (const rawId of rawLotIds) {
+    if (typeof rawId === 'string' && rawId.startsWith('auto_')) {
+      const fifoId = rawId.slice(5); // strip 'auto_'
+      const fl = fifoLots.find(l => l.lotId === fifoId);
+      if (fl) resolvedLots.push({ ...fl, _source: 'auto' });
+    } else if (typeof rawId === 'string') {
+      // Manual lot from state.collateral
+      const ml = (state.collateral || []).find(c => c.id === rawId);
+      if (ml) resolvedLots.push({ ...ml, _source: 'manual' });
+    }
+  }
+
+  // Sort by acqTimestamp / acqDate ascending
+  resolvedLots.sort((a, b) => (a.acqTimestamp || 0) - (b.acqTimestamp || 0) || (a.acqDate || '').localeCompare(b.acqDate || ''));
+
+  // Try to attach the originating UniversalEvent for each auto lot
+  const events = state.events || [];
+  for (const rl of resolvedLots) {
+    if (rl._source !== 'auto') continue;
+    if (rl.originEventId) {
+      rl._event = events.find(e => e.id === rl.originEventId) || null;
+    }
+    if (!rl._event && rl.originTxHash) {
+      rl._event = events.find(e => e.txHash === rl.originTxHash) || null;
+    }
+  }
+
+  // Compute weighted-average basis price for the modal summary
+  const totalQty = resolvedLots.reduce((s, l) => s + (+l.qtyRemaining || +l.qty || 0), 0);
+  const totalBasis = resolvedLots.reduce((s, l) => {
+    const q = +l.qtyRemaining || +l.qty || 0;
+    const ppu = +l.basisEURPerUnit || ((+l.eur || 0) / Math.max(1e-9, +l.qty || 1));
+    return s + q * ppu;
+  }, 0);
+  const avgPrice = totalQty > 0 ? totalBasis / totalQty : 0;
+
+  const isMonth = lot._aggregated === 'month';
+  const aggLabel = isMonth ? `agregação mensal · ${lot._aggregatedCount} lots` : (resolvedLots.length > 1 ? `agregação diária · ${resolvedLots.length} lots` : 'lot individual');
+
+  const html = `
+    <div class="modal-overlay" id="lotDrillModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto">
+      <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:720px;width:100%;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1rem;gap:1rem">
+          <div>
+            <div style="font-weight:600;font-size:1.05rem;margin-bottom:0.2rem">${lot.asset || '?'} <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">${lot.chain || ''}</span></div>
+            <div style="font-size:0.78rem;color:var(--text-muted)">${aggLabel}</div>
+          </div>
+          <button onclick="closeLotDrillModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;line-height:1">×</button>
+        </div>
+
+        <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.2rem">
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Total basis</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">€${fmt(totalBasis)}</div></div>
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Total qty</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">${fmt(totalQty, 6)}</div></div>
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Preço médio</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--gold)">€${fmt(avgPrice, avgPrice < 1 ? 6 : 4)}</div></div>
+        </div>
+
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.6rem">Transactions originais (${resolvedLots.length})</div>
+
+        ${resolvedLots.length === 0 ? `
+          <div class="alert alert-warn" style="font-size:0.78rem">
+            <span>⚠</span><div>Sem transactions originais resolvidas. Os lot IDs podem ter sido invalidados por re-indexação ou granularidade mudada.</div>
+          </div>
+        ` : `
+          <div style="overflow-x:auto">
+            <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);text-align:left;color:var(--text-muted);font-size:0.7rem">
+                  <th style="padding:0.5rem">Data</th>
+                  <th style="padding:0.5rem">Tipo</th>
+                  <th style="padding:0.5rem;text-align:right">Qty</th>
+                  <th style="padding:0.5rem;text-align:right">Preço/un</th>
+                  <th style="padding:0.5rem;text-align:right">Basis €</th>
+                  <th style="padding:0.5rem">Tx</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${resolvedLots.map(rl => {
+                  const q = +rl.qtyRemaining || +rl.qty || 0;
+                  const ppu = +rl.basisEURPerUnit || ((+rl.eur || 0) / Math.max(1e-9, +rl.qty || 1));
+                  const basis = q * ppu;
+                  const date = rl.acqDate || (rl._event?.date) || '—';
+                  const source = rl.source || rl._event?.userOverride?.txType || rl._event?.type || 'unknown';
+                  const txHash = rl.originTxHash || rl._event?.txHash || '';
+                  const chain = rl.chain || rl._event?.chain || '';
+                  const txUrl = txHash && chain ? getTxUrl(chain, txHash) : null;
+                  return `<tr style="border-bottom:1px solid var(--border-soft)">
+                    <td style="padding:0.5rem;font-family:var(--mono);font-size:0.72rem">${date}</td>
+                    <td style="padding:0.5rem"><span style="font-size:0.65rem;background:rgba(212,175,122,0.12);padding:0.1rem 0.4rem;border-radius:4px;color:var(--gold)">${source}</span></td>
+                    <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">${fmt(q, 6)}</td>
+                    <td style="padding:0.5rem;text-align:right;font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">€${fmt(ppu, ppu < 1 ? 6 : 4)}</td>
+                    <td style="padding:0.5rem;text-align:right;font-family:var(--mono);font-weight:500">€${fmt(basis)}</td>
+                    <td style="padding:0.5rem">${txUrl ? `<a href="${txUrl}" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:0.7rem;color:var(--gold)">${txHash.slice(0,8)}…</a>` : '<span style="color:var(--text-muted);font-size:0.7rem">—</span>'}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+
+        <div class="alert alert-info" style="font-size:0.74rem;margin-top:1rem">
+          <span>ℹ</span>
+          <div>
+            Esta agregação é apenas <strong>display</strong>. O FIFO engine continua a tratar cada transaction como lot separado para cálculo fiscal. Audit trail intacto.
+            ${isMonth ? '<br>Para ver lots individuais, muda granularidade para <strong>📦 Dia</strong> ou <strong>🔬 Detalhe</strong>.' : ''}
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-outline btn-sm" onclick="closeLotDrillModal()">Fechar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('lotDrillModalOverlay').addEventListener('click', (ev) => {
+    if (ev.target.id === 'lotDrillModalOverlay') closeLotDrillModal();
+  });
+}
+window.openLotDrillDown = openLotDrillDown;
+
+function closeLotDrillModal() {
+  document.getElementById('lotDrillModalOverlay')?.remove();
+}
+window.closeLotDrillModal = closeLotDrillModal;
 window.cancelPriceFetch = cancelPriceFetch;
 window.clearPriceCacheUI = clearPriceCacheUI;
 
