@@ -470,6 +470,82 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   letter-spacing: 0.05em;
   transition: all 0.15s;
 }
+
+/* Sprint 8.4.4: Bulk action sticky bottom bar */
+.bulk-action-bar {
+  position: fixed;
+  bottom: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: var(--bg1);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 0.5rem 1rem 0.5rem 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(212,175,122,0.2);
+  backdrop-filter: blur(12px);
+  max-width: calc(100vw - 2rem);
+}
+.bulk-action-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-right: 0.6rem;
+  border-right: 1px solid var(--border-soft);
+}
+.bulk-action-count {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--gold);
+  background: rgba(212,175,122,0.15);
+  border-radius: 999px;
+  min-width: 1.8rem;
+  padding: 0.1rem 0.5rem;
+  text-align: center;
+}
+.bulk-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.bulk-action-buttons .btn {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .bulk-action-bar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    border-radius: 0;
+    max-width: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .bulk-action-info { border-right: none; padding-right: 0; }
+  .bulk-action-buttons { width: 100%; justify-content: flex-start; }
+}
+
+/* Row checkbox styling */
+.row-checkbox {
+  cursor: pointer;
+  accent-color: var(--gold);
+  width: 14px;
+  height: 14px;
+}
+#histHeadCheckbox {
+  cursor: pointer;
+  accent-color: var(--gold);
+  width: 14px;
+  height: 14px;
+}
 .btn-granularity:last-child { border-right: none; }
 .btn-granularity:hover { background: var(--surface-soft); color: var(--text); }
 .btn-granularity.active {
@@ -10152,6 +10228,212 @@ window.closeLotDrillModal = closeLotDrillModal;
 window.cancelPriceFetch = cancelPriceFetch;
 window.clearPriceCacheUI = clearPriceCacheUI;
 
+// ══════════════════════════════════════════════════════════
+// Sprint 8.4.4: Bulk select + bulk actions on history table
+// ══════════════════════════════════════════════════════════
+
+// Selected event IDs (across renders, until manually cleared or wallet changes)
+function _getSelectedSet() {
+  if (!window._selectedEventIds) window._selectedEventIds = new Set();
+  return window._selectedEventIds;
+}
+
+function toggleEventSelection(eventId, checked) {
+  const sel = _getSelectedSet();
+  if (checked) sel.add(eventId);
+  else sel.delete(eventId);
+  // Light re-render — just refresh the bottom bar and current row styling
+  // For simplicity (and correctness), trigger full render
+  render();
+}
+window.toggleEventSelection = toggleEventSelection;
+
+function toggleAllVisibleSelection(evt, checked) {
+  const sel = _getSelectedSet();
+  const pageIds = window._currentPageEventIds || [];
+  if (checked) pageIds.forEach(id => sel.add(id));
+  else pageIds.forEach(id => sel.delete(id));
+  render();
+}
+window.toggleAllVisibleSelection = toggleAllVisibleSelection;
+
+function clearAllSelection() {
+  window._selectedEventIds = new Set();
+  render();
+}
+window.clearAllSelection = clearAllSelection;
+
+function renderBulkActionBar() {
+  const sel = _getSelectedSet();
+  if (sel.size === 0) return '';
+  // Compute counts for display: spam vs not
+  const events = state.events || [];
+  let spamCount = 0;
+  for (const id of sel) {
+    const e = events.find(ev => ev.id === id);
+    if (e?.userOverride?.spam) spamCount++;
+  }
+  const allSpam = spamCount === sel.size;
+  const noneSpam = spamCount === 0;
+  return `
+    <div class="bulk-action-bar" id="bulkActionBar">
+      <div class="bulk-action-info">
+        <span class="bulk-action-count">${sel.size}</span>
+        <span style="font-size:0.84rem">selecionad${sel.size === 1 ? 'o' : 'os'}</span>
+      </div>
+      <div class="bulk-action-buttons">
+        <button class="btn btn-outline btn-sm" onclick="openBulkReclassifyModal()" title="Reclassificar todos os selecionados">✎ Reclassificar tudo</button>
+        ${allSpam
+          ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="Desmarcar spam">✓ Desmarcar spam</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(true)" title="Marcar todos como spam (excluídos do FIFO)">⊘ Marcar spam</button>`}
+        ${noneSpam ? '' : !allSpam ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="Desmarcar spam dos que estão marcados">↺ Limpar spam</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="bulkClearOverrides()" title="Repor original em todos">↺ Repor original</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="clearAllSelection()">Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+window.renderBulkActionBar = renderBulkActionBar;
+
+function bulkSetSpam(spam) {
+  const sel = _getSelectedSet();
+  if (sel.size === 0) return;
+  const action = spam ? 'marcar como spam' : 'desmarcar spam';
+  if (sel.size > 50 && !confirm(`Vais ${action} ${sel.size} events. Continuar?`)) return;
+
+  const events = state.events || [];
+  let touched = 0;
+  for (const id of sel) {
+    const e = events.find(ev => ev.id === id);
+    if (!e) continue;
+    e.userOverride = e.userOverride || {};
+    e.userOverride.spam = spam;
+    e.userOverride.updatedAt = Date.now();
+    touched++;
+  }
+  saveState();
+  // Bust FIFO cache (spam affects fiscal classification)
+  Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
+  toast(`✓ ${touched} events ${spam ? 'marcados como spam' : 'desmarcados'}`, 'success');
+  // Keep selection — user might want to do more actions
+  render();
+}
+window.bulkSetSpam = bulkSetSpam;
+
+function bulkClearOverrides() {
+  const sel = _getSelectedSet();
+  if (sel.size === 0) return;
+  if (!confirm(`Repor classificação original em ${sel.size} events? Perdes notas, reclassificações e price overrides.`)) return;
+  const events = state.events || [];
+  let touched = 0;
+  for (const id of sel) {
+    const e = events.find(ev => ev.id === id);
+    if (!e) continue;
+    if (e.userOverride) {
+      delete e.userOverride;
+      touched++;
+    }
+    // Restore shadow originals if present
+    if (e._originalType) { e.type = e._originalType; delete e._originalType; }
+    if (typeof e._originalPriceEUR === 'number') { e.priceEUR = e._originalPriceEUR; delete e._originalPriceEUR; }
+    if (e.priceNote === 'user_override') e.priceNote = null;
+  }
+  saveState();
+  Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
+  toast(`↺ ${touched} events repostos`, 'success');
+  clearAllSelection();
+}
+window.bulkClearOverrides = bulkClearOverrides;
+
+// Bulk reclassify modal
+function openBulkReclassifyModal() {
+  const sel = _getSelectedSet();
+  if (sel.size === 0) return;
+  const events = state.events || [];
+  const selectedEvents = events.filter(e => sel.has(e.id));
+  if (selectedEvents.length === 0) {
+    toast('Nenhum event encontrado', 'warn');
+    return;
+  }
+
+  // Compute summary for the header
+  const byAsset = {};
+  let totalEUR = 0;
+  for (const e of selectedEvents) {
+    byAsset[e.asset || '?'] = (byAsset[e.asset || '?'] || 0) + 1;
+    if (typeof e.priceEUR === 'number') totalEUR += (e.amount * e.priceEUR);
+  }
+  const assetSummary = Object.entries(byAsset).sort((a,b) => b[1]-a[1]).slice(0, 5)
+    .map(([a, n]) => `${a} (${n})`).join(', ');
+
+  const options = [
+    'receive', 'send', 'swap', 'cashback', 'reward', 'airdrop', 'staking_reward',
+    'lending_supply', 'lending_withdraw', 'wrap', 'unwrap', 'bridge',
+    'cex_deposit', 'cex_withdrawal', 'card_funding', 'self_transfer', 'unknown'
+  ];
+  const html = `
+    <div class="modal-overlay" id="bulkReclassifyModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
+      <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:520px;width:100%" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <div style="font-weight:600;font-size:1rem">Reclassificar ${sel.size} events</div>
+          <button onclick="closeBulkReclassifyModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.9rem">
+          <strong>${sel.size}</strong> events selecionados${totalEUR > 0 ? ` · €${totalEUR.toLocaleString('pt-PT',{minimumFractionDigits:2, maximumFractionDigits:2})} valor total` : ''}<br>
+          Assets: ${assetSummary}${Object.keys(byAsset).length > 5 ? ' …' : ''}
+        </div>
+        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">Novo tipo (aplicado a todos)</label>
+        <select id="bulkReclassifyTypeSelect" class="form-select" style="width:100%">
+          ${options.map(o => `<option value="${o}">${o}</option>`).join('')}
+        </select>
+        <div class="alert alert-warn" style="font-size:0.72rem;margin-top:0.9rem">
+          <span>⚠</span>
+          <div>Esta acção altera o tipo de TODOS os ${sel.size} events selecionados. Os originais ficam guardados — podes reverter via menu por linha ou "Repor original" em bulk.</div>
+        </div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-outline btn-sm" onclick="closeBulkReclassifyModal()">Cancelar</button>
+          <button class="btn btn-gold btn-sm" onclick="bulkSaveReclassify()">Aplicar a ${sel.size}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('bulkReclassifyModalOverlay').addEventListener('click', (ev) => {
+    if (ev.target.id === 'bulkReclassifyModalOverlay') closeBulkReclassifyModal();
+  });
+}
+window.openBulkReclassifyModal = openBulkReclassifyModal;
+
+function closeBulkReclassifyModal() {
+  document.getElementById('bulkReclassifyModalOverlay')?.remove();
+}
+window.closeBulkReclassifyModal = closeBulkReclassifyModal;
+
+function bulkSaveReclassify() {
+  const sel = _getSelectedSet();
+  const newType = document.getElementById('bulkReclassifyTypeSelect')?.value;
+  if (!newType || sel.size === 0) return;
+
+  const events = state.events || [];
+  let touched = 0;
+  for (const id of sel) {
+    const e = events.find(ev => ev.id === id);
+    if (!e) continue;
+    e.userOverride = e.userOverride || {};
+    e.userOverride.txType = newType;
+    e.userOverride.updatedAt = Date.now();
+    e._originalType = e._originalType || e.type;
+    e.type = newType;
+    touched++;
+  }
+  closeBulkReclassifyModal();
+  saveState();
+  Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
+  toast(`✓ ${touched} events reclassificados como "${newType}"`, 'success');
+  clearAllSelection();
+}
+window.bulkSaveReclassify = bulkSaveReclassify;
+
 async function startIndexerForActiveWallet() {
   const w = activeWallet();
   if (!w) {
@@ -10351,6 +10633,8 @@ function renderHistory(w) {
   const page = window._histPage || 0;
   const pageSize = 50;
   const pageEvents = filtered.slice(page * pageSize, (page + 1) * pageSize);
+  // Expose current page event IDs globally for bulk-select operations
+  window._currentPageEventIds = pageEvents.map(e => e.id);
   const totalPages = Math.ceil(filtered.length / pageSize);
 
   const fmtAddr = (a) => a ? a.slice(0, 6) + '…' + a.slice(-4) : '—';
@@ -10606,6 +10890,7 @@ function renderHistory(w) {
             <table>
               <thead>
                 <tr>
+                  <th style="width:36px;text-align:center"><input type="checkbox" id="histHeadCheckbox" onclick="toggleAllVisibleSelection(event, this.checked)" title="Selecionar todos os visíveis nesta página" ${pageEvents.length > 0 && pageEvents.every(e => (window._selectedEventIds || new Set()).has(e.id)) ? 'checked' : ''}></th>
                   <th>Data</th>
                   <th>Chain</th>
                   <th>Tipo</th>
@@ -10623,8 +10908,11 @@ function renderHistory(w) {
                   const overrideMark = e.userOverride ? '<span title="Reclassificado manualmente" style="color:var(--gold);font-size:0.7rem">✎</span>' : '';
                   const spamMark = e.userOverride?.spam ? '<span title="Marcado como spam" style="color:var(--red);font-size:0.7rem">⊘</span>' : '';
                   const rowOpacity = e.userOverride?.spam ? 'opacity:0.4' : '';
+                  const isSelected = (window._selectedEventIds || new Set()).has(e.id);
+                  const escId = (e.id || '').replace(/"/g, '&quot;');
                   return `
-                  <tr style="${rowOpacity}">
+                  <tr style="${rowOpacity}${isSelected ? ';background:rgba(212,175,122,0.06)' : ''}">
+                    <td style="text-align:center"><input type="checkbox" class="row-checkbox" data-event-id="${escId}" onclick="toggleEventSelection(this.dataset.eventId, this.checked)" ${isSelected ? 'checked' : ''}></td>
                     <td style="font-family:var(--mono);font-size:0.75rem">${e.date || '—'}</td>
                     <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${chainColor(e.chain)};margin-right:0.4rem"></span>${e.chain.toUpperCase()}</td>
                     <td>${typeBadge(e.userOverride?.txType || e.type)} ${overrideMark}${spamMark}</td>
@@ -10644,7 +10932,7 @@ function renderHistory(w) {
                         : `<span style="font-family:var(--mono);color:var(--text-muted)" title="${e.counterparty?.address || ''}">${fmtAddr(e.counterparty?.address)}</span>`}
                     </td>
                     <td><a href="${getTxUrl(e.chain, e.txHash)}" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:0.7rem;color:var(--gold)">${e.txHash.slice(0, 6)}…</a></td>
-                    <td style="text-align:center"><button class="btn-row-menu" data-event-id="${(e.id || '').replace(/"/g, '&quot;')}" onclick="openEventActionMenu(event, this.dataset.eventId)" title="Acções">⋯</button></td>
+                    <td style="text-align:center"><button class="btn-row-menu" data-event-id="${escId}" onclick="openEventActionMenu(event, this.dataset.eventId)" title="Acções">⋯</button></td>
                   </tr>
                 `;}).join('')}
               </tbody>
@@ -10660,6 +10948,7 @@ function renderHistory(w) {
         </div>
       </div>
     `}
+    ${renderBulkActionBar()}
   `;
 }
 
@@ -14955,6 +15244,10 @@ function editWallet(id) {
 function setActiveWallet(id) {
   state.activeWId=id; saveState();
   live.positions={}; live.history={}; live.hfHistory={};
+  // Sprint 8.4.4: clear bulk selection when wallet changes
+  window._selectedEventIds = new Set();
+  // Sprint 8.3: clear FIFO cache
+  Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
   const w=state.wallets.find(x=>x.id===id);
   if(w) updateWalletBtn(w);
   buildWalletDD(); render(); refreshAll();
