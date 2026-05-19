@@ -456,6 +456,27 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   border-radius: 4px;
   transition: all 0.15s;
 }
+
+/* Granularity selector buttons (segmented control) */
+.btn-granularity {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border2);
+  padding: 0.35rem 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  transition: all 0.15s;
+}
+.btn-granularity:last-child { border-right: none; }
+.btn-granularity:hover { background: var(--surface-soft); color: var(--text); }
+.btn-granularity.active {
+  background: rgba(212,175,122,0.15);
+  color: var(--gold);
+  font-weight: 600;
+}
 .btn-row-menu:hover {
   background: var(--surface-soft);
   border-color: var(--border2);
@@ -5163,6 +5184,30 @@ const fifoEngine = (() => {
   const HOLDING_PERIOD_SECONDS = HOLDING_PERIOD_DAYS * 86400;
 
   // ── Classification ───────────────────────────────────────
+  // Protocol receipt tokens (NOT crypto-assets fiscally — they're contractual receipts)
+  // Filtered from FIFO because they represent: deposits to lending protocols,
+  // borrowed positions (negative basis), or wrapped staking receipts.
+  // Patterns are case-insensitive against the asset symbol.
+  const PROTOCOL_RECEIPT_PATTERNS = [
+    /^a[A-Z][a-z][A-Z0-9]/,             // AAVE v3 aTokens (aBasUSDC, aEthUSDC, aArbWETH, aBascbBTC...)
+    /^variableDebt/i,                    // AAVE v3 variable debt tokens
+    /^stableDebt/i,                      // AAVE v3 stable debt tokens
+    /^c[A-Z]{2,}/,                       // Compound v3 cTokens (cUSDC, cETH, cWBTC)
+    /^morpho/i,                          // Morpho positions
+    /^mw[A-Z]/,                          // Morpho Wrapped variants
+    /^pt-/i,                              // Pendle Principal Tokens (treated separately — debatable)
+    /^yt-/i,                              // Pendle Yield Tokens
+    /^aave\s*v[23]/i,                    // Various aave identifiers
+  ];
+
+  function _isProtocolReceiptToken(asset) {
+    if (!asset || typeof asset !== 'string') return false;
+    for (const pat of PROTOCOL_RECEIPT_PATTERNS) {
+      if (pat.test(asset)) return true;
+    }
+    return false;
+  }
+
   // Returns: 'acquisition' | 'disposal' | 'swap_buy' | 'swap_sell' | 'reward' | 'skip'
   function classifyEvent(event) {
     if (!event) return 'skip';
@@ -5172,6 +5217,9 @@ const fifoEngine = (() => {
     if (event.direction === 'self' || !event.amount || event.amount === 0) return 'skip';
     // NFTs excluded
     if (event.category === 'erc721' || event.category === 'erc1155') return 'skip';
+    // Protocol receipt tokens (aTokens, debt tokens, cTokens) — not fiscally relevant
+    // unless user explicitly overrode txType (treats receipts as their underlying asset)
+    if (_isProtocolReceiptToken(event.asset) && !event.userOverride?.txType) return 'skip';
 
     // Respect user reclassification if present
     const tx = event.userOverride?.txType || event.txType;
@@ -8506,16 +8554,22 @@ function renderStrategy(w) {
   // Convert FIFO lots → collateral-shape items
   const fifoState = _getFifoStateFor(w);
   const autoCols = [];
+  let skippedNegative = 0;
   if (fifoState && fifoState.lots) {
     for (const lot of fifoState.lots) {
       if (lot.qtyRemaining <= 1e-9) continue; // skip fully consumed
+      const basisTotal = lot.qtyRemaining * lot.basisEURPerUnit;
+      // Skip lots with negative basis (typically debt tokens — should have been filtered by classifyEvent)
+      if (basisTotal < -0.01) { skippedNegative++; continue; }
+      // Skip lots with essentially zero basis AND zero qty value (dust)
+      if (Math.abs(basisTotal) < 0.01 && lot.qtyRemaining < 0.0001) continue;
       autoCols.push({
         id: 'auto_' + lot.lotId,
         walletId: w.id,
         asset: lot.asset,
         chain: lot.chain,
         qty: lot.qtyRemaining,
-        eur: lot.qtyRemaining * lot.basisEURPerUnit,
+        eur: basisTotal,
         acqDate: lot.acqDate,
         depDate: lot.acqDate,
         origin: lot.source,                       // 'buy' | 'reward' | 'swap_in'
@@ -8527,10 +8581,45 @@ function renderStrategy(w) {
     }
   }
 
+  // Granularity for lot grouping in this view
+  // 'day' (default): merge same (asset, chain, day) — HMRC same-day rule, Koinly default
+  // 'month': merge same (asset, chain, YYYY-MM) — best for wallets with daily cashback
+  // 'detail': no aggregation (raw FIFO lots) — for audit
+  const granularity = state.lotGranularity || 'day';
+
   // Merge: auto + manual (manual takes priority if duplicate ids — shouldn't happen but defensive)
   const seenIds = new Set(autoCols.map(c => c.id));
-  const cols = [...autoCols, ...manualCols.filter(c => !seenIds.has(c.id))]
-    .sort((a, b) => (a.acqDate || '').localeCompare(b.acqDate || ''));
+
+  // Apply granularity-specific aggregation BEFORE mempoolGroupLots
+  let cols = [...autoCols, ...manualCols.filter(c => !seenIds.has(c.id))];
+
+  if (granularity === 'month' && cols.length > 0) {
+    const monthGroups = new Map();
+    for (const c of cols) {
+      const ym = (c.acqDate || '').slice(0, 7); // YYYY-MM
+      const key = `${ym}|${c.asset}|${c.chain}|${c.walletId}`;
+      if (!monthGroups.has(key)) {
+        monthGroups.set(key, {
+          ...c,
+          id: 'month_' + key,
+          acqDate: ym + '-15', // mid-month for display purposes
+          qty: 0,
+          eur: 0,
+          _aggregated: true,
+          _aggregatedCount: 0,
+          _originLots: [],
+        });
+      }
+      const g = monthGroups.get(key);
+      g.qty += (+c.qty || 0);
+      g.eur += (+c.eur || 0);
+      g._aggregatedCount++;
+      g._originLots.push(c.id);
+    }
+    cols = [...monthGroups.values()];
+  }
+
+  cols.sort((a, b) => (a.acqDate || '').localeCompare(b.acqDate || ''));
 
   const isentos = cols.filter(c=>daysHeld(c.acqDate)>=365);
   const pending = cols.filter(c=>daysHeld(c.acqDate)<365);
@@ -8542,7 +8631,14 @@ function renderStrategy(w) {
   return `
     <div class="section-row">
       <div class="section-label">Estratégia Fiscal 365 Dias — FIFO Portugal</div>
-      <button class="btn btn-gold btn-sm" onclick="openModal('modalCollateral');document.getElementById('col_dep').value=new Date().toISOString().split('T')[0];renderLotSuggestions()">+ Adicionar Lote Manual</button>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <div style="display:inline-flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:0.7rem">
+          <button class="btn-granularity ${granularity==='day'?'active':''}" onclick="state.lotGranularity='day';saveState();render()" title="Agrupa lots do mesmo dia (HMRC standard)">📦 Dia</button>
+          <button class="btn-granularity ${granularity==='month'?'active':''}" onclick="state.lotGranularity='month';saveState();render()" title="Agrupa lots do mesmo mês (ideal para wallets com cashback diário)">📅 Mês</button>
+          <button class="btn-granularity ${granularity==='detail'?'active':''}" onclick="state.lotGranularity='detail';saveState();render()" title="Mostra cada transaction (audit mode)">🔬 Detalhe</button>
+        </div>
+        <button class="btn btn-gold btn-sm" onclick="openModal('modalCollateral');document.getElementById('col_dep').value=new Date().toISOString().split('T')[0];renderLotSuggestions()">+ Lote Manual</button>
+      </div>
     </div>
 
     <div class="alert alert-info" style="margin-bottom:1.3rem">
@@ -8550,6 +8646,7 @@ function renderStrategy(w) {
       <div>
         <strong>Estratégia:</strong> Após 365 dias de holding, a mais-valia fica isenta de IRS (Anexo G1, declarativo). O FIFO garante que o lote mais antigo é "consumido" primeiro ao alienar.
         ${autoCount > 0 ? `<br><span style="color:var(--gold)">✓ ${autoCount} lots auto-detectados</span> dos eventos on-chain indexados.${manualCount > 0 ? ` + ${manualCount} lots manuais.` : ''}` : '<br><span style="color:var(--text-muted)">Adiciona lots manualmente ou indexa transactions no Histórico para detecção automática.</span>'}
+        ${skippedNegative > 0 ? `<br><span style="color:var(--text-muted);font-size:0.78rem">ℹ ${skippedNegative} lots ocultados (debt tokens de protocolos como AAVE — não relevantes fiscalmente).</span>` : ''}
       </div>
     </div>
 
