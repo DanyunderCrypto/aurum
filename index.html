@@ -8797,7 +8797,9 @@ function renderStrategy(w) {
       if(!cols.length) return '';
       // Apply filter
       const filt = window.mempoolFilter || 'all';
-      let displayCols = mempoolGroupLots(cols).map(c=>({...c, _held: daysHeld(c.acqDate), _status: mempoolBlockStatus(daysHeld(c.acqDate))}));
+      // If granularity is 'month', cols is already aggregated — don't re-aggregate via mempoolGroupLots
+      const baseCols = (granularity === 'month') ? cols : mempoolGroupLots(cols);
+      let displayCols = baseCols.map(c=>({...c, _held: daysHeld(c.acqDate), _status: mempoolBlockStatus(daysHeld(c.acqDate))}));
       const counts = { all: displayCols.length };
       ['exempt','imminent','maturing','aging','fresh'].forEach(st=>{ counts[st] = displayCols.filter(c=>c._status===st).length; });
       if(filt!=='all') displayCols = displayCols.filter(c=>c._status===filt);
@@ -9074,7 +9076,7 @@ function renderStrategy(w) {
       <div class="panel-body no-pad">
         ${cols.length?`<div class="table-wrap"><table>
           <thead><tr><th>Lote</th><th>Aquisição</th><th>Depósito</th><th>Rede</th><th>Ativo</th><th>Qtd</th><th>Valor EUR</th><th>Dias</th><th>Status</th><th>Isento em</th><th>Protocolo</th><th>Origem</th><th>TX</th><th></th></tr></thead>
-          <tbody>${mempoolGroupLots(cols).map((c,i)=>{
+          <tbody>${((granularity === 'month') ? cols : mempoolGroupLots(cols)).map((c,i)=>{
             const held=daysHeld(c.acqDate), isento=held>=365, left=Math.max(0,365-held), pct=Math.min(100,(held/365)*100);
             const iDate=new Date((new Date(c.acqDate+'T12:00:00')).getTime()+365*86400000).toLocaleDateString('pt-PT');
             const chain=CHAINS[c.chain];
