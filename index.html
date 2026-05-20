@@ -85,6 +85,52 @@
   --duration-fast: 140ms;
   --num: "JetBrains Mono", "SF Mono", Menlo, monospace;
 }
+
+/* ═══════════════════════════════════════════════════════
+   Sprint 9.0: LIGHT MODE — warm off-white, gold preserved
+   ═══════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  /* Surfaces — warm paper tones, not harsh white */
+  --bg:           #F7F4ED;      /* warm paper */
+  --bg1:          #FFFFFF;      /* cards */
+  --bg2:          #F0EBE0;      /* recessed */
+  --bg3:          #E8E1D2;
+  --surface:      #FFFFFF;
+  --surface-elev: #FFFFFF;
+  --surface-soft: rgba(20,20,15,0.03);
+
+  /* Brand palette — slightly deepened gold for contrast on light bg */
+  --gold:         #9A7635;      /* deeper champagne for legibility on white */
+  --gold-glow:    #B8924A;
+  --gold2:        #B8924A;
+  --amber:        #E06A2A;
+  --purple:       #5B4FD6;
+  --purple-glow:  #7B6FFF;
+  --mint:         #00A876;      /* darker green for contrast */
+  --green:        #00A876;
+  --red:          #D63A5C;      /* darker red for contrast */
+  --blue:         #2B82D4;
+  --cyan:         #00A890;
+
+  /* Text — warm near-black */
+  --white:        #1A1812;
+  --text:         #1A1812;
+  --text-muted:   rgba(26,24,18,0.62);
+  --text-dim:     rgba(26,24,18,0.38);
+  --muted:        rgba(26,24,18,0.50);
+
+  /* Borders */
+  --border:       rgba(154,118,53,0.18);
+  --border2:      rgba(154,118,53,0.32);
+  --border-soft:  rgba(20,20,15,0.08);
+
+  /* Glows — softer/lighter on light bg */
+  --glow-g:       0 0 24px rgba(154,118,53,0.12);
+  --glow-r:       0 0 24px rgba(214,58,92,0.15);
+  --glow-gr:      0 0 24px rgba(0,168,118,0.12);
+  --glow-soft:    0 8px 28px rgba(120,100,60,0.14);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; scroll-behavior: smooth; }
 body {
@@ -2610,6 +2656,7 @@ body.stealth-mode .stealth-badge {
       <button class="btn btn-outline btn-sm" id="walletSwitchBtn" onclick="toggleWalletDD()">⬡ <span id="walletBtnLabel">Wallet</span> ▾</button>
       <div class="wallet-dropdown hidden" id="walletDD"></div>
     </div>
+    <button class="btn btn-outline btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark/light">🌙</button>
     <button class="btn btn-outline btn-sm" id="refreshBtn" onclick="refreshAll()">↻</button>
   </div>
 </div>
@@ -3107,6 +3154,9 @@ const I18N = {
     'config.section.apis': 'APIs & Indexação',
     'config.section.backup': '💾 Backup & Restore',
     'config.lang': 'Língua / Language',
+    'config.theme': 'Tema',
+    'config.themeDark': '🌙 Escuro',
+    'config.themeLight': '☀️ Claro',
     'config.fiatCurrency': 'Moeda fiat de referência',
     'config.stealthMode': 'Modo Stealth (oculta valores)',
     'config.hideSpam': 'Ocultar tokens marcados como spam',
@@ -3410,6 +3460,9 @@ const I18N = {
     'config.section.apis': 'APIs & Indexing',
     'config.section.backup': '💾 Backup & Restore',
     'config.lang': 'Language / Língua',
+    'config.theme': 'Theme',
+    'config.themeDark': '🌙 Dark',
+    'config.themeLight': '☀️ Light',
     'config.fiatCurrency': 'Reference fiat currency',
     'config.stealthMode': 'Stealth Mode (hides values)',
     'config.hideSpam': 'Hide tokens marked as spam',
@@ -3502,6 +3555,41 @@ function applyStaticI18n() {
   });
 }
 window.applyStaticI18n = applyStaticI18n;
+
+// ════════════════════════════════════════════════════════
+// Sprint 9.0: Theme (dark/light) toggle
+// ════════════════════════════════════════════════════════
+function applyTheme(theme) {
+  // theme: 'dark' | 'light'
+  const t = (theme === 'light') ? 'light' : 'dark';
+  if (t === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  // Update toggle button icon (shows what you'll switch TO)
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = (t === 'light') ? '🌙' : '☀️';
+}
+window.applyTheme = applyTheme;
+
+function setTheme(theme) {
+  const t = (theme === 'light') ? 'light' : 'dark';
+  state.theme = t;
+  saveState();
+  applyTheme(t);
+  render();
+  toast(t === 'light'
+    ? ((state.lang||'pt')==='en' ? '☀️ Light mode' : '☀️ Modo claro')
+    : ((state.lang||'pt')==='en' ? '🌙 Dark mode' : '🌙 Modo escuro'), 'success');
+}
+window.setTheme = setTheme;
+
+function toggleTheme() {
+  setTheme((state.theme === 'light') ? 'dark' : 'light');
+}
+window.toggleTheme = toggleTheme;
+
 
 
 const CHAINS = {
@@ -7188,6 +7276,9 @@ async function runConnectionTest() {
 // BOOT
 // ══════════════════════════════════════════════════════════
 function boot() {
+  // Sprint 9.0: apply persisted theme + language before first render
+  if (typeof applyTheme === 'function') applyTheme(state.theme || 'dark');
+  if (state.lang) document.documentElement.lang = state.lang;
   startCanvas();
   fetchEurRate();
   render();
@@ -12527,6 +12618,14 @@ function renderSettings(w) {
             <select class="form-select" id="set_lang" onchange="setAppLanguage(this.value)">
               <option value="pt" ${(state.lang||'pt')==='pt'?'selected':''}>🇵🇹 Português</option>
               <option value="en" ${(state.lang||'pt')==='en'?'selected':''}>🇬🇧 English</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">${t('config.theme')}</label>
+            <select class="form-select" id="set_theme" onchange="setTheme(this.value)">
+              <option value="dark" ${(state.theme||'dark')==='dark'?'selected':''}>${t('config.themeDark')}</option>
+              <option value="light" ${(state.theme||'dark')==='light'?'selected':''}>${t('config.themeLight')}</option>
             </select>
           </div>
           <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
