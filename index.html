@@ -3003,6 +3003,149 @@ const I18N = {
     // Toast common
     'toast.saved': 'Guardado',
     'toast.error': 'Erro',
+    // Modals — reclassify
+    'modal.reclassify.title': 'Reclassificar transacção',
+    'modal.reclassify.bulkTitle': 'Reclassificar {n} events',
+    'modal.reclassify.currentType': 'Tipo actual',
+    'modal.reclassify.newType': 'Novo tipo',
+    'modal.reclassify.newTypeBulk': 'Novo tipo (aplicado a todos)',
+    'modal.reclassify.info': 'Reclassificação afecta o cálculo fiscal (Anexo G/G1/E). Sobrevive a re-indexações.',
+    'modal.reclassify.bulkWarn': 'Esta acção altera o tipo de TODOS os {n} events selecionados. Os originais ficam guardados — podes reverter via menu por linha ou "Repor original" em bulk.',
+    'modal.reclassify.applyToN': 'Aplicar a {n}',
+    'modal.reclassify.totalValue': 'valor total',
+    'modal.reclassify.assets': 'Assets',
+    // Modals — price override
+    'modal.price.title': 'Override valor EUR',
+    'modal.price.currentUnit': 'Preço unitário actual',
+    'modal.price.currentTotal': 'Total actual',
+    'modal.price.newTotal': 'Novo valor TOTAL em EUR (será dividido por quantidade automaticamente)',
+    'modal.price.placeholder': 'ex: 250.50',
+    'modal.price.info': 'Usa quando o Price Oracle falhou (token não coberto pela DefiLlama). Sobrevive a re-indexações e a Re-aplicar Cache.',
+    'modal.price.clear': '↺ Limpar override',
+    'modal.price.invalid': 'Valor inválido',
+    'modal.price.noQty': 'Evento sem quantidade — não pode ter preço',
+    'modal.price.applied': '✓ Valor override: €{total} total',
+    'modal.price.removed': '↺ Override removido',
+    // Modals — note
+    'modal.note.title': 'Nota da transacção',
+    'modal.note.placeholder': 'ex: liquidez Uniswap V3 ETH/USDC, range 1800-2200...',
+    'modal.note.saved': '✓ Nota guardada',
+    // Modals — drill-down
+    'modal.drill.aggMonth': 'agregação mensal · {n} lots',
+    'modal.drill.aggDay': 'agregação diária · {n} lots',
+    'modal.drill.aggSingle': 'lot individual',
+    'modal.drill.totalBasis': 'Total basis',
+    'modal.drill.totalQty': 'Total qty',
+    'modal.drill.avgPrice': 'Preço médio',
+    'modal.drill.originalTx': 'Transactions originais ({n})',
+    'modal.drill.empty': 'Sem transactions originais resolvidas. Os lot IDs podem ter sido invalidados por re-indexação ou granularidade mudada.',
+    'modal.drill.note': 'Esta agregação é apenas <strong>display</strong>. O FIFO engine continua a tratar cada transaction como lot separado para cálculo fiscal. Audit trail intacto.',
+    'modal.drill.changeGranularity': 'Para ver lots individuais, muda granularidade para <strong>📦 Dia</strong> ou <strong>🔬 Detalhe</strong>.',
+    // Row actions popover
+    'row.reclassifyType': '✎ Reclassificar tipo',
+    'row.editValueEUR': '€ Editar valor EUR',
+    'row.markSpam': '⊘ Marcar como spam',
+    'row.unmarkSpam': '✓ Desmarcar spam',
+    'row.addNote': '+ Adicionar nota',
+    'row.editNote': '✎ Editar nota',
+    'row.viewExplorer': '↗ Ver no explorer',
+    'row.restoreOriginal': '↺ Repor original',
+    'row.confirmRestore': 'Repor classificação original? Perdes nota e overrides.',
+    'row.markedSpam': '⊘ Marcado como spam',
+    'row.unmarkedSpam': '✓ Desmarcado spam',
+    'row.originalRestored': '↺ Original reposto',
+    'row.reclassifiedAs': '✓ Reclassificado como "{type}"',
+    'row.notFound': 'Evento não encontrado',
+    'row.lotNotFound': 'Lot não encontrado',
+    // History tab
+    'history.title': 'Histórico Universal — Toda a actividade on-chain',
+    'history.eventsTotal': 'Eventos Totais',
+    'history.chainsIndexed': 'Chains Indexados',
+    'history.protocolsId': 'Protocols Identificados',
+    'history.eventsWithEUR': 'Eventos com preço EUR',
+    'history.lastIndexation': 'Última Indexação',
+    'history.indexer': 'Universal Indexer',
+    'history.reIndex': '↺ Re-indexar',
+    'history.clearEvents': '✕ Limpar eventos',
+    'history.indexerDesc': 'O indexer descarrega <strong>todo o histórico on-chain</strong> da tua wallet desde o primeiro bloco — necessário para FIFO correcto e regime transitório &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> address único ou xpub/ypub/zpub completo (via Mempool.space, sem API key).',
+    'history.priceOracle': 'Price Oracle',
+    'history.priceOracleProvider': 'DefiLlama + ECB · cache permanente',
+    'history.fetchPrices': '💶 Buscar Preços ({n} eventos)',
+    'history.fetchPricesComplete': '✓ Preços completos',
+    'history.fetching': '⏳ A buscar…',
+    'history.cancel': '✕ Cancelar',
+    'history.reapplyCache': '🔄 Re-aplicar Cache',
+    'history.reapplyCacheTitle': 'Re-aplicar preços já em cache aos eventos (não chama DefiLlama)',
+    'history.clearCache': '🗑 Limpar Cache',
+    'history.priceCount': '{a} / {b} com preço',
+    'history.priceDesc': 'Preços históricos via <strong>DefiLlama</strong> (USD) + <strong>ECB</strong> (USD→EUR), granularidade diária. Cache permanente em IndexedDB — preços históricos são imutáveis. <strong>NFTs excluídos</strong> (Art. 10 nº 18 — não são criptoativos fiscalmente).',
+    'history.filters.chain': 'Chain',
+    'history.filters.type': 'Tipo',
+    'history.filters.asset': 'Asset',
+    'history.filters.protocol': 'Protocol',
+    'history.filters.all': 'Todos',
+    'history.filters.unknown': '(sem)',
+    'history.events': 'eventos',
+    'history.event': 'evento',
+    'history.of': 'de',
+    'history.spamHidden': '{n} events marcados como spam ocultados.',
+    'history.showSpam': 'Mostrar spam',
+    'history.hideSpam': 'Ocultar spam',
+    'history.spamShown': 'A mostrar spam events.',
+    'history.col.date': 'Data',
+    'history.col.chain': 'Chain',
+    'history.col.type': 'Tipo',
+    'history.col.asset': 'Asset',
+    'history.col.qty': 'Quantidade',
+    'history.col.valueEUR': 'Valor EUR',
+    'history.col.direction': 'Direcção',
+    'history.col.counterparty': 'Counterparty',
+    'history.col.tx': 'Tx',
+    // Config tab labels
+    'config.section.general': 'Geral',
+    'config.section.privacy': 'Privacidade',
+    'config.section.apis': 'APIs & Indexação',
+    'config.section.backup': '💾 Backup & Restore',
+    'config.lang': 'Língua / Language',
+    'config.fiatCurrency': 'Moeda fiat de referência',
+    'config.stealthMode': 'Modo Stealth (oculta valores)',
+    'config.hideSpam': 'Ocultar tokens marcados como spam',
+    'config.debugMode': 'Debug Mode (Ctrl+Shift+D para toggle)',
+    'config.alchemyKey': 'Alchemy API Key (global)',
+    'config.etherscanKey': 'Etherscan API Key (opcional)',
+    'config.exportBackup': '⬇ Exportar Backup Completo',
+    'config.importBackup': '⬆ Importar Backup',
+    'config.clearAll': '🗑 Apagar Todos os Dados',
+    'config.backupDesc': 'Exporta TUDO (wallets, events, prices, configurações) num único JSON. Guarda no Drive/Dropbox. Recomendado antes de qualquer operação destrutiva.',
+    // Fiscal PT panel
+    'fiscalPanel.engineDesc': 'FIFO · {disp} alienações · {lots} lots · {rew} rewards',
+    'fiscalPanel.lawInterpretation': 'Interpretação fiscal usada',
+    'fiscalPanel.lawRef': '(Lei 24-D/2022, Art. 10º CIRS)',
+    'fiscalPanel.swapNotAlienation': '<strong>Permuta cripto-cripto</strong> (art. 10º nº 6 c) — NÃO é alienação. Novo activo herda data + valor de aquisição.',
+    'fiscalPanel.cashback': '<strong>Cashback em cripto</strong> — aquisição gratuita. Valor de aquisição = EUR à data do recebimento. Tributação só na alienação futura (Cat. G).',
+    'fiscalPanel.cardLoan': '<strong>Cartão financiado por empréstimo DeFi</strong> — gastos não são alienação fiscal (capital emprestado).',
+    'fiscalPanel.fifoMandatory': '<strong>FIFO obrigatório</strong> por wallet/exchange.',
+    'fiscalPanel.disclaimer': 'Não substitui aconselhamento profissional. Confirma com contabilista especializado em cripto.',
+    'fiscalPanel.colDate': 'Data',
+    'fiscalPanel.colAsset': 'Asset',
+    'fiscalPanel.colQty': 'Qty',
+    'fiscalPanel.colProceeds': 'Proceeds €',
+    'fiscalPanel.colBasis': 'Basis €',
+    'fiscalPanel.colGL': 'G/L €',
+    'fiscalPanel.colRegime': 'Regime',
+    'fiscalPanel.colKind': 'Tipo',
+    'fiscalPanel.colValue': 'Valor €',
+    'fiscalPanel.noDispositions': 'Sem alienações em {year}. Permuta cripto↔cripto não conta como alienação (Art. 10 nº 6 c).',
+    // Add wallet modal
+    'wallet.add': 'Adicionar Wallet',
+    'wallet.edit': 'Editar Wallet',
+    'wallet.name': 'Nome',
+    'wallet.evmAddress': 'Endereço EVM',
+    'wallet.btcAddress': 'Endereço Bitcoin / xpub / ypub / zpub (opcional)',
+    'wallet.solAddress': 'Endereço Solana (opcional)',
+    'wallet.notes': 'Notas',
+    'wallet.delete': 'Apagar Wallet',
+    'wallet.confirmDelete': 'Apagar wallet "{name}"? Os events indexados permanecerão (podes reusar a address).',
   },
   en: {
     // Tabs
@@ -3163,6 +3306,149 @@ const I18N = {
     // Toast common
     'toast.saved': 'Saved',
     'toast.error': 'Error',
+    // Modals — reclassify
+    'modal.reclassify.title': 'Reclassify transaction',
+    'modal.reclassify.bulkTitle': 'Reclassify {n} events',
+    'modal.reclassify.currentType': 'Current type',
+    'modal.reclassify.newType': 'New type',
+    'modal.reclassify.newTypeBulk': 'New type (applied to all)',
+    'modal.reclassify.info': 'Reclassification affects fiscal calculation (Annex G/G1/E). Survives re-indexing.',
+    'modal.reclassify.bulkWarn': 'This action changes the type of ALL {n} selected events. Originals are kept — you can revert via row menu or bulk "Restore original".',
+    'modal.reclassify.applyToN': 'Apply to {n}',
+    'modal.reclassify.totalValue': 'total value',
+    'modal.reclassify.assets': 'Assets',
+    // Modals — price override
+    'modal.price.title': 'Override EUR value',
+    'modal.price.currentUnit': 'Current unit price',
+    'modal.price.currentTotal': 'Current total',
+    'modal.price.newTotal': 'New TOTAL EUR value (will be divided by quantity automatically)',
+    'modal.price.placeholder': 'e.g. 250.50',
+    'modal.price.info': 'Use when Price Oracle failed (token not covered by DefiLlama). Survives re-indexing and Re-apply Cache.',
+    'modal.price.clear': '↺ Clear override',
+    'modal.price.invalid': 'Invalid value',
+    'modal.price.noQty': 'Event without quantity — cannot have a price',
+    'modal.price.applied': '✓ Value override: €{total} total',
+    'modal.price.removed': '↺ Override removed',
+    // Modals — note
+    'modal.note.title': 'Transaction note',
+    'modal.note.placeholder': 'e.g. Uniswap V3 ETH/USDC LP, range 1800-2200...',
+    'modal.note.saved': '✓ Note saved',
+    // Modals — drill-down
+    'modal.drill.aggMonth': 'monthly aggregation · {n} lots',
+    'modal.drill.aggDay': 'daily aggregation · {n} lots',
+    'modal.drill.aggSingle': 'individual lot',
+    'modal.drill.totalBasis': 'Total basis',
+    'modal.drill.totalQty': 'Total qty',
+    'modal.drill.avgPrice': 'Avg price',
+    'modal.drill.originalTx': 'Original transactions ({n})',
+    'modal.drill.empty': 'No original transactions resolved. Lot IDs may have been invalidated by re-indexing or changed granularity.',
+    'modal.drill.note': 'This aggregation is <strong>display only</strong>. The FIFO engine still treats each transaction as a separate lot for fiscal calculation. Audit trail intact.',
+    'modal.drill.changeGranularity': 'To see individual lots, switch granularity to <strong>📦 Day</strong> or <strong>🔬 Detail</strong>.',
+    // Row actions popover
+    'row.reclassifyType': '✎ Reclassify type',
+    'row.editValueEUR': '€ Edit EUR value',
+    'row.markSpam': '⊘ Mark as spam',
+    'row.unmarkSpam': '✓ Unmark spam',
+    'row.addNote': '+ Add note',
+    'row.editNote': '✎ Edit note',
+    'row.viewExplorer': '↗ View on explorer',
+    'row.restoreOriginal': '↺ Restore original',
+    'row.confirmRestore': 'Restore original classification? You will lose the note and overrides.',
+    'row.markedSpam': '⊘ Marked as spam',
+    'row.unmarkedSpam': '✓ Unmarked spam',
+    'row.originalRestored': '↺ Original restored',
+    'row.reclassifiedAs': '✓ Reclassified as "{type}"',
+    'row.notFound': 'Event not found',
+    'row.lotNotFound': 'Lot not found',
+    // History tab
+    'history.title': 'Universal History — All on-chain activity',
+    'history.eventsTotal': 'Total Events',
+    'history.chainsIndexed': 'Chains Indexed',
+    'history.protocolsId': 'Protocols Identified',
+    'history.eventsWithEUR': 'Events with EUR price',
+    'history.lastIndexation': 'Last Indexation',
+    'history.indexer': 'Universal Indexer',
+    'history.reIndex': '↺ Re-index',
+    'history.clearEvents': '✕ Clear events',
+    'history.indexerDesc': 'The indexer downloads <strong>all on-chain history</strong> of your wallet from the first block — required for correct FIFO and transitional regime &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> single address or full xpub/ypub/zpub (via Mempool.space, no API key).',
+    'history.priceOracle': 'Price Oracle',
+    'history.priceOracleProvider': 'DefiLlama + ECB · permanent cache',
+    'history.fetchPrices': '💶 Fetch Prices ({n} events)',
+    'history.fetchPricesComplete': '✓ Prices complete',
+    'history.fetching': '⏳ Fetching…',
+    'history.cancel': '✕ Cancel',
+    'history.reapplyCache': '🔄 Re-apply Cache',
+    'history.reapplyCacheTitle': 'Re-apply already-cached prices to events (does not call DefiLlama)',
+    'history.clearCache': '🗑 Clear Cache',
+    'history.priceCount': '{a} / {b} with price',
+    'history.priceDesc': 'Historical prices via <strong>DefiLlama</strong> (USD) + <strong>ECB</strong> (USD→EUR), daily granularity. Permanent cache in IndexedDB — historical prices are immutable. <strong>NFTs excluded</strong> (Art. 10 nº 18 — not fiscally crypto-assets).',
+    'history.filters.chain': 'Chain',
+    'history.filters.type': 'Type',
+    'history.filters.asset': 'Asset',
+    'history.filters.protocol': 'Protocol',
+    'history.filters.all': 'All',
+    'history.filters.unknown': '(none)',
+    'history.events': 'events',
+    'history.event': 'event',
+    'history.of': 'of',
+    'history.spamHidden': '{n} events marked as spam hidden.',
+    'history.showSpam': 'Show spam',
+    'history.hideSpam': 'Hide spam',
+    'history.spamShown': 'Showing spam events.',
+    'history.col.date': 'Date',
+    'history.col.chain': 'Chain',
+    'history.col.type': 'Type',
+    'history.col.asset': 'Asset',
+    'history.col.qty': 'Quantity',
+    'history.col.valueEUR': 'EUR Value',
+    'history.col.direction': 'Direction',
+    'history.col.counterparty': 'Counterparty',
+    'history.col.tx': 'Tx',
+    // Config tab labels
+    'config.section.general': 'General',
+    'config.section.privacy': 'Privacy',
+    'config.section.apis': 'APIs & Indexing',
+    'config.section.backup': '💾 Backup & Restore',
+    'config.lang': 'Language / Língua',
+    'config.fiatCurrency': 'Reference fiat currency',
+    'config.stealthMode': 'Stealth Mode (hides values)',
+    'config.hideSpam': 'Hide tokens marked as spam',
+    'config.debugMode': 'Debug Mode (Ctrl+Shift+D to toggle)',
+    'config.alchemyKey': 'Alchemy API Key (global)',
+    'config.etherscanKey': 'Etherscan API Key (optional)',
+    'config.exportBackup': '⬇ Export Full Backup',
+    'config.importBackup': '⬆ Import Backup',
+    'config.clearAll': '🗑 Clear All Data',
+    'config.backupDesc': 'Exports EVERYTHING (wallets, events, prices, settings) into a single JSON. Save to Drive/Dropbox. Recommended before any destructive operation.',
+    // Fiscal PT panel
+    'fiscalPanel.engineDesc': 'FIFO · {disp} dispositions · {lots} lots · {rew} rewards',
+    'fiscalPanel.lawInterpretation': 'Tax interpretation used',
+    'fiscalPanel.lawRef': '(Law 24-D/2022, Art. 10º CIRS)',
+    'fiscalPanel.swapNotAlienation': '<strong>Crypto-crypto swap</strong> (art. 10 nº 6 c) — NOT a disposal. New asset inherits acquisition date + value.',
+    'fiscalPanel.cashback': '<strong>Crypto cashback</strong> — gratis acquisition. Acquisition value = EUR at receipt date. Taxed only on future disposal (Cat. G).',
+    'fiscalPanel.cardLoan': '<strong>Card funded by DeFi loan</strong> — spending is not a fiscal disposal (borrowed capital).',
+    'fiscalPanel.fifoMandatory': '<strong>FIFO mandatory</strong> per wallet/exchange.',
+    'fiscalPanel.disclaimer': 'Does not replace professional advice. Confirm with a tax accountant specialized in crypto.',
+    'fiscalPanel.colDate': 'Date',
+    'fiscalPanel.colAsset': 'Asset',
+    'fiscalPanel.colQty': 'Qty',
+    'fiscalPanel.colProceeds': 'Proceeds €',
+    'fiscalPanel.colBasis': 'Basis €',
+    'fiscalPanel.colGL': 'G/L €',
+    'fiscalPanel.colRegime': 'Regime',
+    'fiscalPanel.colKind': 'Type',
+    'fiscalPanel.colValue': 'Value €',
+    'fiscalPanel.noDispositions': 'No dispositions in {year}. Crypto↔crypto swap does not count as disposal (Art. 10 nº 6 c).',
+    // Add wallet modal
+    'wallet.add': 'Add Wallet',
+    'wallet.edit': 'Edit Wallet',
+    'wallet.name': 'Name',
+    'wallet.evmAddress': 'EVM Address',
+    'wallet.btcAddress': 'Bitcoin Address / xpub / ypub / zpub (optional)',
+    'wallet.solAddress': 'Solana Address (optional)',
+    'wallet.notes': 'Notes',
+    'wallet.delete': 'Delete Wallet',
+    'wallet.confirmDelete': 'Delete wallet "{name}"? Indexed events will remain (you can reuse the address).',
   },
 };
 
@@ -10140,13 +10426,13 @@ function openEventActionMenu(evt, eventId) {
   const txUrl = getTxUrl(e.chain, e.txHash);
 
   popover.innerHTML = `
-    <button onclick="openReclassifyModal()">✎ Reclassificar tipo</button>
-    <button onclick="openPriceOverrideModal()">€ Editar valor EUR</button>
-    <button onclick="toggleEventSpam()">${isSpam ? '✓ Desmarcar spam' : '⊘ Marcar como spam'}</button>
-    <button onclick="openNoteModal()">${hasNote ? '✎ Editar nota' : '+ Adicionar nota'}</button>
+    <button onclick="openReclassifyModal()">${t('row.reclassifyType')}</button>
+    <button onclick="openPriceOverrideModal()">${t('row.editValueEUR')}</button>
+    <button onclick="toggleEventSpam()">${isSpam ? t('row.unmarkSpam') : t('row.markSpam')}</button>
+    <button onclick="openNoteModal()">${hasNote ? t('row.editNote') : t('row.addNote')}</button>
     <div class="divider"></div>
-    <button onclick="window.open('${txUrl}','_blank');closeEventActionMenu()">↗ Ver no explorer</button>
-    ${e.userOverride ? '<div class="divider"></div><button class="danger" onclick="clearEventOverride()">↺ Repor original</button>' : ''}
+    <button onclick="window.open('${txUrl}','_blank');closeEventActionMenu()">${t('row.viewExplorer')}</button>
+    ${e.userOverride ? '<div class="divider"></div><button class="danger" onclick="clearEventOverride()">' + t('row.restoreOriginal') + '</button>' : ''}
   `;
 
   document.body.appendChild(popover);
@@ -10188,7 +10474,7 @@ function toggleEventSpam(eventId) {
   saveState();
   // Bust FIFO cache
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
-  toast(e.userOverride.spam ? '⊘ Marcado como spam' : '✓ Desmarcado spam', 'success');
+  toast(e.userOverride.spam ? t('row.markedSpam') : t('row.unmarkedSpam'), 'success');
   render();
 }
 window.toggleEventSpam = toggleEventSpam;
@@ -10198,12 +10484,12 @@ function clearEventOverride(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
   if (!e) return;
-  if (!confirm('Repor classificação original? Perdes nota e overrides.')) return;
+  if (!confirm(t('row.confirmRestore'))) return;
   delete e.userOverride;
   closeEventActionMenu();
   saveState();
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
-  toast('↺ Original reposto', 'success');
+  toast(t('row.originalRestored'), 'success');
   render();
 }
 window.clearEventOverride = clearEventOverride;
@@ -10214,7 +10500,7 @@ function openReclassifyModal(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
   if (!e) {
-    toast('Evento não encontrado', 'warn');
+    toast(t('row.notFound'), 'warn');
     return;
   }
   window._activeRowEventId = id; // keep for save handler
@@ -10228,24 +10514,24 @@ function openReclassifyModal(eventId) {
     <div class="modal-overlay" id="reclassifyModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:480px;width:100%" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div style="font-weight:600;font-size:1rem">Reclassificar transacção</div>
+          <div style="font-weight:600;font-size:1rem">${t('modal.reclassify.title')}</div>
           <button onclick="closeReclassifyModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
         </div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.9rem">
           ${e.date} · ${(e.asset || '').replace(/</g,'&lt;')} ${fmtAmount(e)} · ${e.chain.toUpperCase()}<br>
-          Tipo actual: <strong style="color:var(--gold)">${currentType}</strong>
+          ${t('modal.reclassify.currentType')}: <strong style="color:var(--gold)">${currentType}</strong>
         </div>
-        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">Novo tipo</label>
+        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">${t('modal.reclassify.newType')}</label>
         <select id="reclassifyTypeSelect" class="form-select" style="width:100%">
           ${options.map(o => `<option value="${o}" ${o===currentType?'selected':''}>${o}</option>`).join('')}
         </select>
         <div class="alert alert-info" style="font-size:0.72rem;margin-top:0.9rem">
           <span>ℹ</span>
-          <div>Reclassificação afecta o cálculo fiscal (Anexo G/G1/E). Sobrevive a re-indexações.</div>
+          <div>${t('modal.reclassify.info')}</div>
         </div>
         <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-outline btn-sm" onclick="closeReclassifyModal()">Cancelar</button>
-          <button class="btn btn-gold btn-sm" onclick="saveReclassify()">Guardar</button>
+          <button class="btn btn-outline btn-sm" onclick="closeReclassifyModal()">${t('btn.cancel')}</button>
+          <button class="btn btn-gold btn-sm" onclick="saveReclassify()">${t('btn.save')}</button>
         </div>
       </div>
     </div>
@@ -10266,7 +10552,7 @@ window.closeReclassifyModal = closeReclassifyModal;
 function saveReclassify(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
-  if (!e) { toast('Evento não encontrado', 'warn'); return; }
+  if (!e) { toast(t('row.notFound'), 'warn'); return; }
   const newType = document.getElementById('reclassifyTypeSelect')?.value;
   if (!newType) return;
   e.userOverride = e.userOverride || {};
@@ -10278,7 +10564,7 @@ function saveReclassify(eventId) {
   closeReclassifyModal();
   saveState();
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
-  toast(`✓ Reclassificado como "${newType}"`, 'success');
+  toast(t('row.reclassifiedAs', {type: newType}), 'success');
   render();
 }
 window.saveReclassify = saveReclassify;
@@ -10289,7 +10575,7 @@ function openPriceOverrideModal(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
   if (!e) {
-    toast('Evento não encontrado', 'warn');
+    toast(t('row.notFound'), 'warn');
     return;
   }
   window._activeRowEventId = id;
@@ -10299,24 +10585,24 @@ function openPriceOverrideModal(eventId) {
     <div class="modal-overlay" id="priceOverrideModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:480px;width:100%" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div style="font-weight:600;font-size:1rem">Override valor EUR</div>
+          <div style="font-weight:600;font-size:1rem">${t('modal.price.title')}</div>
           <button onclick="closePriceOverrideModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
         </div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.9rem">
           ${e.date} · ${(e.asset || '').replace(/</g,'&lt;')} ${fmtAmount(e)} · ${e.chain.toUpperCase()}<br>
-          Preço unitário actual: <strong>€${currentPriceEUR || '—'}</strong> · Total actual: <strong>€${currentTotal || '—'}</strong>
+          ${t('modal.price.currentUnit')}: <strong>€${currentPriceEUR || '—'}</strong> · ${t('modal.price.currentTotal')}: <strong>€${currentTotal || '—'}</strong>
         </div>
-        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">Novo valor TOTAL em EUR (será dividido por quantidade automaticamente)</label>
-        <input id="priceOverrideTotalInput" type="number" step="0.01" class="form-input" placeholder="ex: 250.50" value="${currentTotal}" style="width:100%">
+        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">${t('modal.price.newTotal')}</label>
+        <input id="priceOverrideTotalInput" type="number" step="0.01" class="form-input" placeholder="${t('modal.price.placeholder')}" value="${currentTotal}" style="width:100%">
         <div class="alert alert-info" style="font-size:0.72rem;margin-top:0.9rem">
           <span>ℹ</span>
-          <div>Usa quando o Price Oracle falhou (token não coberto pela DefiLlama). Sobrevive a re-indexações e a Re-aplicar Cache.</div>
+          <div>${t('modal.price.info')}</div>
         </div>
         <div style="display:flex;gap:0.5rem;justify-content:space-between;margin-top:1rem">
-          <button class="btn btn-outline btn-sm" onclick="clearPriceOverride()" style="color:var(--red)">↺ Limpar override</button>
+          <button class="btn btn-outline btn-sm" onclick="clearPriceOverride()" style="color:var(--red)">${t('modal.price.clear')}</button>
           <div style="display:flex;gap:0.5rem">
-            <button class="btn btn-outline btn-sm" onclick="closePriceOverrideModal()">Cancelar</button>
-            <button class="btn btn-gold btn-sm" onclick="savePriceOverride()">Guardar</button>
+            <button class="btn btn-outline btn-sm" onclick="closePriceOverrideModal()">${t('btn.cancel')}</button>
+            <button class="btn btn-gold btn-sm" onclick="savePriceOverride()">${t('btn.save')}</button>
           </div>
         </div>
       </div>
@@ -10338,15 +10624,15 @@ window.closePriceOverrideModal = closePriceOverrideModal;
 function savePriceOverride(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
-  if (!e) { toast('Evento não encontrado', 'warn'); return; }
+  if (!e) { toast(t('row.notFound'), 'warn'); return; }
   const totalStr = document.getElementById('priceOverrideTotalInput')?.value;
   const total = parseFloat(totalStr);
   if (!isFinite(total) || total < 0) {
-    toast('Valor inválido', 'warn');
+    toast(t('modal.price.invalid'), 'warn');
     return;
   }
   if (!e.amount || e.amount === 0) {
-    toast('Evento sem quantidade — não pode ter preço', 'warn');
+    toast(t('modal.price.noQty'), 'warn');
     return;
   }
   const pricePerUnit = total / e.amount;
@@ -10361,7 +10647,7 @@ function savePriceOverride(eventId) {
   closePriceOverrideModal();
   saveState();
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
-  toast(`✓ Valor override: €${total.toFixed(2)} total`, 'success');
+  toast(t('modal.price.applied', {total: total.toFixed(2)}), 'success');
   render();
 }
 window.savePriceOverride = savePriceOverride;
@@ -10385,7 +10671,7 @@ function clearPriceOverride(eventId) {
   closePriceOverrideModal();
   saveState();
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
-  toast('↺ Override removido', 'success');
+  toast(t('modal.price.removed'), 'success');
   render();
 }
 window.clearPriceOverride = clearPriceOverride;
@@ -10396,7 +10682,7 @@ function openNoteModal(eventId) {
   const id = eventId || window._activeRowEventId;
   const e = _findEventById(id);
   if (!e) {
-    toast('Evento não encontrado', 'warn');
+    toast(t('row.notFound'), 'warn');
     return;
   }
   window._activeRowEventId = id;
@@ -10405,13 +10691,13 @@ function openNoteModal(eventId) {
     <div class="modal-overlay" id="noteModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:480px;width:100%" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div style="font-weight:600;font-size:1rem">Nota da transacção</div>
+          <div style="font-weight:600;font-size:1rem">${t('modal.note.title')}</div>
           <button onclick="closeNoteModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
         </div>
-        <textarea id="noteInput" class="form-input" style="width:100%;min-height:90px;resize:vertical" placeholder="ex: liquidez Uniswap V3 ETH/USDC, range 1800-2200...">${current.replace(/</g,'&lt;')}</textarea>
+        <textarea id="noteInput" class="form-input" style="width:100%;min-height:90px;resize:vertical" placeholder="${t('modal.note.placeholder')}">${current.replace(/</g,'&lt;')}</textarea>
         <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-outline btn-sm" onclick="closeNoteModal()">Cancelar</button>
-          <button class="btn btn-gold btn-sm" onclick="saveNote()">Guardar</button>
+          <button class="btn btn-outline btn-sm" onclick="closeNoteModal()">${t('btn.cancel')}</button>
+          <button class="btn btn-gold btn-sm" onclick="saveNote()">${t('btn.save')}</button>
         </div>
       </div>
     </div>
@@ -10440,7 +10726,7 @@ function saveNote(eventId) {
   e.userOverride.updatedAt = Date.now();
   closeNoteModal();
   saveState();
-  toast('✓ Nota guardada', 'success');
+  toast(t('modal.note.saved'), 'success');
   render();
 }
 window.saveNote = saveNote;
@@ -10456,7 +10742,7 @@ function openLotDrillDown(lotKey) {
   const fifoState = window._lastStrategyFifoState;
   const lot = displayCols.find(c => c.id === lotKey);
   if (!lot) {
-    toast('Lot não encontrado', 'warn');
+    toast(t('row.lotNotFound'), 'warn');
     return;
   }
 
@@ -10519,7 +10805,7 @@ function openLotDrillDown(lotKey) {
   const avgPrice = totalQty > 0 ? totalBasis / totalQty : 0;
 
   const isMonth = lot._aggregated === 'month';
-  const aggLabel = isMonth ? `agregação mensal · ${lot._aggregatedCount} lots` : (resolvedLots.length > 1 ? `agregação diária · ${resolvedLots.length} lots` : 'lot individual');
+  const aggLabel = isMonth ? t('modal.drill.aggMonth', {n: lot._aggregatedCount}) : (resolvedLots.length > 1 ? t('modal.drill.aggDay', {n: resolvedLots.length}) : t('modal.drill.aggSingle'));
 
   const html = `
     <div class="modal-overlay" id="lotDrillModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto">
@@ -10533,28 +10819,28 @@ function openLotDrillDown(lotKey) {
         </div>
 
         <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.2rem">
-          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Total basis</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">€${fmt(totalBasis)}</div></div>
-          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Total qty</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">${fmt(totalQty, 6)}</div></div>
-          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">Preço médio</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--gold)">€${fmt(avgPrice, avgPrice < 1 ? 6 : 4)}</div></div>
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">${t('modal.drill.totalBasis')}</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">€${fmt(totalBasis)}</div></div>
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">${t('modal.drill.totalQty')}</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--text)">${fmt(totalQty, 6)}</div></div>
+          <div class="stat" style="padding:0.7rem"><div class="stat-label" style="font-size:0.6rem">${t('modal.drill.avgPrice')}</div><div style="font-family:var(--mono);font-size:1.15rem;font-weight:500;color:var(--gold)">€${fmt(avgPrice, avgPrice < 1 ? 6 : 4)}</div></div>
         </div>
 
-        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.6rem">Transactions originais (${resolvedLots.length})</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.6rem">${t('modal.drill.originalTx', {n: resolvedLots.length})}</div>
 
         ${resolvedLots.length === 0 ? `
           <div class="alert alert-warn" style="font-size:0.78rem">
-            <span>⚠</span><div>Sem transactions originais resolvidas. Os lot IDs podem ter sido invalidados por re-indexação ou granularidade mudada.</div>
+            <span>⚠</span><div>${t('modal.drill.empty')}</div>
           </div>
         ` : `
           <div style="overflow-x:auto">
             <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
               <thead>
                 <tr style="border-bottom:1px solid var(--border);text-align:left;color:var(--text-muted);font-size:0.7rem">
-                  <th style="padding:0.5rem">Data</th>
-                  <th style="padding:0.5rem">Tipo</th>
-                  <th style="padding:0.5rem;text-align:right">Qty</th>
-                  <th style="padding:0.5rem;text-align:right">Preço/un</th>
-                  <th style="padding:0.5rem;text-align:right">Basis €</th>
-                  <th style="padding:0.5rem">Tx</th>
+                  <th style="padding:0.5rem">${t('history.col.date')}</th>
+                  <th style="padding:0.5rem">${t('history.col.type')}</th>
+                  <th style="padding:0.5rem;text-align:right">${t('fiscalPanel.colQty')}</th>
+                  <th style="padding:0.5rem;text-align:right">${(state.lang||'pt')==='en'?'Price/unit':'Preço/un'}</th>
+                  <th style="padding:0.5rem;text-align:right">${t('fiscalPanel.colBasis')}</th>
+                  <th style="padding:0.5rem">${t('history.col.tx')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -10584,13 +10870,13 @@ function openLotDrillDown(lotKey) {
         <div class="alert alert-info" style="font-size:0.74rem;margin-top:1rem">
           <span>ℹ</span>
           <div>
-            Esta agregação é apenas <strong>display</strong>. O FIFO engine continua a tratar cada transaction como lot separado para cálculo fiscal. Audit trail intacto.
-            ${isMonth ? '<br>Para ver lots individuais, muda granularidade para <strong>📦 Dia</strong> ou <strong>🔬 Detalhe</strong>.' : ''}
+            ${t('modal.drill.note')}
+            ${isMonth ? '<br>' + t('modal.drill.changeGranularity') : ''}
           </div>
         </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-outline btn-sm" onclick="closeLotDrillModal()">Fechar</button>
+          <button class="btn btn-outline btn-sm" onclick="closeLotDrillModal()">${t('btn.close')}</button>
         </div>
       </div>
     </div>
@@ -10756,24 +11042,24 @@ function openBulkReclassifyModal() {
     <div class="modal-overlay" id="bulkReclassifyModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:520px;width:100%" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div style="font-weight:600;font-size:1rem">Reclassificar ${sel.size} events</div>
+          <div style="font-weight:600;font-size:1rem">${t('modal.reclassify.bulkTitle', {n: sel.size})}</div>
           <button onclick="closeBulkReclassifyModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
         </div>
         <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.9rem">
-          <strong>${sel.size}</strong> events selecionados${totalEUR > 0 ? ` · €${totalEUR.toLocaleString('pt-PT',{minimumFractionDigits:2, maximumFractionDigits:2})} valor total` : ''}<br>
-          Assets: ${assetSummary}${Object.keys(byAsset).length > 5 ? ' …' : ''}
+          <strong>${sel.size}</strong> events ${(state.lang||'pt')==='en'?'selected':'selecionados'}${totalEUR > 0 ? ` · €${totalEUR.toLocaleString('pt-PT',{minimumFractionDigits:2, maximumFractionDigits:2})} ${t('modal.reclassify.totalValue')}` : ''}<br>
+          ${t('modal.reclassify.assets')}: ${assetSummary}${Object.keys(byAsset).length > 5 ? ' …' : ''}
         </div>
-        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">Novo tipo (aplicado a todos)</label>
+        <label style="display:block;font-size:0.7rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.3rem">${t('modal.reclassify.newTypeBulk')}</label>
         <select id="bulkReclassifyTypeSelect" class="form-select" style="width:100%">
           ${options.map(o => `<option value="${o}">${o}</option>`).join('')}
         </select>
         <div class="alert alert-warn" style="font-size:0.72rem;margin-top:0.9rem">
           <span>⚠</span>
-          <div>Esta acção altera o tipo de TODOS os ${sel.size} events selecionados. Os originais ficam guardados — podes reverter via menu por linha ou "Repor original" em bulk.</div>
+          <div>${t('modal.reclassify.bulkWarn', {n: sel.size})}</div>
         </div>
         <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-outline btn-sm" onclick="closeBulkReclassifyModal()">Cancelar</button>
-          <button class="btn btn-gold btn-sm" onclick="bulkSaveReclassify()">Aplicar a ${sel.size}</button>
+          <button class="btn btn-outline btn-sm" onclick="closeBulkReclassifyModal()">${t('btn.cancel')}</button>
+          <button class="btn btn-gold btn-sm" onclick="bulkSaveReclassify()">${t('modal.reclassify.applyToN', {n: sel.size})}</button>
         </div>
       </div>
     </div>
@@ -11060,42 +11346,42 @@ function renderHistory(w) {
 
   return `
     <div class="section-row" style="margin-bottom:1.5rem">
-      <div class="section-label">Histórico Universal — toda a actividade on-chain</div>
+      <div class="section-label">${t('history.title')}</div>
     </div>
 
     <!-- Stats grid -->
     <div class="stats-grid" style="margin-bottom:1.5rem">
       <div class="stat">
-        <div class="stat-label">Eventos Totais</div>
+        <div class="stat-label">${t('history.eventsTotal')}</div>
         <div class="stat-value sv-gold">${totalEvents}</div>
         <div class="stat-sub">${oldest === newest ? oldest : `${oldest} → ${newest}`}</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Chains Indexados</div>
+        <div class="stat-label">${t('history.chainsIndexed')}</div>
         <div class="stat-value sv-blue">${Object.keys(byChain).length}</div>
         <div class="stat-sub">${Object.keys(byChain).join(' · ') || '—'}</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Protocols Identificados</div>
+        <div class="stat-label">${t('history.protocolsId')}</div>
         <div class="stat-value sv-amber">${new Set(walletEvents.filter(e => e.protocol).map(e => e.protocol)).size}</div>
-        <div class="stat-sub">${walletEvents.filter(e => e.protocol).length} eventos · ${walletEvents.filter(e => !e.protocol).length} sem label</div>
+        <div class="stat-sub">${walletEvents.filter(e => e.protocol).length} ${t('history.events')} · ${walletEvents.filter(e => !e.protocol).length} ${(state.lang||'pt')==='en'?'unlabeled':'sem label'}</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Eventos com Preço EUR</div>
+        <div class="stat-label">${t('history.eventsWithEUR')}</div>
         <div class="stat-value sv-green">${walletEvents.filter(e => typeof e.priceEUR === 'number').length}</div>
-        <div class="stat-sub">${walletEvents.filter(e => e.priceNote === 'no_price_data').length} sem preço · ${walletEvents.filter(e => e.priceNote === 'nft_excluded').length} NFTs</div>
+        <div class="stat-sub">${walletEvents.filter(e => e.priceNote === 'no_price_data').length} ${(state.lang||'pt')==='en'?'no price':'sem preço'} · ${walletEvents.filter(e => e.priceNote === 'nft_excluded').length} NFTs</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Última Indexação</div>
-        <div class="stat-value" style="font-size:1.05rem;color:var(--text)">${meta.lastIndexedAt ? new Date(meta.lastIndexedAt).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : 'Nunca'}</div>
-        <div class="stat-sub">${meta.totalCalls ? `${meta.totalCalls} chamadas RPC` : ''}</div>
+        <div class="stat-label">${t('history.lastIndexation')}</div>
+        <div class="stat-value" style="font-size:1.05rem;color:var(--text)">${meta.lastIndexedAt ? new Date(meta.lastIndexedAt).toLocaleString((state.lang||'pt')==='en'?'en-GB':'pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : ((state.lang||'pt')==='en'?'Never':'Nunca')}</div>
+        <div class="stat-sub">${meta.totalCalls ? `${meta.totalCalls} ${(state.lang||'pt')==='en'?'RPC calls':'chamadas RPC'}` : ''}</div>
       </div>
     </div>
 
     <!-- Indexer control -->
     <div class="panel" style="margin-bottom:1.3rem">
       <div class="panel-head">
-        <span class="panel-title">⚙️ Universal Indexer</span>
+        <span class="panel-title">⚙️ ${t('history.indexer')}</span>
         <span style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted)">Alchemy · ${universalIndexer.SUPPORTED_CHAINS.length} chains</span>
       </div>
       <div class="panel-body">
@@ -11130,18 +11416,14 @@ function renderHistory(w) {
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
           <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()" ${(() => { const hasEVM = (w.addr||w.evm) && w.alchemyKey; const hasBTC = w.bitcoinAddress||w.bitcoinXpub; return (!hasEVM && !hasBTC) || isIndexing ? 'disabled' : ''; })()}>
-            ${isIndexing ? '⏳ A indexar…' : (totalEvents > 0 ? '↻ Re-indexar' : '⚡ Indexar Agora')}
+            ${isIndexing ? ((state.lang||'pt')==='en'?'⏳ Indexing…':'⏳ A indexar…') : (totalEvents > 0 ? t('history.reIndex') : ((state.lang||'pt')==='en'?'⚡ Index Now':'⚡ Indexar Agora'))}
           </button>
-          ${isIndexing ? `<button class="btn btn-outline btn-sm" onclick="cancelIndexer()">✕ Cancelar</button>` : ''}
-          ${totalEvents > 0 ? `<button class="btn btn-outline btn-sm" onclick="clearWalletEvents()">🗑 Limpar Eventos</button>` : ''}
+          ${isIndexing ? `<button class="btn btn-outline btn-sm" onclick="cancelIndexer()">${t('history.cancel')}</button>` : ''}
+          ${totalEvents > 0 ? `<button class="btn btn-outline btn-sm" onclick="clearWalletEvents()">${t('history.clearEvents')}</button>` : ''}
         </div>
         <div class="alert alert-info" style="margin-top:1rem;font-size:0.78rem">
           <span>ℹ</span>
-          <div>
-            O indexer descarrega <strong>todo o histórico on-chain</strong> da tua wallet desde o primeiro bloco — necessário para FIFO correcto e regime transitório &lt;2023 (Art. 220 OE/2023).<br>
-            <strong>EVM</strong>: ${universalIndexer.SUPPORTED_CHAINS.join(', ')} (via Alchemy).
-            <strong>Bitcoin</strong>: address único ou xpub/ypub/zpub completo (via Mempool.space, sem API key).
-          </div>
+          <div>${t('history.indexerDesc')}</div>
         </div>
       </div>
     </div>
@@ -11149,8 +11431,8 @@ function renderHistory(w) {
     <!-- Price Oracle (Sprint 7) -->
     <div class="panel" style="margin-bottom:1.3rem">
       <div class="panel-head">
-        <span class="panel-title">💶 Price Oracle</span>
-        <span style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted)">DefiLlama + ECB · cache permanente</span>
+        <span class="panel-title">💶 ${t('history.priceOracle')}</span>
+        <span style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted)">${t('history.priceOracleProvider')}</span>
       </div>
       <div class="panel-body">
         ${(() => {
@@ -11164,7 +11446,7 @@ function renderHistory(w) {
             <div id="priceFetchProgress" style="margin-bottom:1rem;display:${isFetching ? 'block' : 'none'}">
               <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius);padding:1rem">
                 <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:0.5rem">
-                  <span id="priceFetchPhase" style="color:var(--gold)">A buscar preços…</span>
+                  <span id="priceFetchPhase" style="color:var(--gold)">${(state.lang||'pt')==='en'?'Fetching prices…':'A buscar preços…'}</span>
                 </div>
                 <div style="background:var(--bg);height:6px;border-radius:3px;overflow:hidden">
                   <div id="priceFetchBar" style="background:linear-gradient(90deg,var(--green),#7ee08a);height:100%;width:0%;transition:width 0.4s"></div>
@@ -11173,21 +11455,18 @@ function renderHistory(w) {
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
               <button class="btn btn-gold btn-sm" onclick="fetchPricesForActiveWallet()" ${(walletEvents.length === 0 || eventsNeedingPrice === 0 || isFetching) ? 'disabled' : ''}>
-                ${isFetching ? '⏳ A buscar…' : (eventsNeedingPrice > 0 ? `💶 Buscar Preços (${eventsNeedingPrice} eventos)` : '✓ Preços completos')}
+                ${isFetching ? t('history.fetching') : (eventsNeedingPrice > 0 ? t('history.fetchPrices', {n: eventsNeedingPrice}) : t('history.fetchPricesComplete'))}
               </button>
-              ${isFetching ? `<button class="btn btn-outline btn-sm" onclick="cancelPriceFetch()">✕ Cancelar</button>` : ''}
-              <button class="btn btn-outline btn-sm" onclick="reapplyPricesFromCache()" title="Re-aplicar preços já em cache aos eventos (não chama DefiLlama)">🔄 Re-aplicar Cache</button>
-              <button class="btn btn-outline btn-sm" onclick="clearPriceCacheUI()">🗑 Limpar Cache</button>
+              ${isFetching ? `<button class="btn btn-outline btn-sm" onclick="cancelPriceFetch()">${t('history.cancel')}</button>` : ''}
+              <button class="btn btn-outline btn-sm" onclick="reapplyPricesFromCache()" title="${t('history.reapplyCacheTitle')}">${t('history.reapplyCache')}</button>
+              <button class="btn btn-outline btn-sm" onclick="clearPriceCacheUI()">${t('history.clearCache')}</button>
               <span style="font-size:0.75rem;color:var(--text-muted);margin-left:auto">
-                ${walletEvents.filter(e => typeof e.priceEUR === 'number').length} / ${walletEvents.length} com preço
+                ${t('history.priceCount', {a: walletEvents.filter(e => typeof e.priceEUR === 'number').length, b: walletEvents.length})}
               </span>
             </div>
             <div class="alert alert-info" style="margin-top:1rem;font-size:0.78rem">
               <span>ℹ</span>
-              <div>
-                Preços históricos via <strong>DefiLlama</strong> (USD) + <strong>ECB</strong> (USD→EUR), granularidade diária.<br>
-                Cache permanente em IndexedDB — preços históricos são imutáveis. <strong>NFTs excluídos</strong> (Art. 10 nº 18 — não são criptoativos fiscalmente).
-              </div>
+              <div>${t('history.priceDesc')}</div>
             </div>
           `;
         })()}
@@ -11211,27 +11490,27 @@ function renderHistory(w) {
       <div class="panel" style="margin-bottom:1rem">
         <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end">
           <div>
-            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">Chain</label><br>
+            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.chain')}</label><br>
             <select class="form-select" style="min-width:130px" onchange="window._histFilterChain=this.value;window._histPage=0;render()">
-              <option value="all">Todas (${totalEvents})</option>
+              <option value="all">${t('history.filters.all')} (${totalEvents})</option>
               ${Object.entries(byChain).sort((a,b)=>b[1]-a[1]).map(([c,n]) => `<option value="${c}" ${c===filterChain?'selected':''}>${c.toUpperCase()} (${n})</option>`).join('')}
             </select>
           </div>
           <div>
-            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">Tipo</label><br>
+            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.type')}</label><br>
             <select class="form-select" style="min-width:130px" onchange="window._histFilterType=this.value;window._histPage=0;render()">
-              <option value="all">Todos</option>
-              ${Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([t,n]) => `<option value="${t}" ${t===filterType?'selected':''}>${t} (${n})</option>`).join('')}
+              <option value="all">${t('history.filters.all')}</option>
+              ${Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([ty,n]) => `<option value="${ty}" ${ty===filterType?'selected':''}>${ty} (${n})</option>`).join('')}
             </select>
           </div>
           <div>
-            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">Asset</label><br>
+            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.asset')}</label><br>
             <input class="form-input" style="min-width:120px" placeholder="USDC, ETH…" value="${filterAsset}" oninput="window._histFilterAsset=this.value;window._histPage=0;render()">
           </div>
           <div>
-            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">Protocol</label><br>
+            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.protocol')}</label><br>
             <select class="form-select" style="min-width:140px" onchange="window._histFilterProto=this.value;window._histPage=0;render()">
-              <option value="all">Todos</option>
+              <option value="all">${t('history.filters.all')}</option>
               ${(() => {
                 const byProto = {};
                 walletEvents.forEach(e => { if (e.protocol) byProto[e.protocol] = (byProto[e.protocol]||0)+1; });
@@ -11239,11 +11518,11 @@ function renderHistory(w) {
                   `<option value="${p}" ${p===filterProto?'selected':''}>${p} (${n})</option>`
                 ).join('');
               })()}
-              <option value="__unknown__" ${filterProto==='__unknown__'?'selected':''}>Sem protocol (${walletEvents.filter(e=>!e.protocol).length})</option>
+              <option value="__unknown__" ${filterProto==='__unknown__'?'selected':''}>${(state.lang||'pt')==='en'?'No protocol':'Sem protocol'} (${walletEvents.filter(e=>!e.protocol).length})</option>
             </select>
           </div>
           ${(filterChain !== 'all' || filterType !== 'all' || filterAsset || filterProto !== 'all') ? `
-            <button class="btn btn-outline btn-sm" onclick="window._histFilterChain='all';window._histFilterType='all';window._histFilterAsset='';window._histFilterProto='all';window._histPage=0;render()">✕ Limpar</button>
+            <button class="btn btn-outline btn-sm" onclick="window._histFilterChain='all';window._histFilterType='all';window._histFilterAsset='';window._histFilterProto='all';window._histPage=0;render()">${(state.lang||'pt')==='en'?'✕ Clear':'✕ Limpar'}</button>
           ` : ''}
           <div style="margin-left:auto;font-size:0.78rem;color:var(--text-muted)">
             ${filtered.length} ${filtered.length === 1 ? 'evento' : 'eventos'}${filtered.length !== totalEvents ? ` (de ${totalEvents})` : ''}
@@ -11256,14 +11535,14 @@ function renderHistory(w) {
         ${hiddenSpam > 0 ? `
           <div style="padding:0.6rem 1rem;background:rgba(212,175,122,0.06);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0.6rem;font-size:0.78rem">
             <span style="color:var(--gold)">⊘</span>
-            <span><strong>${hiddenSpam}</strong> events marcados como spam ocultados.</span>
-            <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.7rem" onclick="window._histShowSpam=true;render()">Mostrar spam</button>
+            <span>${t('history.spamHidden', {n: '<strong>'+hiddenSpam+'</strong>'})}</span>
+            <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.7rem" onclick="window._histShowSpam=true;render()">${t('history.showSpam')}</button>
           </div>
         ` : (showSpamOverride ? `
           <div style="padding:0.6rem 1rem;background:rgba(220,80,80,0.08);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0.6rem;font-size:0.78rem">
             <span style="color:var(--red)">⊘</span>
-            <span>A mostrar spam events.</span>
-            <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.7rem" onclick="window._histShowSpam=false;render()">Ocultar spam</button>
+            <span>${t('history.spamShown')}</span>
+            <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:0.7rem" onclick="window._histShowSpam=false;render()">${t('history.hideSpam')}</button>
           </div>
         ` : '')}
         <div class="panel-body no-pad">
@@ -11271,16 +11550,16 @@ function renderHistory(w) {
             <table>
               <thead>
                 <tr>
-                  <th style="width:36px;text-align:center"><input type="checkbox" id="histHeadCheckbox" onclick="toggleAllVisibleSelection(event, this.checked)" title="Selecionar todos os visíveis nesta página" ${pageEvents.length > 0 && pageEvents.every(e => (window._selectedEventIds || new Set()).has(e.id)) ? 'checked' : ''}></th>
-                  <th>Data</th>
-                  <th>Chain</th>
-                  <th>Tipo</th>
-                  <th>Asset</th>
-                  <th style="text-align:right">Quantidade</th>
-                  <th style="text-align:right">Valor EUR</th>
-                  <th>Direcção</th>
-                  <th>Counterparty</th>
-                  <th>Tx</th>
+                  <th style="width:36px;text-align:center"><input type="checkbox" id="histHeadCheckbox" onclick="toggleAllVisibleSelection(event, this.checked)" title="${(state.lang||'pt')==='en'?'Select all visible on this page':'Selecionar todos os visíveis nesta página'}" ${pageEvents.length > 0 && pageEvents.every(e => (window._selectedEventIds || new Set()).has(e.id)) ? 'checked' : ''}></th>
+                  <th>${t('history.col.date')}</th>
+                  <th>${t('history.col.chain')}</th>
+                  <th>${t('history.col.type')}</th>
+                  <th>${t('history.col.asset')}</th>
+                  <th style="text-align:right">${t('history.col.qty')}</th>
+                  <th style="text-align:right">${t('history.col.valueEUR')}</th>
+                  <th>${t('history.col.direction')}</th>
+                  <th>${t('history.col.counterparty')}</th>
+                  <th>${t('history.col.tx')}</th>
                   <th style="width:36px"></th>
                 </tr>
               </thead>
@@ -11609,13 +11888,13 @@ function renderFiscal(w) {
 
   return `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-      <div class="section-label" style="margin-bottom:0">Relatório Fiscal — Portugal 🇵🇹</div>
+      <div class="section-label" style="margin-bottom:0">${t('fiscal.title')} 🇵🇹</div>
       <select class="form-select" style="max-width:200px" onchange="state.fiscalYear=+this.value;saveState();render()">
-        ${years.map(y => `<option value="${y}" ${y===fiscalYear?'selected':''}>Ano fiscal ${y}</option>`).join('')}
+        ${years.map(y => `<option value="${y}" ${y===fiscalYear?'selected':''}>${t('fiscal.fiscalYear')} ${y}</option>`).join('')}
       </select>
       <div style="margin-left:auto;display:flex;gap:0.5rem">
-        <button class="btn btn-outline btn-sm" onclick="exportFiscalCSV()">⬇ Exportar CSV</button>
-        <button class="btn btn-gold btn-sm" onclick="exportFiscalReport()">⬇ Relatório Completo (HTML)</button>
+        <button class="btn btn-outline btn-sm" onclick="exportFiscalCSV()">${t('fiscal.exportCSV')}</button>
+        <button class="btn btn-gold btn-sm" onclick="exportFiscalReport()">${t('fiscal.exportReport')}</button>
       </div>
     </div>
 
@@ -11624,14 +11903,14 @@ function renderFiscal(w) {
     <div class="alert alert-info" style="margin-bottom:1.3rem;font-size:0.82rem">
       <span>⚖</span>
       <div>
-        <strong>Interpretação fiscal usada</strong> (Lei 24-D/2022, Art. 10º CIRS):
+        <strong>${t('fiscalPanel.lawInterpretation')}</strong> ${t('fiscalPanel.lawRef')}:
         <ul style="margin:0.4rem 0 0;padding-left:1.2rem;line-height:1.6">
-          <li><strong>Permuta cripto-cripto</strong> (art. 10º nº 6 c) — NÃO é alienação. Novo activo herda data + valor de aquisição.</li>
-          <li><strong>Cashback em cripto</strong> — aquisição gratuita. Valor de aquisição = EUR à data do recebimento. Tributação só na alienação futura (Cat. G).</li>
-          <li><strong>Cartão financiado por empréstimo DeFi</strong> — gastos não são alienação fiscal (capital emprestado).</li>
-          <li><strong>FIFO obrigatório</strong> por wallet/exchange.</li>
+          <li>${t('fiscalPanel.swapNotAlienation')}</li>
+          <li>${t('fiscalPanel.cashback')}</li>
+          <li>${t('fiscalPanel.cardLoan')}</li>
+          <li>${t('fiscalPanel.fifoMandatory')}</li>
         </ul>
-        Não substitui aconselhamento profissional. Confirma com contabilista especializado em cripto.
+        ${t('fiscalPanel.disclaimer')}
       </div>
     </div>
 
