@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurum — O teu DeFi, refinado. Tracker fiscal cripto para Portugal</title>
+<meta name="description" content="Tracker fiscal DeFi local-first e open source para Portugal. FIFO automático, Anexo G/G1/E, regra dos 365 dias. Os teus dados nunca saem do teu browser.">
+<meta property="og:title" content="Aurum — O teu DeFi, refinado">
+<meta property="og:description" content="Tracker fiscal DeFi para Portugal. Local-first, open source, FIFO automático.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,500&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0A0A0F;
+  --bg1: #14141A;
+  --bg2: #1B1B23;
+  --gold: #D4AF7A;
+  --gold-glow: #E8C895;
+  --gold-deep: #A88556;
+  --mint: #00E89E;
+  --red: #FF5C7A;
+  --purple: #7B6FFF;
+  --text: #F5F5F0;
+  --text-muted: rgba(245,245,240,0.55);
+  --text-dim: rgba(245,245,240,0.32);
+  --border: rgba(212,175,122,0.14);
+  --border2: rgba(212,175,122,0.28);
+  --display: 'Playfair Display', Georgia, serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --body: 'Inter', -apple-system, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; font-size: 16px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Atmospheric background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212,175,122,0.10), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 20%, rgba(123,111,255,0.05), transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+/* Grain texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; position: relative; z-index: 2; }
+
+/* Nav */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  backdrop-filter: blur(16px);
+  background: rgba(10,10,15,0.7);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; max-width: 1100px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 0.7rem; }
+.brand-name { font-family: var(--display); font-size: 1.35rem; font-weight: 600; letter-spacing: 0.06em; color: var(--gold); }
+.nav-links { display: flex; gap: 2rem; align-items: center; }
+.nav-links a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
+.nav-links a:hover { color: var(--gold); }
+.nav-cta {
+  padding: 0.55rem 1.3rem; border-radius: 999px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-glow));
+  color: #0A0A0F !important; font-weight: 600; font-size: 0.85rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.nav-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(212,175,122,0.3); }
+@media (max-width: 720px) { .nav-links a:not(.nav-cta) { display: none; } }
+
+/* Hero */
+.hero { padding: 7rem 0 5rem; text-align: center; position: relative; }
+.hero-eyebrow {
+  display: inline-block;
+  font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.28em;
+  text-transform: uppercase; color: var(--gold); margin-bottom: 1.8rem;
+  padding: 0.4rem 1rem; border: 1px solid var(--border2); border-radius: 999px;
+  animation: fadeUp 0.8s ease both;
+}
+.hero h1 {
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(2.5rem, 7vw, 5rem); line-height: 1.05;
+  letter-spacing: -0.02em; margin-bottom: 1.5rem;
+  animation: fadeUp 0.8s ease 0.1s both;
+}
+.hero h1 .gold-italic { font-style: italic; color: var(--gold); }
+.hero-sub {
+  font-size: clamp(1rem, 2vw, 1.25rem); color: var(--text-muted);
+  max-width: 620px; margin: 0 auto 2.5rem; line-height: 1.6;
+  animation: fadeUp 0.8s ease 0.2s both;
+}
+.hero-cta-group { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; animation: fadeUp 0.8s ease 0.3s both; }
+.btn-primary {
+  padding: 0.9rem 2rem; border-radius: 999px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-glow));
+  color: #0A0A0F; font-weight: 600; font-size: 1rem; text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: inline-flex; align-items: center; gap: 0.5rem;
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(212,175,122,0.35); }
+.btn-ghost {
+  padding: 0.9rem 2rem; border-radius: 999px;
+  border: 1px solid var(--border2); color: var(--text); font-size: 1rem; text-decoration: none;
+  transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.5rem;
+}
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+
+.hero-badges { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-top: 3rem; animation: fadeUp 0.8s ease 0.4s both; }
+.hero-badge { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); letter-spacing: 0.1em; display: flex; align-items: center; gap: 0.4rem; }
+.hero-badge::before { content: '◆'; color: var(--gold); font-size: 0.6rem; }
+
+/* Mock dashboard preview */
+.hero-preview {
+  margin-top: 4rem; border-radius: 16px; overflow: hidden;
+  border: 1px solid var(--border2);
+  box-shadow: 0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(212,175,122,0.1);
+  background: var(--bg1); position: relative;
+  animation: fadeUp 1s ease 0.5s both;
+}
+.preview-bar { display: flex; gap: 0.5rem; padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--border); }
+.preview-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--bg2); }
+.preview-body { padding: 1.5rem; }
+.preview-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+.preview-kpi { text-align: left; }
+.preview-kpi-label { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.3rem; }
+.preview-kpi-val { font-family: var(--mono); font-size: 1.4rem; font-weight: 500; }
+@media (max-width: 640px) { .preview-kpis { grid-template-columns: repeat(2, 1fr); } }
+
+/* Sections */
+section { padding: 5rem 0; position: relative; }
+.section-label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--gold); text-align: center; margin-bottom: 1rem; }
+.section-title { font-family: var(--display); font-weight: 600; font-size: clamp(1.8rem, 4vw, 3rem); text-align: center; letter-spacing: -0.02em; margin-bottom: 1rem; }
+.section-sub { text-align: center; color: var(--text-muted); max-width: 560px; margin: 0 auto 3.5rem; }
+
+/* Features grid */
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+@media (max-width: 860px) { .features { grid-template-columns: 1fr; } }
+.feature {
+  padding: 2rem 1.6rem; border-radius: 14px;
+  background: var(--bg1); border: 1px solid var(--border);
+  transition: transform 0.3s, border-color 0.3s;
+}
+.feature:hover { transform: translateY(-4px); border-color: var(--border2); }
+.feature-icon { font-size: 1.8rem; margin-bottom: 1rem; display: block; }
+.feature h3 { font-family: var(--display); font-size: 1.25rem; font-weight: 500; margin-bottom: 0.6rem; }
+.feature p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
+.feature-tag { display: inline-block; margin-top: 0.8rem; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); padding: 0.2rem 0.6rem; border: 1px solid var(--border2); border-radius: 999px; }
+
+/* How it works */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; counter-reset: step; }
+@media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
+.step { position: relative; padding-top: 3.5rem; }
+.step::before {
+  counter-increment: step; content: counter(step);
+  position: absolute; top: 0; left: 0;
+  font-family: var(--display); font-size: 2.5rem; font-style: italic;
+  color: var(--gold); opacity: 0.35;
+}
+.step h3 { font-family: var(--display); font-size: 1.2rem; font-weight: 500; margin-bottom: 0.5rem; }
+.step p { color: var(--text-muted); font-size: 0.9rem; }
+
+/* Pricing */
+.pricing { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.9rem; }
+@media (max-width: 980px) { .pricing { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .pricing { grid-template-columns: 1fr; } }
+.price-card {
+  padding: 1.8rem 1.3rem; border-radius: 14px;
+  background: var(--bg1); border: 1px solid var(--border);
+  display: flex; flex-direction: column; transition: transform 0.3s, border-color 0.3s;
+}
+.price-card:hover { transform: translateY(-4px); }
+.price-card.featured { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(212,175,122,0.2), 0 20px 40px rgba(0,0,0,0.3); }
+.price-card.featured::before { content: 'POPULAR'; display: block; font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.15em; color: var(--gold); text-align: center; margin-bottom: 0.8rem; }
+.price-name { font-family: var(--display); font-size: 1.2rem; font-weight: 500; margin-bottom: 0.3rem; }
+.price-amount { font-family: var(--mono); font-size: 1.9rem; font-weight: 500; color: var(--gold); margin-bottom: 0.2rem; }
+.price-period { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 1.2rem; }
+.price-features { list-style: none; font-size: 0.78rem; color: var(--text-muted); flex: 1; }
+.price-features li { padding: 0.35rem 0; padding-left: 1.3rem; position: relative; }
+.price-features li::before { content: '✓'; position: absolute; left: 0; color: var(--mint); }
+.price-features li.off { color: var(--text-dim); }
+.price-features li.off::before { content: '·'; color: var(--text-dim); }
+
+/* FAQ */
+.faq { max-width: 760px; margin: 0 auto; }
+.faq-item { border-bottom: 1px solid var(--border); padding: 1.3rem 0; }
+.faq-q { font-family: var(--display); font-size: 1.1rem; font-weight: 500; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.faq-q::after { content: '+'; color: var(--gold); font-size: 1.4rem; transition: transform 0.3s; }
+.faq-item.open .faq-q::after { transform: rotate(45deg); }
+.faq-a { color: var(--text-muted); font-size: 0.9rem; max-height: 0; overflow: hidden; transition: max-height 0.3s, padding 0.3s; }
+.faq-item.open .faq-a { max-height: 300px; padding-top: 0.8rem; }
+
+/* CTA band */
+.cta-band { text-align: center; padding: 5rem 0; }
+.cta-band h2 { font-family: var(--display); font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 600; margin-bottom: 1rem; letter-spacing: -0.02em; }
+.cta-band p { color: var(--text-muted); margin-bottom: 2rem; }
+
+/* Footer */
+footer { border-top: 1px solid var(--border); padding: 3rem 0 2rem; }
+.footer-inner { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2rem; }
+.footer-col h4 { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.8rem; }
+.footer-col a { display: block; color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 0.25rem 0; transition: color 0.2s; }
+.footer-col a:hover { color: var(--gold); }
+.footer-disclaimer { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: 0.72rem; color: var(--text-dim); line-height: 1.6; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Reveal on scroll */
+.reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s, transform 0.7s; }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#F0D9A8"/><stop offset="55%" stop-color="#D4AF7A"/><stop offset="100%" stop-color="#A88556"/></linearGradient></defs>
+        <circle cx="50" cy="50" r="38" fill="none" stroke="url(#g)" stroke-width="1.2" opacity="0.45"/>
+        <g transform="translate(50,50)">
+          <path d="M -16 19 L -3 -19" stroke="url(#g)" stroke-width="3.4" fill="none" stroke-linecap="square"/>
+          <path d="M 3 -19 L 16 19" stroke="url(#g)" stroke-width="3.4" fill="none" stroke-linecap="square"/>
+          <line x1="-3.5" y1="-19" x2="3.5" y2="-19" stroke="url(#g)" stroke-width="3.4"/>
+          <line x1="-9" y1="3" x2="9" y2="3" stroke="url(#g)" stroke-width="2.2"/>
+        </g>
+      </svg>
+      <span class="brand-name">AURUM</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">Funcionalidades</a>
+      <a href="#how">Como funciona</a>
+      <a href="#pricing">Preços</a>
+      <a href="#faq">FAQ</a>
+      <a href="./index.html" class="nav-cta">Abrir App →</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="hero-eyebrow">DeFi · Refined · Para Portugal 🇵🇹</span>
+    <h1>O teu DeFi,<br><span class="gold-italic">finalmente claro</span> ao fisco.</h1>
+    <p class="hero-sub">Tracker fiscal cripto local-first e open source. FIFO automático, Anexo G/G1/E, regra dos 365 dias. Os teus dados nunca saem do teu browser — sem servidor, sem tracking, sem ads.</p>
+    <div class="hero-cta-group">
+      <a href="./index.html" class="btn-primary">Começar gratuitamente →</a>
+      <a href="#how" class="btn-ghost">Ver como funciona</a>
+    </div>
+    <div class="hero-badges">
+      <span class="hero-badge">Local-first</span>
+      <span class="hero-badge">Open source MIT</span>
+      <span class="hero-badge">Lei 24-D/2022</span>
+      <span class="hero-badge">Sem custódia</span>
+    </div>
+
+    <!-- Mock preview -->
+    <div class="hero-preview">
+      <div class="preview-bar">
+        <span class="preview-dot"></span><span class="preview-dot"></span><span class="preview-dot"></span>
+      </div>
+      <div class="preview-body">
+        <div class="preview-kpis">
+          <div class="preview-kpi"><div class="preview-kpi-label">Imposto estimado</div><div class="preview-kpi-val" style="color:#FF5C7A">€1.250</div></div>
+          <div class="preview-kpi"><div class="preview-kpi-label">Mais-valias YTD</div><div class="preview-kpi-val" style="color:#FF8C5A">€4.465</div></div>
+          <div class="preview-kpi"><div class="preview-kpi-label">Isento G1</div><div class="preview-kpi-val" style="color:#00E89E">€12.890</div></div>
+          <div class="preview-kpi"><div class="preview-kpi-label">Aproximam isenção</div><div class="preview-kpi-val" style="color:#D4AF7A">5</div></div>
+        </div>
+        <div style="display:flex;gap:1rem;align-items:center;padding:1rem;background:rgba(212,175,122,0.04);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted)">⚡ 3 lots imminentes · faltam &lt;90 dias para isenção total de IRS</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-label reveal">Porquê Aurum</div>
+    <h2 class="section-title reveal">Feito para a realidade fiscal portuguesa</h2>
+    <p class="section-sub reveal">Não é mais um portfolio tracker genérico. É a única ferramenta que entende a Lei 24-D/2022 e a regra dos 365 dias.</p>
+    <div class="features">
+      <div class="feature reveal">
+        <span class="feature-icon">⚖️</span>
+        <h3>FIFO automático PT</h3>
+        <p>Calcula mais-valias com FIFO por wallet, separando Anexo G (&lt;365d, 28%) de G1 (≥365d, isento declarativo). Permuta cripto↔cripto não conta como alienação.</p>
+        <span class="feature-tag">Lei 24-D/2022</span>
+      </div>
+      <div class="feature reveal">
+        <span class="feature-icon">🔒</span>
+        <h3>Local-first, sem custódia</h3>
+        <p>Os teus dados ficam no teu browser (IndexedDB). Sem servidor, sem conta, sem tracking. Tu controlas tudo — exporta backup quando quiseres.</p>
+        <span class="feature-tag">Privacidade total</span>
+      </div>
+      <div class="feature reveal">
+        <span class="feature-icon">⏳</span>
+        <h3>Regra dos 365 dias</h3>
+        <p>Vê exactamente quando cada lote fica isento. Buckets por urgência, alertas de lots a amadurecer, planeamento fiscal visual.</p>
+        <span class="feature-tag">Único no mercado</span>
+      </div>
+      <div class="feature reveal">
+        <span class="feature-icon">🌐</span>
+        <h3>DeFi multi-chain</h3>
+        <p>Indexação on-chain de Ethereum, Base, Arbitrum, Optimism e Bitcoin (xpub/zpub). Lending AAVE/Morpho, swaps, cashbacks, airdrops.</p>
+        <span class="feature-tag">EVM + BTC</span>
+      </div>
+      <div class="feature reveal">
+        <span class="feature-icon">🎯</span>
+        <h3>Tax Loss Harvesting</h3>
+        <p>Detecta posições com perdas não realizadas e calcula quanto poupas no imposto se as realizares antes de 31 de Dezembro.</p>
+        <span class="feature-tag">Optimização</span>
+      </div>
+      <div class="feature reveal">
+        <span class="feature-icon">📂</span>
+        <h3>Open source MIT</h3>
+        <p>Código 100% auditável no GitHub. Sem caixas negras nos cálculos fiscais. A comunidade verifica, melhora e confia.</p>
+        <span class="feature-tag">Transparente</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background:var(--bg1)">
+  <div class="wrap">
+    <div class="section-label reveal">Em 3 passos</div>
+    <h2 class="section-title reveal">Simples como devia ser</h2>
+    <p class="section-sub reveal">Sem registo, sem cartão de crédito. Adicionas uma wallet e em minutos tens o teu relatório fiscal.</p>
+    <div class="steps">
+      <div class="step reveal">
+        <h3>Adiciona a tua wallet</h3>
+        <p>Cola o endereço EVM ou xpub Bitcoin. Só leitura — nunca pedimos chaves privadas nem assinaturas.</p>
+      </div>
+      <div class="step reveal">
+        <h3>Indexamos o histórico</h3>
+        <p>Descarregamos toda a tua actividade on-chain desde o primeiro bloco e enriquecemos com preços históricos em EUR.</p>
+      </div>
+      <div class="step reveal">
+        <h3>Recebe o relatório</h3>
+        <p>Anexo G, G1 e E calculados automaticamente. Exporta CSV/HTML para o teu contabilista ou para o IRS.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="section-label reveal">Preços</div>
+    <h2 class="section-title reveal">Paga uma vez, por ano fiscal</h2>
+    <p class="section-sub reveal">Sem subscrições automáticas. Compras o ano fiscal que precisas. Vês tudo de graça — só pagas para descarregar o relatório.</p>
+    <div class="pricing">
+      <div class="price-card reveal">
+        <div class="price-name">Free</div>
+        <div class="price-amount">€0</div>
+        <div class="price-period">para sempre</div>
+        <ul class="price-features">
+          <li>1 wallet</li>
+          <li>Ver tudo na app</li>
+          <li>500 transações</li>
+          <li class="off">Download de relatório</li>
+          <li class="off">Tax loss harvesting</li>
+        </ul>
+      </div>
+      <div class="price-card reveal">
+        <div class="price-name">Starter</div>
+        <div class="price-amount">€25</div>
+        <div class="price-period">por ano fiscal</div>
+        <ul class="price-features">
+          <li>1 wallet</li>
+          <li>1 000 transações</li>
+          <li>Relatório PDF/CSV</li>
+          <li>Anexo G/G1/E</li>
+          <li class="off">Tax loss harvesting</li>
+        </ul>
+      </div>
+      <div class="price-card featured reveal">
+        <div class="price-name">Essential</div>
+        <div class="price-amount">€49</div>
+        <div class="price-period">por ano fiscal</div>
+        <ul class="price-features">
+          <li>2 wallets</li>
+          <li>2 000 transações</li>
+          <li>Tax loss harvesting</li>
+          <li>Audit trail completo</li>
+          <li>Relatório PDF/CSV</li>
+        </ul>
+      </div>
+      <div class="price-card reveal">
+        <div class="price-name">Pro</div>
+        <div class="price-amount">€99</div>
+        <div class="price-period">por ano fiscal</div>
+        <ul class="price-features">
+          <li>5 wallets</li>
+          <li>10 000 transações</li>
+          <li>DeFi deep view</li>
+          <li>Convite ao contabilista</li>
+          <li>Tudo do Essential</li>
+        </ul>
+      </div>
+      <div class="price-card reveal">
+        <div class="price-name">Trader</div>
+        <div class="price-amount">€199</div>
+        <div class="price-period">por ano fiscal</div>
+        <ul class="price-features">
+          <li>Wallets ilimitadas</li>
+          <li>Transações ilimitadas</li>
+          <li>Voucher TOC 1h</li>
+          <li>Solana (em breve)</li>
+          <li>Tudo do Pro</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="background:var(--bg1)">
+  <div class="wrap">
+    <div class="section-label reveal">Perguntas frequentes</div>
+    <h2 class="section-title reveal">Antes de começares</h2>
+    <div class="faq">
+      <div class="faq-item reveal">
+        <div class="faq-q">Os meus dados estão seguros?</div>
+        <div class="faq-a">Sim. O Aurum é local-first: todos os teus dados ficam guardados no teu browser (IndexedDB). Nunca enviamos nada para servidores. Não temos conta, não temos base de dados, não fazemos tracking. Podes verificar no código open source.</div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q">Precisam da minha chave privada?</div>
+        <div class="faq-a">Nunca. O Aurum só lê dados públicos on-chain a partir do teu endereço (ou xpub para Bitcoin). Não pedimos chaves privadas, seed phrases nem assinaturas. Não conseguimos mover os teus fundos.</div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q">Os cálculos fiscais são oficiais?</div>
+        <div class="faq-a">O Aurum segue a interpretação da Lei 24-D/2022 e do OE/2023. É uma ferramenta informativa — não substitui aconselhamento profissional. Recomendamos sempre validar com um TOC certificado antes de submeter o IRS.</div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q">Que blockchains suportam?</div>
+        <div class="faq-a">Atualmente: Ethereum, Base, Arbitrum, Optimism (via Alchemy) e Bitcoin (endereço único ou xpub/ypub/zpub via Mempool.space). Solana está no roadmap.</div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q">Como funciona a regra dos 365 dias?</div>
+        <div class="faq-a">Em Portugal, mais-valias de cripto detidas há mais de 365 dias são isentas de IRS (Anexo G1, declarativo). Abaixo de 365 dias são tributadas a 28% (Anexo G). O Aurum mostra-te exactamente quando cada lote atinge a isenção.</div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q">Porque pago por ano fiscal e não subscrição?</div>
+        <div class="faq-a">Porque faz sentido. Precisas do relatório uma vez por ano para o IRS. Não há renovação automática — compras o ano que precisas, quando precisas. Sem surpresas no cartão.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="wrap">
+    <h2 class="reveal">Pronto para clarificar o teu DeFi?</h2>
+    <p class="reveal">Começa gratuitamente. Sem registo, sem cartão. Os teus dados ficam contigo.</p>
+    <a href="./index.html" class="btn-primary reveal">Abrir Aurum →</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-inner">
+      <div class="footer-col" style="max-width:280px">
+        <div class="brand" style="margin-bottom:1rem">
+          <span class="brand-name" style="font-size:1.1rem">AURUM</span>
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-muted);line-height:1.6">O teu DeFi, refinado. Tracker fiscal cripto local-first para Portugal.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Produto</h4>
+        <a href="#features">Funcionalidades</a>
+        <a href="#pricing">Preços</a>
+        <a href="#faq">FAQ</a>
+        <a href="./index.html">Abrir App</a>
+      </div>
+      <div class="footer-col">
+        <h4>Comunidade</h4>
+        <a href="https://github.com/danyundercrypto/aurum" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://twitter.com/DanyunderCrypto" target="_blank" rel="noopener">Twitter / X</a>
+        <a href="https://github.com/danyundercrypto/aurum/issues/new" target="_blank" rel="noopener">Reportar Bug</a>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <a href="https://github.com/danyundercrypto/aurum/blob/main/LICENSE" target="_blank" rel="noopener">Licença MIT</a>
+        <a href="#faq">Privacidade</a>
+      </div>
+    </div>
+    <div class="footer-disclaimer">
+      <strong>Disclaimer fiscal.</strong> O Aurum é uma ferramenta informativa e não constitui aconselhamento fiscal. Os cálculos seguem a interpretação dos autores da Lei 24-D/2022 e OE/2023, mas devem ser validados por um TOC certificado antes de submeter o IRS. Os autores não se responsabilizam por divergências com a Autoridade Tributária. Cripto-ativos são voláteis e o seu valor pode descer. © 2026 Aurum · Zatami · Open source MIT.
+    </div>
+  </div>
+</footer>
+
+<script>
+// FAQ accordion
+document.querySelectorAll('.faq-item').forEach(item => {
+  item.querySelector('.faq-q').addEventListener('click', () => {
+    item.classList.toggle('open');
+  });
+});
+
+// Reveal on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach((el, i) => {
+  el.style.transitionDelay = (i % 6 * 0.05) + 's';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>
