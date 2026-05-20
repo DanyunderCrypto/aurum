@@ -2594,15 +2594,15 @@ body.stealth-mode .stealth-badge {
   </div>
   </div>
   <div class="nav-tabs" id="navTabs">
-    <button class="nav-tab active" onclick="showTab('dashboard')">Dashboard</button>
-    <button class="nav-tab" onclick="showTab('protocols')">Posições</button>
-    <button class="nav-tab" onclick="showTab('cards')">Cartões</button>
-    <button class="nav-tab" onclick="showTab('history')">Histórico</button>
-    <button class="nav-tab" onclick="showTab('strategy')">365 Dias</button>
-    <button class="nav-tab" onclick="showTab('simulator')">Simulador</button>
-    <button class="nav-tab" onclick="showTab('wallets')">Wallets</button>
-    <button class="nav-tab" onclick="showTab('fiscal')">Fiscal PT</button>
-    <button class="nav-tab" onclick="showTab('settings')">Config</button>
+    <button class="nav-tab active" data-i18n="tab.dashboard" onclick="showTab('dashboard')">Dashboard</button>
+    <button class="nav-tab" data-i18n="tab.positions" onclick="showTab('protocols')">Posições</button>
+    <button class="nav-tab" data-i18n="tab.cards" onclick="showTab('cards')">Cartões</button>
+    <button class="nav-tab" data-i18n="tab.history" onclick="showTab('history')">Histórico</button>
+    <button class="nav-tab" data-i18n="tab.strategy" onclick="showTab('strategy')">365 Dias</button>
+    <button class="nav-tab" data-i18n="tab.simulator" onclick="showTab('simulator')">Simulador</button>
+    <button class="nav-tab" data-i18n="tab.wallets" onclick="showTab('wallets')">Wallets</button>
+    <button class="nav-tab" data-i18n="tab.fiscal" onclick="showTab('fiscal')">Fiscal PT</button>
+    <button class="nav-tab" data-i18n="tab.config" onclick="showTab('settings')">Config</button>
   </div>
   <div class="topbar-right">
     <div class="hf-pill none" id="hfPillTop">HF —</div>
@@ -2840,6 +2840,384 @@ body.stealth-mode .stealth-badge {
 // ║  SECTION 1 — ENVIRONMENT & UTILITIES                                    ║
 // ║  Constants, helpers, utility functions                                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// ════════════════════════════════════════════════════════
+// Sprint 8.4.5: i18n PT/EN — translation infrastructure
+// ════════════════════════════════════════════════════════
+const I18N = {
+  pt: {
+    // Tabs
+    'tab.dashboard': 'Dashboard',
+    'tab.positions': 'Posições',
+    'tab.cards': 'Cartões',
+    'tab.history': 'Histórico',
+    'tab.strategy': '365 Dias',
+    'tab.simulator': 'Simulador',
+    'tab.wallets': 'Wallets',
+    'tab.fiscal': 'Fiscal PT',
+    'tab.config': 'Config',
+    'tab.about': 'Sobre',
+    // Common buttons
+    'btn.save': 'Guardar',
+    'btn.cancel': 'Cancelar',
+    'btn.close': 'Fechar',
+    'btn.delete': 'Apagar',
+    'btn.edit': 'Editar',
+    'btn.add': 'Adicionar',
+    'btn.export': 'Exportar',
+    'btn.import': 'Importar',
+    'btn.confirm': 'Confirmar',
+    'btn.back': 'Voltar',
+    'btn.continue': 'Continuar',
+    'btn.refresh': 'Actualizar',
+    'btn.search': 'Procurar',
+    'btn.filter': 'Filtrar',
+    'btn.clear': 'Limpar',
+    'btn.apply': 'Aplicar',
+    'btn.reset': 'Repor',
+    'btn.viewAll': 'Ver todos',
+    'btn.viewMore': 'Ver mais',
+    'btn.viewLess': 'Ver menos',
+    'btn.tryAgain': 'Tentar novamente',
+    'btn.learnMore': 'Saber mais',
+    // Dashboard KPIs (fiscal hero)
+    'kpi.taxEstimate': 'Imposto estimado',
+    'kpi.gainsYTD': 'Mais-valias YTD',
+    'kpi.exemptG1': 'Isento (G1) YTD',
+    'kpi.approachingExempt': 'Aproximam isenção',
+    'kpi.taxOn28pct': '28% sobre Anexo G positivo',
+    'kpi.declarative': 'declarativo',
+    'kpi.dispositions': 'alien.',
+    // Net worth hero
+    'hero.netPosition': 'Net DeFi Position',
+    'hero.collateral': 'Colateral',
+    'hero.debt': 'Dívida',
+    'hero.activePositions': 'posições activas',
+    'hero.activePosition': 'posição activa',
+    // Sections
+    'section.upcomingExemptions': 'Próximas Isenções (365d)',
+    'section.recentTransactions': 'Últimas Transações',
+    'section.allocationByAsset': '📊 Allocation por Asset',
+    'section.allocationByChain': '⛓ Allocation por Chain',
+    'section.taxLossHarvest': '🎯 Optimização Fiscal · Tax Loss Harvesting',
+    'section.activePositions': 'Posições Activas — Todos os Protocolos',
+    'section.totalAggregated': 'Total agregado',
+    // Health Factor / Liquidation
+    'hf.healthFactor': 'Health Factor',
+    'hf.ltvGlobal': 'LTV Global',
+    'hf.critical': 'crítico',
+    'hf.comfortable': 'margem confortável',
+    'hf.liquidationRisk': 'LIQUIDAÇÃO EM RISCO',
+    'hf.addCollateralOrReduce': 'Adiciona colateral ou reduz dívida imediatamente.',
+    // Lots
+    'lot.totalLots': 'Lotes Total',
+    'lot.exemptLots': 'Lotes Isentos',
+    'lot.pendingLots': 'Lotes Pendentes',
+    'lot.totalRegistered': 'Total Registado',
+    'lot.exemptFromTax': 'livres de imposto',
+    'lot.stillMaturing': 'ainda em maturação',
+    'lot.exempt': 'Isento',
+    'lot.exemptG1': 'Isento (G1)',
+    'lot.daysToExempt': 'faltam {n} dias',
+    'lot.exemptIn': 'Isento em',
+    'lot.exemptSince': 'Isento desde',
+    'lot.acquired': 'Adquirido',
+    'lot.acquiredAt': 'Adquirido {date}',
+    'lot.willBeExemptAt': 'Será isento em',
+    'lot.lotsAuto': 'lots auto-detectados',
+    'lot.lotsManual': 'lots manuais',
+    'lot.addManualLot': '+ Lote Manual',
+    'lot.viewDay': '📦 Dia',
+    'lot.viewMonth': '📅 Mês',
+    'lot.viewDetail': '🔬 Detalhe',
+    'lot.viewBuckets': '📊 Buckets',
+    'lot.viewList': '📋 Lista',
+    'lot.viewMempool': '🧱 Mempool',
+    'lot.bucketImminent': '⚡ Imminentes',
+    'lot.bucketMaturing': '🌱 A Amadurecer',
+    'lot.bucketFresh': '🆕 Recentes',
+    'lot.bucketExempt': '✓ Isentos',
+    'lot.imminentSub': '<90 dias para isenção',
+    'lot.maturingSub': '90-365 dias',
+    'lot.freshSub': 'adquiridos recentemente',
+    'lot.exemptSub': '≥365d · Anexo G1',
+    // Toolbar pills
+    'pill.all': 'Todos',
+    'pill.exempt': 'Isentos',
+    'pill.urgent': 'Urgentes',
+    'pill.maturing': 'A amadurecer',
+    'pill.aging': 'A envelhecer',
+    'pill.fresh': 'Recentes',
+    'pill.sortBy': 'Ordenar por',
+    'pill.urgency': 'Urgência',
+    'pill.value': 'Valor',
+    'pill.date': 'Data',
+    // Fiscal panel
+    'fiscal.title': 'Relatório Fiscal — Portugal',
+    'fiscal.fiscalYear': 'Ano fiscal',
+    'fiscal.exportCSV': '⬇ Exportar CSV',
+    'fiscal.exportReport': '⬇ Relatório Completo (HTML)',
+    'fiscal.engineV2': '🧮 Engine Fiscal v2 (Sprint 8 · BETA)',
+    'fiscal.lotsApproaching': 'lot(s) prestes a tornar-se isentos (G1)',
+    'fiscal.inNextDays': 'nos próximos {n} dias',
+    'fiscal.warningsFromEngine': 'aviso(s) do engine',
+    'fiscal.dispositionsIn': 'Alienações em {year}',
+    'fiscal.rewardsIn': 'Rendimentos (Anexo E) em {year}',
+    // Counterparty / direction
+    'dir.in': 'Entrada',
+    'dir.out': 'Saída',
+    'dir.self': 'Self',
+    // Tx types
+    'type.receive': 'Recebido',
+    'type.send': 'Enviado',
+    'type.swap': 'Swap',
+    'type.self_transfer': 'Self',
+    'type.unknown': '?',
+    'type.lending_supply': 'Supply',
+    'type.lending_withdraw': 'Withdraw',
+    'type.stake': 'Stake',
+    'type.unstake': 'Unstake',
+    'type.bridge': 'Bridge',
+    'type.cex_deposit': 'CEX Deposit',
+    'type.cex_withdrawal': 'CEX Withdrawal',
+    'type.wrap': 'Wrap',
+    'type.unwrap': 'Unwrap',
+    'type.card_funding': 'Card',
+    'type.cashback': 'Cashback',
+    'type.reward': 'Reward',
+    'type.airdrop': 'Airdrop',
+    'type.staking_reward': 'Staking',
+    // Common notices
+    'notice.waitingData': 'Painel Fiscal aguarda dados',
+    'notice.noWalletActive': 'Selecciona uma wallet activa.',
+    'notice.noEventsIndexed': 'Sem transactions indexadas para esta wallet.',
+    'notice.runPriceOracle': 'Corre o Price Oracle no tab Histórico.',
+    'notice.goToHistory': '→ Ir ao Histórico',
+    'notice.goToFiscal': '→ Ir ao Fiscal PT',
+    // Bulk actions
+    'bulk.selected': 'selecionados',
+    'bulk.selectedOne': 'selecionado',
+    'bulk.reclassifyAll': '✎ Reclassificar tudo',
+    'bulk.markSpam': '⊘ Marcar spam',
+    'bulk.unmarkSpam': '✓ Desmarcar spam',
+    'bulk.restoreOriginal': '↺ Repor original',
+    // Toast common
+    'toast.saved': 'Guardado',
+    'toast.error': 'Erro',
+  },
+  en: {
+    // Tabs
+    'tab.dashboard': 'Dashboard',
+    'tab.positions': 'Positions',
+    'tab.cards': 'Cards',
+    'tab.history': 'History',
+    'tab.strategy': '365 Days',
+    'tab.simulator': 'Simulator',
+    'tab.wallets': 'Wallets',
+    'tab.fiscal': 'Tax PT',
+    'tab.config': 'Settings',
+    'tab.about': 'About',
+    // Common buttons
+    'btn.save': 'Save',
+    'btn.cancel': 'Cancel',
+    'btn.close': 'Close',
+    'btn.delete': 'Delete',
+    'btn.edit': 'Edit',
+    'btn.add': 'Add',
+    'btn.export': 'Export',
+    'btn.import': 'Import',
+    'btn.confirm': 'Confirm',
+    'btn.back': 'Back',
+    'btn.continue': 'Continue',
+    'btn.refresh': 'Refresh',
+    'btn.search': 'Search',
+    'btn.filter': 'Filter',
+    'btn.clear': 'Clear',
+    'btn.apply': 'Apply',
+    'btn.reset': 'Reset',
+    'btn.viewAll': 'View all',
+    'btn.viewMore': 'View more',
+    'btn.viewLess': 'View less',
+    'btn.tryAgain': 'Try again',
+    'btn.learnMore': 'Learn more',
+    // Dashboard KPIs (fiscal hero)
+    'kpi.taxEstimate': 'Estimated tax',
+    'kpi.gainsYTD': 'Capital gains YTD',
+    'kpi.exemptG1': 'Exempt (G1) YTD',
+    'kpi.approachingExempt': 'Approaching exemption',
+    'kpi.taxOn28pct': '28% on positive Annex G',
+    'kpi.declarative': 'declarative',
+    'kpi.dispositions': 'disp.',
+    // Net worth hero
+    'hero.netPosition': 'Net DeFi Position',
+    'hero.collateral': 'Collateral',
+    'hero.debt': 'Debt',
+    'hero.activePositions': 'active positions',
+    'hero.activePosition': 'active position',
+    // Sections
+    'section.upcomingExemptions': 'Upcoming Exemptions (365d)',
+    'section.recentTransactions': 'Recent Transactions',
+    'section.allocationByAsset': '📊 Allocation by Asset',
+    'section.allocationByChain': '⛓ Allocation by Chain',
+    'section.taxLossHarvest': '🎯 Tax Optimization · Tax Loss Harvesting',
+    'section.activePositions': 'Active Positions — All Protocols',
+    'section.totalAggregated': 'Total aggregated',
+    // Health Factor
+    'hf.healthFactor': 'Health Factor',
+    'hf.ltvGlobal': 'Global LTV',
+    'hf.critical': 'critical',
+    'hf.comfortable': 'comfortable margin',
+    'hf.liquidationRisk': 'LIQUIDATION AT RISK',
+    'hf.addCollateralOrReduce': 'Add collateral or reduce debt immediately.',
+    // Lots
+    'lot.totalLots': 'Total Lots',
+    'lot.exemptLots': 'Exempt Lots',
+    'lot.pendingLots': 'Pending Lots',
+    'lot.totalRegistered': 'Total Registered',
+    'lot.exemptFromTax': 'tax-free',
+    'lot.stillMaturing': 'still maturing',
+    'lot.exempt': 'Exempt',
+    'lot.exemptG1': 'Exempt (G1)',
+    'lot.daysToExempt': '{n} days remaining',
+    'lot.exemptIn': 'Exempt on',
+    'lot.exemptSince': 'Exempt since',
+    'lot.acquired': 'Acquired',
+    'lot.acquiredAt': 'Acquired {date}',
+    'lot.willBeExemptAt': 'Will be exempt on',
+    'lot.lotsAuto': 'auto-detected lots',
+    'lot.lotsManual': 'manual lots',
+    'lot.addManualLot': '+ Manual Lot',
+    'lot.viewDay': '📦 Day',
+    'lot.viewMonth': '📅 Month',
+    'lot.viewDetail': '🔬 Detail',
+    'lot.viewBuckets': '📊 Buckets',
+    'lot.viewList': '📋 List',
+    'lot.viewMempool': '🧱 Mempool',
+    'lot.bucketImminent': '⚡ Imminent',
+    'lot.bucketMaturing': '🌱 Maturing',
+    'lot.bucketFresh': '🆕 Fresh',
+    'lot.bucketExempt': '✓ Exempt',
+    'lot.imminentSub': '<90 days to exemption',
+    'lot.maturingSub': '90-365 days',
+    'lot.freshSub': 'recently acquired',
+    'lot.exemptSub': '≥365d · Annex G1',
+    // Toolbar pills
+    'pill.all': 'All',
+    'pill.exempt': 'Exempt',
+    'pill.urgent': 'Urgent',
+    'pill.maturing': 'Maturing',
+    'pill.aging': 'Aging',
+    'pill.fresh': 'Fresh',
+    'pill.sortBy': 'Sort by',
+    'pill.urgency': 'Urgency',
+    'pill.value': 'Value',
+    'pill.date': 'Date',
+    // Fiscal panel
+    'fiscal.title': 'Tax Report — Portugal',
+    'fiscal.fiscalYear': 'Tax year',
+    'fiscal.exportCSV': '⬇ Export CSV',
+    'fiscal.exportReport': '⬇ Full Report (HTML)',
+    'fiscal.engineV2': '🧮 Tax Engine v2 (Sprint 8 · BETA)',
+    'fiscal.lotsApproaching': 'lot(s) about to become exempt (G1)',
+    'fiscal.inNextDays': 'in the next {n} days',
+    'fiscal.warningsFromEngine': 'warning(s) from engine',
+    'fiscal.dispositionsIn': 'Dispositions in {year}',
+    'fiscal.rewardsIn': 'Income (Annex E) in {year}',
+    // Counterparty / direction
+    'dir.in': 'In',
+    'dir.out': 'Out',
+    'dir.self': 'Self',
+    // Tx types
+    'type.receive': 'Received',
+    'type.send': 'Sent',
+    'type.swap': 'Swap',
+    'type.self_transfer': 'Self',
+    'type.unknown': '?',
+    'type.lending_supply': 'Supply',
+    'type.lending_withdraw': 'Withdraw',
+    'type.stake': 'Stake',
+    'type.unstake': 'Unstake',
+    'type.bridge': 'Bridge',
+    'type.cex_deposit': 'CEX Deposit',
+    'type.cex_withdrawal': 'CEX Withdrawal',
+    'type.wrap': 'Wrap',
+    'type.unwrap': 'Unwrap',
+    'type.card_funding': 'Card',
+    'type.cashback': 'Cashback',
+    'type.reward': 'Reward',
+    'type.airdrop': 'Airdrop',
+    'type.staking_reward': 'Staking',
+    // Common notices
+    'notice.waitingData': 'Tax panel awaiting data',
+    'notice.noWalletActive': 'Select an active wallet.',
+    'notice.noEventsIndexed': 'No transactions indexed for this wallet.',
+    'notice.runPriceOracle': 'Run the Price Oracle in the History tab.',
+    'notice.goToHistory': '→ Go to History',
+    'notice.goToFiscal': '→ Go to Tax PT',
+    // Bulk actions
+    'bulk.selected': 'selected',
+    'bulk.selectedOne': 'selected',
+    'bulk.reclassifyAll': '✎ Reclassify all',
+    'bulk.markSpam': '⊘ Mark spam',
+    'bulk.unmarkSpam': '✓ Unmark spam',
+    'bulk.restoreOriginal': '↺ Restore original',
+    // Toast common
+    'toast.saved': 'Saved',
+    'toast.error': 'Error',
+  },
+};
+
+// Translation function. Falls back to PT, then to the key itself.
+// Supports placeholders: t('lot.daysToExempt', {n: 42}) → 'faltam 42 dias'
+function t(key, vars) {
+  const lang = (state && state.lang) || 'pt';
+  const dict = I18N[lang] || I18N.pt;
+  let str = dict[key];
+  if (str === undefined) str = I18N.pt[key];
+  if (str === undefined) return key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      str = str.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
+    }
+  }
+  return str;
+}
+window.t = t;
+
+function setAppLanguage(lang) {
+  if (!I18N[lang]) return;
+  state.lang = lang;
+  // Persist as user preference (state-level, not per-wallet)
+  saveState();
+  document.documentElement.lang = lang;
+  applyStaticI18n();
+  render();
+  // Re-render top-level wallet button labels too
+  if (typeof updateWalletBtn === 'function') {
+    const w = activeWallet();
+    if (w) updateWalletBtn(w);
+  }
+  toast(lang === 'pt' ? '🇵🇹 Idioma alterado para Português' : '🇬🇧 Language set to English', 'success');
+}
+window.setAppLanguage = setAppLanguage;
+
+// Apply translations to elements with data-i18n attribute (for static HTML like nav tabs)
+function applyStaticI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (key) el.textContent = t(key);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    if (key) el.title = t(key);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (key) el.placeholder = t(key);
+  });
+}
+window.applyStaticI18n = applyStaticI18n;
+
+
 const CHAINS = {
   eth:      { name:'Ethereum',  id:1,      color:'#627EEA', rpcs:['https://cloudflare-eth.com','https://ethereum.publicnode.com','https://rpc.ankr.com/eth'], explorer:'https://etherscan.io',          explorerApi:'https://api.etherscan.io/api',          aavePool:'0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2' },
   base:     { name:'Base',      id:8453,   color:'#0052FF', rpcs:['https://mainnet.base.org','https://base.publicnode.com','https://base.llamarpc.com'],    explorer:'https://basescan.org',           explorerApi:'https://api.basescan.org/api',          aavePool:'0xA238Dd80C259a72e81d7e4664a9801593F98d1c5' },
@@ -6775,6 +7153,7 @@ function afterRender() {
   if (currentTab === 'dashboard') startInterestTicker();
   else stopInterestTicker();
   applyStealthMode();
+  if (typeof applyStaticI18n === 'function') applyStaticI18n();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -6985,31 +7364,31 @@ function renderDashboardFiscalHero(w) {
     <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:linear-gradient(135deg,rgba(212,175,122,0.06),rgba(212,175,122,0.01));border:1px solid rgba(212,175,122,0.25);border-radius:var(--radius)">
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Imposto estimado · ${currentYear}</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.taxEstimate')} · ${currentYear}</div>
         <div class="${taxColor}" style="font-family:var(--mono);font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">€${fmt(yr.taxEstimateEUR)}</div>
-        <div style="font-size:0.72rem;color:var(--text-muted)">28% sobre Anexo G positivo</div>
+        <div style="font-size:0.72rem;color:var(--text-muted)">${t('kpi.taxOn28pct')}</div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Mais-valias YTD</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.gainsYTD')}</div>
         <div class="${gainColor}" style="font-family:var(--mono);font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">€${fmt(yr.anexoG.gain)}</div>
-        <div style="font-size:0.72rem;color:var(--text-muted)">Anexo G · &lt;365d · ${yr.anexoG.count} alien.</div>
+        <div style="font-size:0.72rem;color:var(--text-muted)">${(state.lang||'pt')==='en'?'Annex G':'Anexo G'} · &lt;365d · ${yr.anexoG.count} ${t('kpi.dispositions')}</div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Isento (G1) YTD</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.exemptG1')}</div>
         <div class="sv-green" style="font-family:var(--mono);font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">€${fmt(yr.anexoG1.gain)}</div>
-        <div style="font-size:0.72rem;color:var(--text-muted)">${yr.anexoG1.count} alien. · declarativo</div>
+        <div style="font-size:0.72rem;color:var(--text-muted)">${yr.anexoG1.count} ${t('kpi.dispositions')} · ${t('kpi.declarative')}</div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
-        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Aproximam isenção</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.approachingExempt')}</div>
         <div class="sv-gold" style="font-family:var(--mono);font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">${approaching.length}</div>
         <div style="font-size:0.72rem;color:var(--text-muted)">lots · €${fmt(approachingValue)} basis</div>
       </div>
 
       <div style="display:flex;align-items:center;justify-content:flex-end;grid-column:1 / -1;margin-top:0.3rem">
-        <button class="btn btn-outline btn-sm" onclick="showTab('fiscal')" style="font-size:0.72rem">→ Detalhe fiscal completo</button>
+        <button class="btn btn-outline btn-sm" onclick="showTab('fiscal')" style="font-size:0.72rem">${(state.lang||'pt')==='en'?'→ Full tax details':'→ Detalhe fiscal completo'}</button>
       </div>
     </div>
   `;
@@ -7216,7 +7595,7 @@ function renderPortfolioCharts(w) {
     <div class="two-col" style="margin-top:1.5rem">
       <div class="panel">
         <div class="panel-head">
-          <span class="panel-title">📊 Allocation por Asset</span>
+          <span class="panel-title">${t('section.allocationByAsset')}</span>
           <span style="font-size:0.7rem;color:var(--text-muted)">Top ${top8.length}${otherSum > 0 ? ' + outros' : ''} · €${fmt(totalPortfolio)}</span>
         </div>
         <div class="panel-body">
@@ -7225,7 +7604,7 @@ function renderPortfolioCharts(w) {
       </div>
       <div class="panel">
         <div class="panel-head">
-          <span class="panel-title">⛓ Allocation por Chain</span>
+          <span class="panel-title">${t('section.allocationByChain')}</span>
           <span style="font-size:0.7rem;color:var(--text-muted)">${sortedChains.length} chain${sortedChains.length>1?'s':''}</span>
         </div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:0.6rem">
@@ -7375,7 +7754,7 @@ function renderDashboard(w) {
     <!-- HERO BLOCK -->
     <div class="hero-block">
       <div class="hero-main">
-        <div class="hero-label">Net DeFi Position</div>
+        <div class="hero-label">${t('hero.netPosition')}</div>
         <div class="hero-value">
           <span class="currency-symbol">$</span>${fmt(netWorth, 2)}
         </div>
@@ -7383,15 +7762,15 @@ function renderDashboard(w) {
       </div>
       <div class="hero-side">
         <div class="hero-mini-stat">
-          <div class="hero-mini-label">Colateral</div>
+          <div class="hero-mini-label">${t('hero.collateral')}</div>
           <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalCol, 2)}</div>
           <div class="hero-mini-sub">≈ €${fmt(totalCol*live.eurRate)}</div>
         </div>
         <div class="hero-mini-divider"></div>
         <div class="hero-mini-stat">
-          <div class="hero-mini-label">Dívida</div>
+          <div class="hero-mini-label">${t('hero.debt')}</div>
           <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalDebt, 2)}</div>
-          <div class="hero-mini-sub">${protoEntries.length} ${protoEntries.length===1?'posição activa':'posições activas'}</div>
+          <div class="hero-mini-sub">${protoEntries.length} ${protoEntries.length===1?t('hero.activePosition'):t('hero.activePositions')}</div>
         </div>
       </div>
     </div>
@@ -7439,11 +7818,11 @@ function renderDashboard(w) {
     <!-- UPCOMING + RECENT (single column on mobile, two on desktop) -->
     <div class="two-col" style="margin-top:1.5rem">
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">Próximas Isenções (365d)</span></div>
+        <div class="panel-head"><span class="panel-title">${t('section.upcomingExemptions')}</span></div>
         <div class="panel-body">${renderUpcomingExemptions(w)}</div>
       </div>
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">Últimas Transações</span><span class="loader" id="histLoader" style="display:none"><div class="ldot"></div><div class="ldot"></div><div class="ldot"></div></span></div>
+        <div class="panel-head"><span class="panel-title">${t('section.recentTransactions')}</span><span class="loader" id="histLoader" style="display:none"><div class="ldot"></div><div class="ldot"></div><div class="ldot"></div></span></div>
         <div class="panel-body no-pad"><div class="table-wrap">${renderRecentHistory()}</div></div>
       </div>
     </div>
@@ -8842,31 +9221,33 @@ function renderStrategy(w) {
 
   return `
     <div class="section-row">
-      <div class="section-label">Estratégia Fiscal 365 Dias — FIFO Portugal</div>
+      <div class="section-label">${(state.lang||'pt')==='en'?'365-Day Fiscal Strategy — FIFO Portugal':'Estratégia Fiscal 365 Dias — FIFO Portugal'}</div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
         <div style="display:inline-flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:0.7rem">
-          <button class="btn-granularity ${granularity==='day'?'active':''}" onclick="state.lotGranularity='day';saveState();render()" title="Agrupa lots do mesmo dia (HMRC standard)">📦 Dia</button>
-          <button class="btn-granularity ${granularity==='month'?'active':''}" onclick="state.lotGranularity='month';saveState();render()" title="Agrupa lots do mesmo mês (ideal para wallets com cashback diário)">📅 Mês</button>
-          <button class="btn-granularity ${granularity==='detail'?'active':''}" onclick="state.lotGranularity='detail';saveState();render()" title="Mostra cada transaction (audit mode)">🔬 Detalhe</button>
+          <button class="btn-granularity ${granularity==='day'?'active':''}" onclick="state.lotGranularity='day';saveState();render()" title="${(state.lang||'pt')==='en'?'Group same-day lots (HMRC standard)':'Agrupa lots do mesmo dia (HMRC standard)'}">${t('lot.viewDay')}</button>
+          <button class="btn-granularity ${granularity==='month'?'active':''}" onclick="state.lotGranularity='month';saveState();render()" title="${(state.lang||'pt')==='en'?'Group same-month lots (ideal for daily cashback)':'Agrupa lots do mesmo mês (ideal para wallets com cashback diário)'}">${t('lot.viewMonth')}</button>
+          <button class="btn-granularity ${granularity==='detail'?'active':''}" onclick="state.lotGranularity='detail';saveState();render()" title="${(state.lang||'pt')==='en'?'Show each transaction (audit mode)':'Mostra cada transaction (audit mode)'}">${t('lot.viewDetail')}</button>
         </div>
-        <button class="btn btn-gold btn-sm" onclick="openModal('modalCollateral');document.getElementById('col_dep').value=new Date().toISOString().split('T')[0];renderLotSuggestions()">+ Lote Manual</button>
+        <button class="btn btn-gold btn-sm" onclick="openModal('modalCollateral');document.getElementById('col_dep').value=new Date().toISOString().split('T')[0];renderLotSuggestions()">${t('lot.addManualLot')}</button>
       </div>
     </div>
 
     <div class="alert alert-info" style="margin-bottom:1.3rem">
       <span>⬡</span>
       <div>
-        <strong>Estratégia:</strong> Após 365 dias de holding, a mais-valia fica isenta de IRS (Anexo G1, declarativo). O FIFO garante que o lote mais antigo é "consumido" primeiro ao alienar.
-        ${autoCount > 0 ? `<br><span style="color:var(--gold)">✓ ${autoCount} lots auto-detectados</span> dos eventos on-chain indexados.${manualCount > 0 ? ` + ${manualCount} lots manuais.` : ''}` : '<br><span style="color:var(--text-muted)">Adiciona lots manualmente ou indexa transactions no Histórico para detecção automática.</span>'}
-        ${skippedNegative > 0 ? `<br><span style="color:var(--text-muted);font-size:0.78rem">ℹ ${skippedNegative} lots ocultados (debt tokens de protocolos como AAVE — não relevantes fiscalmente).</span>` : ''}
+        ${(state.lang||'pt')==='en'
+          ? `<strong>Strategy:</strong> After 365 days of holding, capital gains become tax-exempt (Annex G1, declarative). FIFO ensures the oldest lot is "consumed" first when disposing.`
+          : `<strong>Estratégia:</strong> Após 365 dias de holding, a mais-valia fica isenta de IRS (Anexo G1, declarativo). O FIFO garante que o lote mais antigo é "consumido" primeiro ao alienar.`}
+        ${autoCount > 0 ? `<br><span style="color:var(--gold)">✓ ${autoCount} ${t('lot.lotsAuto')}</span>${(state.lang||'pt')==='en'?' from indexed on-chain events.':' dos eventos on-chain indexados.'}${manualCount > 0 ? ` + ${manualCount} ${t('lot.lotsManual')}.` : ''}` : `<br><span style="color:var(--text-muted)">${(state.lang||'pt')==='en'?'Add lots manually or index transactions in History for auto-detection.':'Adiciona lots manualmente ou indexa transactions no Histórico para detecção automática.'}</span>`}
+        ${skippedNegative > 0 ? `<br><span style="color:var(--text-muted);font-size:0.78rem">ℹ ${skippedNegative} ${(state.lang||'pt')==='en'?'lots hidden (debt tokens from protocols like AAVE — not fiscally relevant).':'lots ocultados (debt tokens de protocolos como AAVE — não relevantes fiscalmente).'}</span>` : ''}
       </div>
     </div>
 
     <div class="stats-grid" style="margin-bottom:1.3rem">
-      <div class="stat"><div class="stat-label">Lotes Total</div><div class="stat-value sv-white">${cols.length}</div><div class="stat-sub">${autoCount} auto · ${manualCount} manual</div></div>
-      <div class="stat"><div class="stat-label">Lotes Isentos</div><div class="stat-value sv-green">${isentos.length}</div><div class="stat-sub">€${fmt(totalIsento)} livres de imposto</div></div>
-      <div class="stat"><div class="stat-label">Lotes Pendentes</div><div class="stat-value sv-amber">${pending.length}</div><div class="stat-sub">ainda em maturação</div></div>
-      <div class="stat"><div class="stat-label">Total Registado</div><div class="stat-value sv-gold">€${fmt(totalEur)}</div></div>
+      <div class="stat"><div class="stat-label">${t('lot.totalLots')}</div><div class="stat-value sv-white">${cols.length}</div><div class="stat-sub">${autoCount} auto · ${manualCount} manual</div></div>
+      <div class="stat"><div class="stat-label">${t('lot.exemptLots')}</div><div class="stat-value sv-green">${isentos.length}</div><div class="stat-sub">€${fmt(totalIsento)} ${t('lot.exemptFromTax')}</div></div>
+      <div class="stat"><div class="stat-label">${t('lot.pendingLots')}</div><div class="stat-value sv-amber">${pending.length}</div><div class="stat-sub">${t('lot.stillMaturing')}</div></div>
+      <div class="stat"><div class="stat-label">${t('lot.totalRegistered')}</div><div class="stat-value sv-gold">€${fmt(totalEur)}</div></div>
     </div>
 
     ${(()=>{
@@ -8910,9 +9291,9 @@ function renderStrategy(w) {
       const toolbar = `
         <div class="mempool-toolbar" style="flex-wrap:wrap;gap:0.7rem">
           <div style="display:inline-flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden">
-            <button class="btn-view ${view==='buckets'?'active':''}" onclick="state.lotView='buckets';saveState();render()" title="Buckets por urgência (recomendado)">📊 Buckets</button>
-            <button class="btn-view ${view==='list'?'active':''}" onclick="state.lotView='list';saveState();render()" title="Lista densa (power users)">📋 Lista</button>
-            <button class="btn-view ${view==='mempool'?'active':''}" onclick="state.lotView='mempool';saveState();render()" title="Mempool blocks (vista visual original)">🧱 Mempool</button>
+            <button class="btn-view ${view==='buckets'?'active':''}" onclick="state.lotView='buckets';saveState();render()" title="${(state.lang||'pt')==='en'?'Buckets by urgency (recommended)':'Buckets por urgência (recomendado)'}">${t('lot.viewBuckets')}</button>
+            <button class="btn-view ${view==='list'?'active':''}" onclick="state.lotView='list';saveState();render()" title="${(state.lang||'pt')==='en'?'Dense list (power users)':'Lista densa (power users)'}">${t('lot.viewList')}</button>
+            <button class="btn-view ${view==='mempool'?'active':''}" onclick="state.lotView='mempool';saveState();render()" title="${(state.lang||'pt')==='en'?'Mempool blocks (original visual view)':'Mempool blocks (vista visual original)'}">${t('lot.viewMempool')}</button>
           </div>
           <div class="mempool-pills">
             <button class="mempool-pill ${filt==='all'?'active':''}" onclick="setMempoolFilter('all')">Todos<span class="count">${counts.all}</span></button>
@@ -8941,10 +9322,10 @@ function renderStrategy(w) {
           exempt: displayCols.filter(c=>c._status==='exempt'),
         };
         const bucketsMeta = [
-          { key:'imminent', icon:'⚡', label:'Imminentes', sub:'<90 dias para isenção', color:'#FF7A4D', defaultOpen:true },
-          { key:'maturing', icon:'🌱', label:'A Amadurecer', sub:'90-365 dias', color:'#D4AF7A', defaultOpen:true },
-          { key:'fresh',    icon:'🆕', label:'Recentes',    sub:'adquiridos recentemente', color:'#5EB8FF', defaultOpen:false },
-          { key:'exempt',   icon:'✓',  label:'Isentos',     sub:'≥365d · Anexo G1', color:'#00E89E', defaultOpen:false },
+          { key:'imminent', icon:'⚡', label:(state.lang||'pt')==='en'?'Imminent':'Imminentes', sub:t('lot.imminentSub'), color:'#FF7A4D', defaultOpen:true },
+          { key:'maturing', icon:'🌱', label:(state.lang||'pt')==='en'?'Maturing':'A Amadurecer', sub:t('lot.maturingSub'), color:'#D4AF7A', defaultOpen:true },
+          { key:'fresh',    icon:'🆕', label:(state.lang||'pt')==='en'?'Fresh':'Recentes',    sub:t('lot.freshSub'), color:'#5EB8FF', defaultOpen:false },
+          { key:'exempt',   icon:'✓',  label:(state.lang||'pt')==='en'?'Exempt':'Isentos',     sub:t('lot.exemptSub'), color:'#00E89E', defaultOpen:false },
         ];
 
         const renderCard = (c) => {
@@ -10279,16 +10660,16 @@ function renderBulkActionBar() {
     <div class="bulk-action-bar" id="bulkActionBar">
       <div class="bulk-action-info">
         <span class="bulk-action-count">${sel.size}</span>
-        <span style="font-size:0.84rem">selecionad${sel.size === 1 ? 'o' : 'os'}</span>
+        <span style="font-size:0.84rem">${sel.size === 1 ? t('bulk.selectedOne') : t('bulk.selected')}</span>
       </div>
       <div class="bulk-action-buttons">
-        <button class="btn btn-outline btn-sm" onclick="openBulkReclassifyModal()" title="Reclassificar todos os selecionados">✎ Reclassificar tudo</button>
+        <button class="btn btn-outline btn-sm" onclick="openBulkReclassifyModal()" title="${(state.lang||'pt')==='en'?'Reclassify all selected':'Reclassificar todos os selecionados'}">${t('bulk.reclassifyAll')}</button>
         ${allSpam
-          ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="Desmarcar spam">✓ Desmarcar spam</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(true)" title="Marcar todos como spam (excluídos do FIFO)">⊘ Marcar spam</button>`}
-        ${noneSpam ? '' : !allSpam ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="Desmarcar spam dos que estão marcados">↺ Limpar spam</button>` : ''}
-        <button class="btn btn-outline btn-sm" onclick="bulkClearOverrides()" title="Repor original em todos">↺ Repor original</button>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="clearAllSelection()">Cancelar</button>
+          ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="${(state.lang||'pt')==='en'?'Unmark spam':'Desmarcar spam'}">${t('bulk.unmarkSpam')}</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(true)" title="${(state.lang||'pt')==='en'?'Mark all as spam (excluded from FIFO)':'Marcar todos como spam (excluídos do FIFO)'}">${t('bulk.markSpam')}</button>`}
+        ${noneSpam ? '' : !allSpam ? `<button class="btn btn-outline btn-sm" onclick="bulkSetSpam(false)" title="${(state.lang||'pt')==='en'?'Clear spam mark on the marked ones':'Desmarcar spam dos que estão marcados'}">↺ ${(state.lang||'pt')==='en'?'Clear spam':'Limpar spam'}</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="bulkClearOverrides()" title="${(state.lang||'pt')==='en'?'Restore original on all':'Repor original em todos'}">${t('bulk.restoreOriginal')}</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="clearAllSelection()">${t('btn.cancel')}</button>
       </div>
     </div>
   `;
@@ -11863,10 +12244,10 @@ function renderSettings(w) {
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Língua <span style="color:var(--text-muted);font-size:0.7rem">(em breve)</span></label>
-            <select class="form-select" id="set_lang" onchange="savePref('lang', this.value)" disabled>
-              <option value="pt" ${(w.lang||'pt')==='pt'?'selected':''}>🇵🇹 Português</option>
-              <option value="en" ${(w.lang||'pt')==='en'?'selected':''}>🇬🇧 English</option>
+            <label class="form-label">Língua / Language</label>
+            <select class="form-select" id="set_lang" onchange="setAppLanguage(this.value)">
+              <option value="pt" ${(state.lang||'pt')==='pt'?'selected':''}>🇵🇹 Português</option>
+              <option value="en" ${(state.lang||'pt')==='en'?'selected':''}>🇬🇧 English</option>
             </select>
           </div>
           <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
