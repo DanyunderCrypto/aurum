@@ -222,6 +222,27 @@ footer { border-top: 1px solid var(--border); padding: 3rem 0 2rem; }
 .footer-col a:hover { color: var(--gold); }
 .footer-disclaimer { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); font-size: 0.72rem; color: var(--text-dim); line-height: 1.6; }
 
+/* Screenshots */
+.shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
+@media (max-width: 860px) { .shots { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; } }
+.shot-frame { border-radius: 12px; overflow: hidden; border: 1px solid var(--border2); background: var(--bg2); box-shadow: 0 20px 40px rgba(0,0,0,0.35); transition: transform 0.3s; }
+.shot:hover .shot-frame { transform: translateY(-4px); }
+.shot-body { padding: 1rem; min-height: 180px; }
+.shot-cap { text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem; }
+.shot-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.6rem; margin-bottom: 1rem; }
+.sk-label { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.2rem; }
+.sk-val { font-family: var(--mono); font-size: 1rem; font-weight: 500; }
+.shot-bars { display: flex; align-items: flex-end; gap: 0.4rem; height: 90px; padding-top: 0.5rem; }
+.shot-bar { flex: 1; background: linear-gradient(to top, var(--gold-deep), var(--gold)); border-radius: 3px 3px 0 0; opacity: 0.8; }
+.shot-bucket { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.7rem; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.72rem; margin-bottom: 0.5rem; }
+.shot-card { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.6rem; align-items: center; padding: 0.5rem 0.7rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; font-size: 0.72rem; margin-bottom: 0.4rem; }
+.shot-prog { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+.shot-prog > div { height: 100%; border-radius: 3px; }
+.shot-mono { font-family: var(--mono); font-size: 0.72rem; }
+.shot-row { display: grid; grid-template-columns: 50px 1fr 70px; gap: 0.6rem; align-items: center; padding: 0.45rem 0.3rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; }
+.shot-row.shot-head { color: var(--text-dim); font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.shot-badge { font-family: var(--mono); font-size: 0.6rem; padding: 0.1rem 0.4rem; border: 1px solid var(--border2); border-radius: 999px; color: var(--gold); justify-self: start; }
+
 @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Reveal on scroll */
@@ -249,6 +270,7 @@ footer { border-top: 1px solid var(--border); padding: 3rem 0 2rem; }
     <div class="nav-links">
       <a href="#features">Funcionalidades</a>
       <a href="#how">Como funciona</a>
+      <a href="#screenshots">Por dentro</a>
       <a href="#pricing">Preços</a>
       <a href="#faq">FAQ</a>
       <a href="./index.html" class="nav-cta">Abrir App →</a>
@@ -357,6 +379,64 @@ footer { border-top: 1px solid var(--border); padding: 3rem 0 2rem; }
         <p>Anexo G, G1 e E calculados automaticamente. Exporta CSV/HTML para o teu contabilista ou para o IRS.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="section-label reveal">Por dentro</div>
+    <h2 class="section-title reveal">Clareza em cada ecrã</h2>
+    <p class="section-sub reveal">Do dashboard fiscal à estratégia dos 365 dias — tudo desenhado para tomares decisões informadas.</p>
+
+    <div class="shots">
+      <div class="shot reveal">
+        <div class="shot-frame">
+          <div class="preview-bar"><span class="preview-dot"></span><span class="preview-dot"></span><span class="preview-dot"></span></div>
+          <div class="shot-body">
+            <div class="shot-kpis">
+              <div><div class="sk-label">Net DeFi</div><div class="sk-val" style="color:var(--gold)">$888</div></div>
+              <div><div class="sk-label">Imposto est.</div><div class="sk-val" style="color:var(--red)">€1.250</div></div>
+              <div><div class="sk-label">Isento G1</div><div class="sk-val" style="color:var(--mint)">€12.8k</div></div>
+            </div>
+            <div class="shot-bars">
+              <div class="shot-bar" style="height:60%"></div><div class="shot-bar" style="height:85%"></div>
+              <div class="shot-bar" style="height:45%"></div><div class="shot-bar" style="height:95%"></div>
+              <div class="shot-bar" style="height:70%"></div><div class="shot-bar" style="height:55%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="shot-cap">Dashboard fiscal — visão imediata de imposto e isenções</div>
+      </div>
+
+      <div class="shot reveal">
+        <div class="shot-frame">
+          <div class="preview-bar"><span class="preview-dot"></span><span class="preview-dot"></span><span class="preview-dot"></span></div>
+          <div class="shot-body">
+            <div class="shot-bucket" style="border-left:3px solid var(--red)"><span>⚡ Imminentes</span><span class="shot-mono">2 · €3.0k</span></div>
+            <div class="shot-card"><div><strong>USDC</strong> <span style="color:var(--text-dim);font-size:0.62rem">base</span></div><div class="shot-prog"><div style="width:88%;background:var(--red)"></div></div><div class="shot-mono">€1.850</div></div>
+            <div class="shot-card"><div><strong>cbBTC</strong> <span style="color:var(--text-dim);font-size:0.62rem">base</span></div><div class="shot-prog"><div style="width:82%;background:var(--red)"></div></div><div class="shot-mono">€1.200</div></div>
+            <div class="shot-bucket" style="border-left:3px solid var(--mint);margin-top:0.5rem"><span>✓ Isentos</span><span class="shot-mono">5 · €12.8k</span></div>
+          </div>
+        </div>
+        <div class="shot-cap">Estratégia 365 dias — lots por urgência de isenção</div>
+      </div>
+
+      <div class="shot reveal">
+        <div class="shot-frame">
+          <div class="preview-bar"><span class="preview-dot"></span><span class="preview-dot"></span><span class="preview-dot"></span></div>
+          <div class="shot-body">
+            <div class="shot-row shot-head"><span>Data</span><span>Tipo</span><span style="text-align:right">EUR</span></div>
+            <div class="shot-row"><span class="shot-mono">18/05</span><span class="shot-badge">cashback</span><span class="shot-mono" style="text-align:right">€0,52</span></div>
+            <div class="shot-row"><span class="shot-mono">17/05</span><span class="shot-badge" style="color:var(--red);border-color:rgba(255,92,122,0.3)">send</span><span class="shot-mono" style="text-align:right">€42,00</span></div>
+            <div class="shot-row"><span class="shot-mono">16/05</span><span class="shot-badge" style="color:var(--purple);border-color:rgba(123,111,255,0.3)">swap</span><span class="shot-mono" style="text-align:right">€310,8</span></div>
+            <div class="shot-row"><span class="shot-mono">15/05</span><span class="shot-badge">cashback</span><span class="shot-mono" style="text-align:right">€0,67</span></div>
+          </div>
+        </div>
+        <div class="shot-cap">Histórico universal — toda a actividade on-chain enriquecida</div>
+      </div>
+    </div>
+
+    <p style="text-align:center;font-family:var(--mono);font-size:0.68rem;color:var(--text-dim);margin-top:2rem">Representações da interface · dados ilustrativos</p>
   </div>
 </section>
 
