@@ -6179,6 +6179,53 @@ const fifoEngine = (() => {
     'stake', 'unstake',   // staking also preserves ownership of the underlying
   ]);
 
+  // ── Spam / scam token detection ──────────────────────────────
+  // Scam tokens often use Unicode homoglyphs to IMPERSONATE a real ticker
+  // (e.g. "UЅDС" Cyrillic Ѕ+С → "USDC"). The key signal is impersonation, NOT merely
+  // having a non-ASCII char — legit tokens like "USD₮0" (Tether's omnichain USDT0, where
+  // ₮ is the official Tether symbol) use special chars without impersonating another ticker.
+  //
+  // CRITICAL: false positives are as harmful as false negatives. Excluding a real token
+  // hides real transactions and under-reports tax. So we are conservative:
+  //   - Only flag as spam if the symbol folds EXACTLY to a known ticker BUT uses non-ASCII
+  //     to disguise itself (clear impersonation), OR has obvious scam-name patterns.
+  //   - A contract allowlist guarantees known-legit tokens are never flagged.
+  const KNOWN_TICKERS = new Set(['USDC','USDT','DAI','WETH','WBTC','CBBTC','BUSD','TUSD','FRAX','LUSD','GHO','USDE','SUSDE','WSTETH','STETH','RETH','WEETH','AERO','VIRTUAL','AAVE']);
+  // Legit token contracts that must NEVER be flagged (lowercased {chain}:{address})
+  const LEGIT_CONTRACTS = new Set([
+    'base:0x102d758f688a4c1c5a80b116bd945d4455460282', // USD₮0 (USDT0) on Base — legit
+  ]);
+  const SPAM_NAME_PATTERNS = [
+    /claim/i, /reward.*at/i, /visit/i, /\.(com|net|io|org|xyz|app|site|finance|cash)\b/i,
+    /t\.me\//i, /airdrop.*at/i, /just keep clicking/i, /www\./i, /https?:/i,
+    /\bfree\b/i, /\bbonus\b/i, /voucher/i, /redeem/i, /\$\s?\d.*(claim|reward|visit)/i,
+  ];
+  function _asciiFold(sym) {
+    const map = { 'Ѕ':'S','С':'C','с':'c','ꓴ':'U','ꓢ':'S','ꓓ':'D','О':'O','о':'o','А':'A','а':'a','Е':'E','е':'e','Р':'P','р':'p','Т':'T','К':'K','М':'M','Н':'H','В':'B','Х':'X','і':'i','ј':'j','ɑ':'a','０':'0','Ⅾ':'D','ᗞ':'D' };
+    // Note: ₮ (Tether symbol) deliberately NOT folded — it's a legit token symbol, not a disguise.
+    return sym.replace(/[^\x00-\x7F]/g, ch => map[ch] || '');
+  }
+  function _isSpamToken(event) {
+    const sym = event.asset || '';
+    const name = event.assetName || event.name || sym;
+    // Allowlist by contract → never spam
+    const contractKey = event.assetContract ? `${event.chain}:${(event.assetContract||'').toLowerCase()}` : null;
+    if (contractKey && LEGIT_CONTRACTS.has(contractKey)) return false;
+
+    // Impersonation check: does the symbol use disguise-homoglyphs (Cyrillic/Lisu/etc.)
+    // to fold EXACTLY into a known ticker? Those specific homoglyphs are in our fold map.
+    const disguiseChars = /[ЅСсꓴꓢꓓОоАаЕеРрТКМНВХіјɑＤⅮᗞ]/;
+    if (disguiseChars.test(sym)) {
+      const folded = _asciiFold(sym).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (KNOWN_TICKERS.has(folded)) return true; // disguised as a known ticker → scam
+    }
+    // Scam-name patterns (URLs, "claim at X", etc.)
+    for (const pat of SPAM_NAME_PATTERNS) {
+      if (pat.test(name) || pat.test(sym)) return true;
+    }
+    return false;
+  }
+
   function _isLendingMovement(event) {
     // User explicitly forced FIFO inclusion → treat as real disposal/acquisition
     if (event.userOverride?.forceFifo) return false;
@@ -6214,6 +6261,8 @@ const fifoEngine = (() => {
     // Protocol receipt tokens (aTokens, debt tokens, cTokens) — not fiscally relevant
     // unless user explicitly overrode txType (treats receipts as their underlying asset)
     if (_isProtocolReceiptToken(event.asset) && !event.userOverride?.txType) return 'skip';
+    // Spam/scam tokens (unicode homoglyphs, URL names) — never enter FIFO unless user forces
+    if (_isSpamToken(event) && !event.userOverride?.forceFifo && !event.userOverride?.txType) return 'skip';
 
     // Respect user reclassification if present
     const tx = event.userOverride?.txType || event.txType;
@@ -6743,6 +6792,7 @@ const fifoEngine = (() => {
     classifyEvent,
     isLendingMovement: _isLendingMovement,
     isProtocolReceiptToken: _isProtocolReceiptToken,
+    isSpamToken: _isSpamToken,
     summaryByYear,
     lotsApproachingExempt,
     STABLECOIN_SYMBOLS,
