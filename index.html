@@ -6165,6 +6165,36 @@ const fifoEngine = (() => {
     return false;
   }
 
+  // Lending protocols where supply/withdraw must NOT trigger disposal/acquisition.
+  // Depositing collateral to a lending protocol is NOT a fiscal alienation under PT law
+  // (you remain the economic owner). Lot acquisition date + basis must be preserved
+  // across supply → withdraw. Only the yield (interest) counts as income (Cat. E).
+  const LENDING_PROTOCOLS = /aave|morpho|compound|spark|venus|fluid|euler|moonwell|radiant|seamless|benqi/i;
+
+  // tx types that represent moving assets INTO/OUT OF a protocol without changing ownership
+  const LENDING_TX_TYPES = new Set([
+    'lending_supply', 'lending_withdraw', 'lending_deposit',
+    'supply', 'withdraw', 'deposit',
+    'collateral_supply', 'collateral_withdraw',
+    'stake', 'unstake',   // staking also preserves ownership of the underlying
+  ]);
+
+  function _isLendingMovement(event) {
+    const tx = (event.userOverride?.txType || event.txType || '').toLowerCase();
+    // Explicit lending tx type
+    if (LENDING_TX_TYPES.has(tx)) return true;
+    // Robust: indexer tags lending-protocol counterparties with protocolType='lending'
+    const isLendingProto = event.protocolType === 'lending'
+      || (event.protocol && LENDING_PROTOCOLS.test(event.protocol));
+    if (isLendingProto) {
+      // Any movement to/from a lending protocol preserves ownership of the underlying:
+      // supply/withdraw/borrow/repay/send/receive. Yield is captured as a separate reward event.
+      if (tx === 'send' || tx === 'receive' || tx === 'borrow' || tx === 'repay' ||
+          tx === 'supply' || tx === 'withdraw' || tx === '' || tx === 'unknown') return true;
+    }
+    return false;
+  }
+
   // Returns: 'acquisition' | 'disposal' | 'swap_buy' | 'swap_sell' | 'reward' | 'skip'
   function classifyEvent(event) {
     if (!event) return 'skip';
@@ -6184,6 +6214,11 @@ const fifoEngine = (() => {
 
     // self_transfer override → skip
     if (tx === 'self_transfer') return 'skip';
+
+    // Lending supply/withdraw/borrow/repay → NOT a fiscal alienation/acquisition.
+    // Ownership of the underlying is preserved; lot basis + acq date carry through.
+    // (Yield/interest received is captured separately as a 'reward' event by the indexer.)
+    if (_isLendingMovement(event) && !event.userOverride?.forceFifo) return 'skip';
 
     // Swaps: each side tagged separately (in=buy, out=sell)
     if (tx === 'swap') return dir === 'in' ? 'swap_buy' : 'swap_sell';
@@ -6582,6 +6617,8 @@ const fifoEngine = (() => {
   return {
     process,
     classifyEvent,
+    isLendingMovement: _isLendingMovement,
+    isProtocolReceiptToken: _isProtocolReceiptToken,
     summaryByYear,
     lotsApproachingExempt,
     STABLECOIN_SYMBOLS,
@@ -10616,6 +10653,14 @@ function openReclassifyModal(eventId) {
         <select id="reclassifyTypeSelect" class="form-select" style="width:100%">
           ${options.map(o => `<option value="${o}" ${o===currentType?'selected':''}>${o}</option>`).join('')}
         </select>
+        ${(window.aurumFifoEngine?.isLendingMovement && window.aurumFifoEngine.isLendingMovement(e))
+          ? `<label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.8rem;font-size:0.76rem;cursor:pointer">
+               <input type="checkbox" id="reclassifyForceFifo" ${e.userOverride?.forceFifo ? 'checked' : ''} style="accent-color:var(--gold)">
+               <span>${(state.lang||'pt')==='en'
+                 ? 'Force FIFO inclusion (treat as real disposal/acquisition, not a protocol movement)'
+                 : 'Forçar inclusão no FIFO (tratar como alienação/aquisição real, não movimento de protocolo)'}</span>
+             </label>`
+          : ''}
         <div class="alert alert-info" style="font-size:0.72rem;margin-top:0.9rem">
           <span>ℹ</span>
           <div>${t('modal.reclassify.info')}</div>
@@ -10648,6 +10693,11 @@ function saveReclassify(eventId) {
   if (!newType) return;
   e.userOverride = e.userOverride || {};
   e.userOverride.txType = newType;
+  const forceFifoEl = document.getElementById('reclassifyForceFifo');
+  if (forceFifoEl) {
+    if (forceFifoEl.checked) e.userOverride.forceFifo = true;
+    else delete e.userOverride.forceFifo;
+  }
   e.userOverride.updatedAt = Date.now();
   // Also apply to canonical .type for legacy renderers (preserved in userOverride so we can revert)
   e._originalType = e._originalType || e.type;
@@ -11670,11 +11720,13 @@ function renderHistory(w) {
                     <td style="font-family:var(--mono);font-weight:600;font-size:0.78rem">${e.asset || '?'}</td>
                     <td style="text-align:right;font-family:var(--num);font-size:0.78rem">${fmtAmount(e)}</td>
                     <td style="text-align:right;font-family:var(--num);font-size:0.78rem;color:${typeof e.priceEUR === 'number' ? 'var(--gold)' : 'var(--text-muted)'}">
-                      ${typeof e.priceEUR === 'number'
-                        ? '€' + (e.amount * e.priceEUR).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2})
-                        : (e.priceNote === 'nft_excluded' ? '<span title="NFT — excluído Art. 10 nº 18" style="font-size:0.7rem">NFT</span>'
-                          : e.priceNote === 'no_price_data' ? '<span title="Sem dados de preço">—</span>'
-                          : '<span title="Por buscar">·</span>')}
+                      ${(window.aurumFifoEngine && window.aurumFifoEngine.isLendingMovement && window.aurumFifoEngine.isLendingMovement(e) && !e.userOverride?.forceFifo)
+                        ? `<span title="${(state.lang||'pt')==='en'?'Lending protocol movement — not a fiscal disposal. Lot basis preserved.':'Movimento de protocolo de lending — não é alienação fiscal. Basis do lot preservado.'}" style="font-size:0.62rem;color:var(--purple-glow,#7B6FFF);border:1px solid rgba(123,111,255,0.3);padding:0.05rem 0.35rem;border-radius:3px">⇄ ${(state.lang||'pt')==='en'?'protocol':'protocolo'}</span>`
+                        : (typeof e.priceEUR === 'number'
+                          ? '€' + (e.amount * e.priceEUR).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2})
+                          : (e.priceNote === 'nft_excluded' ? '<span title="NFT — excluído Art. 10 nº 18" style="font-size:0.7rem">NFT</span>'
+                            : e.priceNote === 'no_price_data' ? '<span title="Sem dados de preço">—</span>'
+                            : '<span title="Por buscar">·</span>'))}
                     </td>
                     <td style="font-size:0.78rem;color:${dirColor(e.direction)};font-weight:600">${dirIcon(e.direction)} ${e.direction}</td>
                     <td style="font-size:0.72rem">
