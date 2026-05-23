@@ -6146,15 +6146,15 @@ const fifoEngine = (() => {
   // borrowed positions (negative basis), or wrapped staking receipts.
   // Patterns are case-insensitive against the asset symbol.
   const PROTOCOL_RECEIPT_PATTERNS = [
-    /^a[A-Z][a-z][A-Z0-9]/,             // AAVE v3 aTokens (aBasUSDC, aEthUSDC, aArbWETH, aBascbBTC...)
-    /^variableDebt/i,                    // AAVE v3 variable debt tokens
-    /^stableDebt/i,                      // AAVE v3 stable debt tokens
-    /^c[A-Z]{2,}/,                       // Compound v3 cTokens (cUSDC, cETH, cWBTC)
-    /^morpho/i,                          // Morpho positions
-    /^mw[A-Z]/,                          // Morpho Wrapped variants
-    /^pt-/i,                              // Pendle Principal Tokens (treated separately — debatable)
-    /^yt-/i,                              // Pendle Yield Tokens
-    /^aave\s*v[23]/i,                    // Various aave identifiers
+    /^a[A-Z][a-z]{1,3}[A-Za-z]*[A-Z]/,   // AAVE v3 aTokens: a+ChainPrefix+Asset (aBasUSDC, aBascbBTC, aEthWETH, aArbUSDC, aBasWETH...)
+    /^variableDebt/i,                     // AAVE v3 variable debt tokens
+    /^stableDebt/i,                       // AAVE v3 stable debt tokens
+    /^c[A-Z]{2,}/,                        // Compound v3 cTokens (cUSDC, cETH, cWBTC)
+    /^morpho/i,                           // Morpho positions
+    /^mw[A-Z]/,                           // Morpho Wrapped variants
+    /^pt-/i,                               // Pendle Principal Tokens
+    /^yt-/i,                               // Pendle Yield Tokens
+    /^aave\s*v[23]/i,                     // Various aave identifiers
   ];
 
   function _isProtocolReceiptToken(asset) {
@@ -6180,15 +6180,22 @@ const fifoEngine = (() => {
   ]);
 
   function _isLendingMovement(event) {
+    // User explicitly forced FIFO inclusion → treat as real disposal/acquisition
+    if (event.userOverride?.forceFifo) return false;
     const tx = (event.userOverride?.txType || event.txType || '').toLowerCase();
     // Explicit lending tx type
     if (LENDING_TX_TYPES.has(tx)) return true;
+    // Tx-hash correlation: a receipt token (aToken/debt/cToken) appeared in the same
+    // transaction → this underlying movement is supply/withdraw/borrow/repay.
+    if (event._txLendingCorrelated) {
+      // Swaps inside a lending tx are still swaps (rare) — let swap logic handle those.
+      if (tx === 'swap') return false;
+      return true;
+    }
     // Robust: indexer tags lending-protocol counterparties with protocolType='lending'
     const isLendingProto = event.protocolType === 'lending'
       || (event.protocol && LENDING_PROTOCOLS.test(event.protocol));
     if (isLendingProto) {
-      // Any movement to/from a lending protocol preserves ownership of the underlying:
-      // supply/withdraw/borrow/repay/send/receive. Yield is captured as a separate reward event.
       if (tx === 'send' || tx === 'receive' || tx === 'borrow' || tx === 'repay' ||
           tx === 'supply' || tx === 'withdraw' || tx === '' || tx === 'unknown') return true;
     }
@@ -6218,7 +6225,7 @@ const fifoEngine = (() => {
     // Lending supply/withdraw/borrow/repay → NOT a fiscal alienation/acquisition.
     // Ownership of the underlying is preserved; lot basis + acq date carry through.
     // (Yield/interest received is captured separately as a 'reward' event by the indexer.)
-    if (_isLendingMovement(event) && !event.userOverride?.forceFifo) return 'skip';
+    if (_isLendingMovement(event)) return 'skip';
 
     // Swaps: each side tagged separately (in=buy, out=sell)
     if (tx === 'swap') return dir === 'in' ? 'swap_buy' : 'swap_sell';
@@ -6292,6 +6299,27 @@ const fifoEngine = (() => {
       const key = e.txHash || `${e.chain}_${e.timestamp}_${e.asset}_${e.direction}`;
       if (!eventsByTx.has(key)) eventsByTx.set(key, []);
       eventsByTx.get(key).push(e);
+    }
+
+    // ── Sprint 8.4.1.3 fix: detect lending movements by tx-hash correlation ──
+    // The ADDRESS_BOOK only maps main Pool addresses, but AAVE/Morpho route through
+    // many contracts (WrappedTokenGateway, vault proxies). So a supply of ETH may show
+    // a counterparty we don't recognize → mis-classified as a disposal.
+    // Robust signal: if a transaction CONTAINS a receipt token (aToken/debt/cToken),
+    // then ALL underlying-asset movements in that same tx are lending movements
+    // (supply/withdraw/borrow/repay) — ownership preserved, skip from FIFO.
+    const lendingTxHashes = new Set();
+    for (const [txKey, group] of eventsByTx.entries()) {
+      const hasReceiptToken = group.some(e => _isProtocolReceiptToken(e.asset));
+      const hasLendingProto = group.some(e => e.protocolType === 'lending'
+        || (e.protocol && LENDING_PROTOCOLS.test(e.protocol)));
+      if (hasReceiptToken || hasLendingProto) lendingTxHashes.add(txKey);
+    }
+    // Tag each event so classifyEvent can see the correlation result
+    for (const [txKey, group] of eventsByTx.entries()) {
+      if (lendingTxHashes.has(txKey)) {
+        for (const e of group) e._txLendingCorrelated = true;
+      }
     }
 
     // Helper: open a new lot
@@ -6429,13 +6457,16 @@ const fifoEngine = (() => {
     for (const txKey of sortedTxKeys) {
       const txEvents = eventsByTx.get(txKey);
       const txType = txEvents[0].txType;
+      const isLendingTx = lendingTxHashes.has(txKey);
       const ins = txEvents.filter(e => e.direction === 'in' && e.amount > 0
                                      && e.category !== 'erc721' && e.category !== 'erc1155');
       const outs = txEvents.filter(e => e.direction === 'out' && e.amount > 0
                                      && e.category !== 'erc721' && e.category !== 'erc1155');
 
       // ─── SWAP handling ──────────────────────────────────
-      if (txType === 'swap' && ins.length > 0 && outs.length > 0) {
+      // Lending txs (supply/withdraw/borrow/repay) are NOT swaps even if they have
+      // both in and out legs (e.g. supply ETH out + aToken in). Skip swap branch.
+      if (txType === 'swap' && !isLendingTx && ins.length > 0 && outs.length > 0) {
         const swapIn = ins[0];   // simple case: 1-in 1-out (multi-leg handled below)
         const swapOut = outs[0];
 
