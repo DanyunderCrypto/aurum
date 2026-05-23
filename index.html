@@ -12295,6 +12295,7 @@ function renderFiscal(w) {
       </select>
       <div style="margin-left:auto;display:flex;gap:0.5rem">
         <button class="btn btn-outline btn-sm" onclick="exportFiscalCSV()">${t('fiscal.exportCSV')}</button>
+        <button class="btn btn-outline btn-sm" onclick="exportAuditReport()">${(state.lang||'pt')==='en'?'🔎 Audit Report':'🔎 Relatório Auditoria'}</button>
         <button class="btn btn-gold btn-sm" onclick="exportFiscalReport()">${t('fiscal.exportReport')}</button>
       </div>
     </div>
@@ -16737,6 +16738,207 @@ ${lots.length === 0 ? '<p style="color:#666">Sem dados.</p>' : `
 
 window.exportFiscalCSV = exportFiscalCSV;
 window.exportFiscalReport = exportFiscalReport;
+
+// ════════════════════════════════════════════════════════════════
+// Audit / Reconciliation Report — proves calculation integrity for
+// the user and their accountant (TOC). Shows the full chain:
+// events in → classified → priced → disposals → warnings (boundaries).
+// ════════════════════════════════════════════════════════════════
+function exportAuditReport() {
+  const w = activeWallet();
+  if (!w) { toast(t('toast.error'), 'warn'); return; }
+  if (!window.aurumFifoEngine) { toast('Engine indisponível', 'warn'); return; }
+
+  const fiscalYear = state.fiscalYear || new Date().getFullYear();
+  const events = _eventsForWallet(w);
+  const eng = window.aurumFifoEngine;
+  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+  const disposals = r.disposals || [];
+  const warnings = r.warnings || [];
+  const lots = r.lots || [];
+
+  // ── Reconciliation counters ──
+  const total = events.length;
+  let cReceipt = 0, cLending = 0, cNft = 0, cSelf = 0, cPriced = 0, cNoPrice = 0, cDerived = 0, cStable = 0, cSpam = 0;
+  for (const e of events) {
+    if (e.category === 'erc721' || e.category === 'erc1155') cNft++;
+    if (e.direction === 'self') cSelf++;
+    if (eng.isSpamToken && eng.isSpamToken(e)) cSpam++;
+    if (eng.isProtocolReceiptToken && eng.isProtocolReceiptToken(e.asset)) cReceipt++;
+    if (eng.isLendingMovement && eng.isLendingMovement(e)) cLending++;
+    if (typeof e.priceEUR === 'number') cPriced++; else cNoPrice++;
+    if (e.priceNote === 'derived_onchain') cDerived++;
+    if (e.priceNote === 'stablecoin_usd' || e.priceNote === 'stablecoin_eur') cStable++;
+  }
+
+  // ── Disposals in fiscal year ──
+  const dispYear = disposals.filter(d => String(d.disposalDate || d.date || '').startsWith(String(fiscalYear)));
+  const realDisp = dispYear.filter(d => d.qtyDisposed > 1e-9);
+  const sumG  = realDisp.reduce((s, d) => s + (d.anexoG  ? d.anexoG.gain  : 0), 0);
+  const sumG1 = realDisp.reduce((s, d) => s + (d.anexoG1 ? d.anexoG1.gain : 0), 0);
+  const sumProceeds = realDisp.reduce((s, d) => s + (d.proceedsEUR || 0), 0);
+  const sumBasis = realDisp.reduce((s, d) => s + (d.basisEUR || 0), 0);
+  const taxG = Math.max(0, sumG) * 0.28;
+
+  // ── Warnings grouped ──
+  const warnByType = {};
+  warnings.forEach(x => { warnByType[x.type] = (warnByType[x.type] || 0) + 1; });
+  const warnLabels = {
+    disposal_no_basis_lot: 'Alienações sem lot de aquisição nesta wallet (ativo adquirido noutra wallet ou antes do período indexado)',
+    missing_price: 'Aquisições sem preço EUR (maioria tokens nunca vendidos — não afeta ganho realizado)',
+    swap_shortfall: 'Swaps com basis parcial (entradas de ativo nativo não captadas pelo indexer)',
+    insufficient_basis: 'Alienações com basis parcial',
+    phantom_disposal_skipped: 'Saídas de spam/dust ignoradas',
+    price_derived_onchain: 'Preços derivados on-chain a partir de swaps (automático)',
+  };
+
+  const fmt = (n, d = 2) => (n || 0).toLocaleString('pt-PT', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const dataHash = (() => {
+    let h = 0; const s = `${total}|${disposals.length}|${fiscalYear}|${w.id}`;
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  })();
+
+  const reportHtml = `<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Aurum · Relatório de Auditoria ${fiscalYear} — ${w.name}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.55; }
+  h1 { font-size: 1.9rem; margin-bottom: 0.2rem; color: #9A7635; font-weight: 600; }
+  h2 { font-size: 1.2rem; margin-top: 2.2rem; margin-bottom: 0.5rem; padding-bottom: 0.35rem; border-bottom: 1px solid #ddd; }
+  .subtitle { color: #666; font-size: 0.92rem; }
+  .meta { color: #888; font-size: 0.8rem; margin: 1rem 0 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #9A7635; }
+  .meta code { background: #f3efe6; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.78rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.83rem; }
+  th { background: #f7f3eb; color: #5a4628; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; border-bottom: 2px solid #9A7635; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 0.45rem 0.7rem; border-bottom: 1px solid #eee; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SF Mono", Consolas, monospace; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem; margin: 1.2rem 0; }
+  .card { padding: 0.9rem; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
+  .card-label { font-size: 0.66rem; text-transform: uppercase; color: #888; letter-spacing: 0.08em; margin-bottom: 0.3rem; }
+  .card-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .green { color: #16a34a; } .amber { color: #d97706; } .red { color: #dc2626; } .gold { color: #9A7635; } .muted { color:#999; }
+  .note { background: #fffbef; border-left: 3px solid #d4af7a; padding: 0.9rem 1.1rem; margin: 1rem 0; font-size: 0.84rem; }
+  .recon { background:#f5f9f5; border-left:3px solid #16a34a; padding:0.9rem 1.1rem; margin:1rem 0; font-size:0.84rem; }
+  .footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid #ddd; font-size: 0.72rem; color: #999; text-align: center; }
+  @media print { body { max-width: none; margin: 0; padding: 1cm; } .no-print { display: none; } }
+  .print-btn { background: #9A7635; color: white; padding: 0.55rem 1.1rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.88rem; }
+</style>
+</head>
+<body>
+<button class="print-btn no-print" onclick="window.print()" style="float:right">🖨 Imprimir / PDF</button>
+
+<h1>AURUM · Relatório de Auditoria</h1>
+<div class="subtitle">Reconciliação e trilho de cálculo — Categoria G / G1 (mais-valias de criptoativos)</div>
+<div class="meta">
+  Wallet: <strong>${w.name}</strong> · <code>${(w.evm || w.addr || w.solana || '').slice(0, 20)}…</code><br>
+  Ano fiscal: <strong>${fiscalYear}</strong> · Gerado: ${now} · Modo swap: <strong>${state.swapMode || 'permuta'}</strong> · Fingerprint: <code>${dataHash}</code>
+</div>
+
+<div class="note">
+  <strong>O que é este relatório.</strong> Documenta de forma transparente como o motor fiscal do Aurum chegou aos valores: quantos eventos on-chain entraram, como cada um foi classificado, que preços foram usados (e a origem), e quais os limites conhecidos. Serve para o contribuinte e o seu TOC validarem a integridade do apuramento.
+</div>
+
+<h2>1. Resumo fiscal — ${fiscalYear}</h2>
+<div class="cards">
+  <div class="card"><div class="card-label">Anexo G · &lt;365d</div><div class="card-value ${sumG>=0?'red':'green'}">€${fmt(sumG)}</div><div class="muted" style="font-size:0.72rem">${realDisp.filter(d=>d.anexoG&&d.anexoG.gain).length} alienações</div></div>
+  <div class="card"><div class="card-label">Anexo G1 · ≥365d / pré-2023</div><div class="card-value gold">€${fmt(sumG1)}</div><div class="muted" style="font-size:0.72rem">isento, declarativo</div></div>
+  <div class="card"><div class="card-label">Imposto estimado (28%)</div><div class="card-value">€${fmt(taxG)}</div><div class="muted" style="font-size:0.72rem">sobre G positivo</div></div>
+  <div class="card"><div class="card-label">Proceeds / Basis</div><div class="card-value" style="font-size:1rem">€${fmt(sumProceeds)} / €${fmt(sumBasis)}</div></div>
+</div>
+
+<h2>2. Reconciliação de eventos</h2>
+<div class="recon">
+  <strong>${total} eventos on-chain</strong> indexados nesta wallet foram processados. Cada evento é contabilizado de forma rastreável abaixo.
+</div>
+<table>
+  <thead><tr><th>Categoria</th><th style="text-align:right">Contagem</th><th>Tratamento fiscal</th></tr></thead>
+  <tbody>
+    <tr><td>Total de eventos</td><td class="num"><strong>${total}</strong></td><td class="muted">universo completo</td></tr>
+    <tr><td>Com preço EUR</td><td class="num">${cPriced}</td><td>incluídos no apuramento de basis/proceeds</td></tr>
+    <tr><td>· dos quais stablecoin ($1/€1)</td><td class="num">${cStable}</td><td class="muted">preço por paridade, sem API</td></tr>
+    <tr><td>· dos quais derivados on-chain</td><td class="num">${cDerived}</td><td class="muted">preço extraído do próprio swap</td></tr>
+    <tr><td>Sem preço EUR</td><td class="num">${cNoPrice}</td><td class="muted">maioria tokens nunca vendidos</td></tr>
+    <tr><td>Movimentos de lending (supply/withdraw)</td><td class="num">${cLending}</td><td>NÃO alienação — basis preservado</td></tr>
+    <tr><td>Tokens de recibo (aTokens/debt/cTokens)</td><td class="num">${cReceipt}</td><td>excluídos (representam o subjacente)</td></tr>
+    <tr><td>Spam / scam detectados</td><td class="num">${cSpam}</td><td>excluídos do apuramento</td></tr>
+    <tr><td>NFTs</td><td class="num">${cNft}</td><td>excluídos (Art. 10 nº 18)</td></tr>
+    <tr><td>Auto-transferências</td><td class="num">${cSelf}</td><td>sem impacto fiscal</td></tr>
+    <tr><td>Lotes de aquisição (FIFO)</td><td class="num">${lots.length}</td><td>inventário aberto</td></tr>
+    <tr><td>Alienações registadas (${fiscalYear})</td><td class="num"><strong>${realDisp.length}</strong></td><td>com basis real</td></tr>
+  </tbody>
+</table>
+
+<h2>3. Qualidade dos dados — limites conhecidos</h2>
+<div class="note">
+  Um apuramento honesto declara as suas fronteiras. Os itens abaixo não invalidam o cálculo — marcam onde os dados on-chain são incompletos e podem requerer revisão manual com o TOC.
+</div>
+${Object.keys(warnByType).length === 0 ? '<p class="muted">Sem avisos. Cálculo totalmente resolvido.</p>' : `
+<table>
+  <thead><tr><th>Tipo</th><th style="text-align:right">Ocorrências</th><th>Explicação</th></tr></thead>
+  <tbody>
+    ${Object.entries(warnByType).sort((a,b)=>b[1]-a[1]).map(([type, n]) =>
+      `<tr><td><code>${type}</code></td><td class="num">${n}</td><td>${warnLabels[type] || '—'}</td></tr>`
+    ).join('')}
+  </tbody>
+</table>`}
+
+<h2>4. Trilho de alienações — ${fiscalYear} (${realDisp.length})</h2>
+${realDisp.length === 0 ? '<p class="muted">Sem alienações tributáveis neste ano fiscal.</p>' : `
+<table>
+  <thead><tr><th>Data</th><th>Asset</th><th style="text-align:right">Qty</th><th style="text-align:right">Proceeds €</th><th style="text-align:right">Basis €</th><th style="text-align:right">G/L €</th><th>Regime</th></tr></thead>
+  <tbody>
+    ${realDisp.slice(0, 200).map(d => {
+      const reg = d.anexoG1 ? 'G1' : 'G';
+      const gl = d.gainEUR || 0;
+      return `<tr>
+        <td>${d.disposalDate || d.date || ''}</td>
+        <td>${(d.asset||'').replace(/[<>]/g,'')}</td>
+        <td class="num">${fmt(d.qtyDisposed, 6)}</td>
+        <td class="num">€${fmt(d.proceedsEUR)}</td>
+        <td class="num">€${fmt(d.basisEUR)}</td>
+        <td class="num ${gl>=0?'green':'red'}">€${fmt(gl)}</td>
+        <td>${reg}</td>
+      </tr>`;
+    }).join('')}
+    ${realDisp.length > 200 ? `<tr><td colspan="7" class="muted" style="text-align:center">+ ${realDisp.length - 200} mais — exporta CSV para o detalhe completo</td></tr>` : ''}
+  </tbody>
+</table>`}
+
+<h2>5. Metodologia</h2>
+<div class="note" style="line-height:1.7">
+  <strong>Interpretação fiscal:</strong> Lei 24-D/2022, Art. 10º CIRS.<br>
+  • <strong>FIFO</strong> por wallet — o lote mais antigo é alienado primeiro.<br>
+  • <strong>Permuta cripto↔cripto</strong> (Art. 10º nº 6 c) não é alienação; o novo ativo herda data e valor de aquisição.<br>
+  • <strong>≥365 dias</strong> de detenção → Anexo G1 (isento, declarativo). <strong>&lt;365 dias</strong> → Anexo G (28%).<br>
+  • <strong>Aquisição pré-2023</strong> → regime transitório Art. 220 OE/2023 → G1.<br>
+  • <strong>Lending</strong> (supply/withdraw a AAVE/Morpho/etc.) não é alienação — preserva o subjacente.<br>
+  • <strong>Gas/dust</strong> de ativo nativo não é alienação tributável.<br>
+  • <strong>Preços:</strong> stablecoins por paridade; restantes via DefiLlama (por contrato) + ECB; tokens sem cobertura via derivação on-chain do próprio swap.
+</div>
+
+<div class="footer">
+  Gerado por <strong>AURUM</strong> — Your DeFi, refined · Fingerprint <code>${dataHash}</code><br>
+  Relatório informativo. Não substitui aconselhamento profissional. Confirma com um TOC certificado antes de submeter o Modelo 3.
+</div>
+
+</body>
+</html>`;
+
+  const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aurum_auditoria_${fiscalYear}_${w.name.replace(/\W+/g, '_')}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(t('toast.saved'), 'success');
+}
+window.exportAuditReport = exportAuditReport;
 
 function toggleFiscalFilter(onlyOpen) {
   if (!state.hasOwnProperty('fiscalOnlyOpen')) state.fiscalOnlyOpen = true;
