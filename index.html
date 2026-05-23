@@ -6212,6 +6212,13 @@ const fifoEngine = (() => {
       const folded = _asciiFold(sym).toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (KNOWN_TICKERS.has(folded)) return true; // disguised as a known ticker → scam
     }
+    // Latin diacritic disguise (ÚSDC, ÁERO, ÓSDC...) — strip accents via NFD; if the result
+    // is a known ticker AND differs from the original, it's impersonation. Legit tickers
+    // never use accents, so false-positive risk is negligible.
+    if (/[^\x00-\x7F]/.test(sym)) {
+      const deAccented = sym.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (KNOWN_TICKERS.has(deAccented) && sym.toUpperCase().replace(/[^A-Z0-9]/g, '') !== deAccented) return true;
+    }
     // Digit homoglyphs (U5DC→USDC, US0C, etc.) — only when an ASCII symbol with digits
     // folds to a known ticker and differs from the original.
     if (/[0134568]/.test(sym) && /^[A-Za-z0-9]+$/.test(sym)) {
