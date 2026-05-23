@@ -6285,14 +6285,18 @@ const fifoEngine = (() => {
     // Swaps: each side tagged separately (in=buy, out=sell)
     if (tx === 'swap') return dir === 'in' ? 'swap_buy' : 'swap_sell';
 
-    // Staking rewards / cashbacks / airdrops — acquisition at fair value
-    if (tx === 'cashback' || tx === 'reward' || tx === 'airdrop' || tx === 'staking_reward') return 'reward';
+    // ── Airdrops & passive rewards (OCC parecer PT28627, Jun 2025) ──
+    // Per the OCC technical opinion: airdrops/passive rewards in the form of crypto-assets
+    // are NOT taxed on receipt (Art. 10 nº 20 CIRS excludes income still held as crypto).
+    // They are zero-cost acquisitions, taxed as a capital gain (Annex G/G1) only when
+    // converted to FIAT. So: open a lot at basis €0, do NOT record Category E income.
+    if (tx === 'airdrop' || tx === 'reward' || tx === 'cashback' || tx === 'staking_reward') {
+      return 'airdrop_acquisition';
+    }
 
-    // Receive without explicit reward type and without protocol → potential airdrop
+    // Receive without explicit reward type and without protocol → likely airdrop (zero cost)
     if (dir === 'in' && tx === 'receive' && !event.protocol) {
-      // Spam heuristic: zero-priced receives that are obviously airdrops
-      // For now, treat as reward (basis = priceEUR; if priceEUR null, basis = 0)
-      return 'reward';
+      return 'airdrop_acquisition';
     }
 
     // Generic in/out
@@ -6600,29 +6604,13 @@ const fifoEngine = (() => {
         const cryptoToCrypto = _isCryptoToCryptoSwap(swapOut, swapIn);
 
         if (swapMode === 'permuta' && cryptoToCrypto) {
-          // Permuta: carry basis from outgoing asset's consumed lots to the incoming asset's new lot
+          // Permuta (Art. 10 nº6 c): crypto↔crypto swap is NOT an alienation. Carry the
+          // outgoing asset's basis to the incoming lot. For airdrops (basis €0), the zero
+          // basis carries forward — per OCC parecer PT28627, the gain is realised only when
+          // finally converted to FIAT (EUR/USD), not on intermediate crypto↔crypto swaps.
           const consumeOut = _consumeFifo(swapOut.asset, swapOut.chain, swapOut.amount, swapOut.timestamp);
-
-          // Airdrop-sale detection: if the outgoing asset had (near) zero basis (typical of an
-          // airdrop/reward) AND the incoming asset has a known market price, this swap REALISES
-          // the airdrop's value. Record the received value as proceeds (Anexo G gain), because
-          // the gain is now tangible and the incoming priced asset would otherwise inherit a
-          // €0 basis and hide it forever. This is the fiscally correct treatment for sold airdrops.
-          const inHasPrice = typeof swapIn.priceEUR === 'number' && swapIn.amount > 0;
-          const inValueEUR = inHasPrice ? swapIn.priceEUR * swapIn.amount : null;
-          const outBasisNearZero = consumeOut.totalBasis < 0.01;
-          const isAirdropRealisation = outBasisNearZero && inHasPrice && inValueEUR > 0.01;
-
-          if (isAirdropRealisation) {
-            // Record disposal of the airdrop token: proceeds = received value, basis = consumed (≈0)
-            _recordDisposal(swapOut, swapOut.amount, inValueEUR, consumeOut, 'airdrop_sale');
-            // Open the incoming lot at its real market basis (so future moves are correct)
-            _openLot(swapIn, swapIn.amount, swapIn.priceEUR, 'buy');
-          } else {
-            // Standard permuta: carry basis to the incoming lot, no disposal recorded
-            const basisPerUnit = swapIn.amount > 0 ? consumeOut.totalBasis / swapIn.amount : 0;
-            _openLot(swapIn, swapIn.amount, basisPerUnit, 'swap_in', swapOut.asset);
-          }
+          const basisPerUnit = swapIn.amount > 0 ? consumeOut.totalBasis / swapIn.amount : 0;
+          _openLot(swapIn, swapIn.amount, basisPerUnit, 'swap_in', swapOut.asset);
 
           // Record meta only (no disposal entered)
           if (consumeOut.qtyShortfall > 1e-9) {
@@ -6692,8 +6680,16 @@ const fifoEngine = (() => {
             });
           }
         }
+        else if (klass === 'airdrop_acquisition') {
+          // OCC parecer PT28627: airdrop/passive reward in crypto form is NOT taxed on
+          // receipt (Art. 10 nº 20). Zero-cost acquisition; the future capital gain is the
+          // full proceeds when sold to fiat. Open a lot at basis €0. Do NOT record Cat. E.
+          // (We deliberately ignore the market value at receipt as cost basis — it stays €0.)
+          _openLot(e, e.amount, 0, 'airdrop');
+        }
         else if (klass === 'reward') {
-          // Category E: zero-cost acquisition at fair value (basis = priceEUR at receipt)
+          // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
+          // interest in an entity). Kept separate from airdrops per OCC opinion. Rare in DeFi.
           const basisPerUnit = eventPriceEURPerUnit ?? 0;
           const lot = _openLot(e, e.amount, basisPerUnit, 'reward');
           rewards.push({
@@ -6706,7 +6702,7 @@ const fifoEngine = (() => {
             timestamp: e.timestamp,
             date: e.date,
             fiscalYear: parseInt((e.date || '').slice(0, 4), 10) || null,
-            kind: e.txType || 'reward',                  // cashback | airdrop | staking_reward
+            kind: e.txType || 'reward',
             lotId: lot.lotId,
             eventId: e.id || e.txHash,
             txHash: e.txHash,
@@ -12102,7 +12098,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           <div class="stat">
             <div class="stat-label">Anexo E · Rendimentos</div>
             <div class="stat-value sv-gold">€${fmt(yr.anexoE.totalEUR)}</div>
-            <div class="stat-sub">${yr.anexoE.count} eventos (cashback/airdrop/staking)</div>
+            <div class="stat-sub">${yr.anexoE.count} eventos · airdrops tributam em G na venda</div>
           </div>
           <div class="stat">
             <div class="stat-label">Imposto estimado</div>
@@ -12329,6 +12325,7 @@ function renderFiscal(w) {
           <li>${t('fiscalPanel.cashback')}</li>
           <li>${t('fiscalPanel.cardLoan')}</li>
           <li>${t('fiscalPanel.fifoMandatory')}</li>
+          <li><strong>Airdrops/rewards</strong> em cripto — custo zero, não tributados na receção; tributam como mais-valia (G/G1) só na conversão para moeda fiduciária (parecer OCC PT28627, Art. 10º nº 20 CIRS).</li>
         </ul>
         ${t('fiscalPanel.disclaimer')}
       </div>

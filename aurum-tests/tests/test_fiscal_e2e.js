@@ -237,6 +237,41 @@ run('S12: Partial lot consumption across two lots', () => {
   assert(approx(totalGain, 650, 1), `gain should be ~650, got ${totalGain}`);
 });
 
+// ════════════════════════════════════════════════════════════════
+// SCENARIO 13: Airdrop received → zero-cost lot, NOT Category E income
+// (OCC parecer PT28627: not taxed on receipt)
+// ════════════════════════════════════════════════════════════════
+run('S13: Airdrop received → zero basis lot, no Anexo E income', () => {
+  const events = [
+    ev({ direction: 'in', asset: 'ARB', amount: 1000, priceEUR: 1.2, txType: 'airdrop', date: '2024-03-01', timestamp: ts('2024-03-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w13' });
+  // Should NOT create a Category E reward entry
+  const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
+  assert(anexoE === 0, `airdrop must NOT be Cat. E income, got €${anexoE}`);
+  // Should open a lot at basis 0
+  const arbLot = (r.lots || []).find(l => l.asset === 'ARB');
+  assert(arbLot != null, `airdrop should open a lot`);
+  if (arbLot) assert(approx(arbLot.basisEURPerUnit || arbLot.basisPerUnit || 0, 0), `airdrop lot basis must be €0`);
+});
+
+// ════════════════════════════════════════════════════════════════
+// SCENARIO 14: Airdrop sold to FIAT → full proceeds taxed as gain
+// ════════════════════════════════════════════════════════════════
+run('S14: Airdrop (basis 0) sold to EUR → entire proceeds is the gain', () => {
+  const events = [
+    ev({ direction: 'in',  asset: 'ARB', amount: 1000, priceEUR: 1.0, txType: 'airdrop', date: '2024-03-01', timestamp: ts('2024-03-01') }),
+    ev({ direction: 'out', asset: 'ARB', amount: 1000, priceEUR: 1.5, txType: 'sell',    date: '2024-09-01', timestamp: ts('2024-09-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w14' });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 1, `expected 1 disposal`);
+  if (disp[0]) {
+    assert(approx(disp[0].basisEUR, 0), `airdrop basis must be 0, got ${disp[0].basisEUR}`);
+    assert(approx(disp[0].gainEUR, 1500), `gain should be full proceeds €1500, got ${disp[0].gainEUR}`);
+  }
+});
+
 // ── Summary ──────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
