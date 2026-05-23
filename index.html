@@ -6705,6 +6705,21 @@ const fifoEngine = (() => {
         const klass = classifyEvent(e);
         if (klass === 'skip') continue;
 
+        // ── Gas / dust filter ──────────────────────────────
+        // Native-asset (ETH) outflows below a dust threshold are overwhelmingly gas fees or
+        // dust, not fiscal alienations. In PT, transaction fees are costs, not taxable
+        // disposals. We saw 1010 such micro-ETH events with no acquisition lot, producing
+        // noise warnings. Skip them: tiny native outflows are treated as non-taxable costs.
+        const NATIVE_ASSETS = new Set(['ETH', 'BNB', 'MATIC', 'POL', 'AVAX']);
+        if ((klass === 'disposal' || klass === 'swap_sell')
+            && NATIVE_ASSETS.has((e.asset || '').toUpperCase())
+            && e.amount < 0.001) {
+          // Tiny native outflow = gas/dust. Not a fiscal alienation. Skip silently.
+          // (We intentionally do NOT consume a lot here — gas at this scale is immaterial
+          //  and treating it as a disposal would only add noise without changing tax owed.)
+          continue;
+        }
+
         // priceEUR is PER-UNIT (consistent with enrichEventsWithPrices output and renderHistory)
         const eventPriceEURPerUnit = (typeof e.priceEUR === 'number') ? e.priceEUR : null;
         const eventPriceEURTotal = (eventPriceEURPerUnit !== null && e.amount > 0)
