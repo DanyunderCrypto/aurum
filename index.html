@@ -6292,6 +6292,7 @@ const fifoEngine = (() => {
     const warnings = [];            // events that couldn't be processed cleanly
     let lotCounter = 0;
     let disposalCounter = 0;
+    const pendingSwapBasis = new Map();  // txHash → carried basis from swap_sell legs (permuta mode)
 
     // Group events by txHash to process swaps atomically
     const eventsByTx = new Map();
@@ -6553,11 +6554,57 @@ const fifoEngine = (() => {
         }
         else if (klass === 'disposal') {
           // Outgoing without swap context: sale to fiat OR card payment OR external transfer
-          // Treat as disposal if priceEUR known; else warn
           const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
           const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
           const proceeds = eventPriceEURTotal ?? 0;
+          // Phantom disposal guard: if we never held this asset (no lots consumed) AND
+          // there are no real proceeds, this is almost certainly a spam/airdrop token
+          // being sent out, or dust. Recording it would invent a fictitious gain.
+          if (consumeOut.qtyFulfilled <= 1e-12 && proceeds <= 0.01) {
+            warnings.push({
+              type: 'phantom_disposal_skipped',
+              eventId: e.id || e.txHash,
+              asset: e.asset,
+              chain: e.chain,
+              message: `Saída de ${e.amount} ${e.asset} sem lots nem valor — provável spam/dust, ignorado.`,
+            });
+            continue;
+          }
           _recordDisposal(e, e.amount, proceeds, consumeOut, 'sale');
+        }
+        else if (klass === 'swap_sell') {
+          // Swap OUT leg processed individually (in/out legs landed in different txHashes,
+          // so the atomic swap branch above didn't catch them).
+          // Under PT permuta interpretation (Art. 10 nº6 c), crypto↔crypto swap is NOT an
+          // alienation. So we consume the outgoing lot but DO NOT record a taxable disposal.
+          // The basis carries forward conceptually; the matching swap_buy leg opens a new
+          // lot at its own market value (best effort without the pair).
+          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          if (swapMode === 'aggressive') {
+            // Aggressive mode: treat as sale
+            const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
+            _recordDisposal(e, e.amount, eventPriceEURTotal ?? 0, consumeOut, 'swap_sell');
+          } else {
+            // Permuta (default): consume lot, no disposal. Track carried basis for the buy leg.
+            const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
+            // Stash carried basis keyed by txHash so a same-tx buy leg (rare here) could use it
+            if (!pendingSwapBasis.has(e.txHash)) pendingSwapBasis.set(e.txHash, 0);
+            pendingSwapBasis.set(e.txHash, pendingSwapBasis.get(e.txHash) + consumeOut.totalBasis);
+          }
+        }
+        else if (klass === 'swap_buy') {
+          // Swap IN leg processed individually.
+          const basisFromSwap = pendingSwapBasis.get(e.txHash);
+          let basisPerUnit;
+          if (swapMode !== 'aggressive' && typeof basisFromSwap === 'number' && basisFromSwap > 0 && e.amount > 0) {
+            // Permuta: carry basis from the consumed out-leg
+            basisPerUnit = basisFromSwap / e.amount;
+            pendingSwapBasis.delete(e.txHash);
+          } else {
+            // No carried basis available → use market value (priceEUR)
+            basisPerUnit = eventPriceEURPerUnit ?? 0;
+          }
+          _openLot(e, e.amount, basisPerUnit, 'swap_in');
         }
       }
     }
