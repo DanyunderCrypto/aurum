@@ -6426,6 +6426,50 @@ const fifoEngine = (() => {
       }
     }
 
+    // ── On-chain price derivation ──────────────────────────────
+    // DefiLlama/CoinGecko don't cover small/new tokens (no_coverage). But if such a token
+    // was swapped against a PRICED asset in the same tx, the trade itself reveals its price:
+    //   100 RBF (no price) ↔ 50 USDC (€46)  →  RBF = €0.46/unit on that date.
+    // This is the exact executed price, fully automatic, no API. We derive priceEUR for the
+    // unpriced leg and stamp it on the event so _openLot/_consumeFifo use real basis.
+    let _derivedCount = 0;
+    for (const [txKey, group] of eventsByTx.entries()) {
+      if (lendingTxHashes.has(txKey)) continue;       // lending legs aren't trades
+      const priced = group.filter(e => typeof e.priceEUR === 'number' && e.amount > 0
+                                     && e.category !== 'erc721' && e.category !== 'erc1155');
+      const unpriced = group.filter(e => typeof e.priceEUR !== 'number' && e.amount > 0
+                                       && e.category !== 'erc721' && e.category !== 'erc1155'
+                                       && !_isSpamToken(e) && !_isProtocolReceiptToken(e.asset));
+      if (priced.length === 0 || unpriced.length === 0) continue;
+      // Total EUR value of the priced side of this tx
+      const pricedValueEUR = priced.reduce((s, e) => s + e.priceEUR * e.amount, 0);
+      if (pricedValueEUR <= 0) continue;
+      // Distribute the priced value across the unpriced legs by their share of total unpriced qty.
+      // Most common case: 1 priced + 1 unpriced (a simple swap). For that, the unpriced leg's
+      // total value = priced value, so priceEUR = pricedValue / qty.
+      const totalUnpricedQty = unpriced.reduce((s, e) => s + e.amount, 0);
+      for (const e of unpriced) {
+        // Each unpriced leg gets value proportional to its qty share (handles multi-leg)
+        const legValueEUR = unpriced.length === 1
+          ? pricedValueEUR
+          : pricedValueEUR * (e.amount / totalUnpricedQty);
+        const perUnit = legValueEUR / e.amount;
+        if (perUnit > 0 && isFinite(perUnit)) {
+          e.priceEUR = perUnit;
+          e.priceNote = 'derived_onchain';
+          e._priceDerived = true;
+          _derivedCount++;
+        }
+      }
+    }
+    if (_derivedCount > 0) {
+      warnings.push({
+        type: 'price_derived_onchain',
+        count: _derivedCount,
+        message: `${_derivedCount} preços derivados on-chain a partir de swaps contra ativos com preço conhecido.`,
+      });
+    }
+
     // Helper: open a new lot
     function _openLot(event, qty, basisEURPerUnit, source, swapOriginAsset = null) {
       lotCounter++;
