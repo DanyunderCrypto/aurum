@@ -7943,15 +7943,19 @@ function _getFifoStateFor(w) {
   if (!w || !window.aurumFifoEngine) return null;
   const cacheKey = '_fifoCache_' + w.id;
   const allWalletEvents = _eventsForWallet(w);
-  const events = allWalletEvents.filter(e => typeof e.priceEUR === 'number');
-  const sigKey = events.length + '_' + (events[events.length-1]?.timestamp || 0);
+  // IMPORTANT: pass ALL events to the engine, not just priced ones. FIFO needs the full
+  // chronological sequence — filtering out unpriced events creates gaps (missing lots,
+  // broken order) and produces a different (wrong) result than the audit report/console.
+  // The engine handles unpriced events internally (opens lots at basis 0 + warning).
+  const events = allWalletEvents;
+  const sigKey = events.length + '_' + (events[events.length-1]?.timestamp || 0) + '_' + (state.swapMode || 'permuta');
   if (window[cacheKey] && window[cacheKey]._sig === sigKey) return window[cacheKey];
   if (events.length === 0) return null;
   try {
-    const result = window.aurumFifoEngine.process(events, { walletId: w.id });
+    const result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
     result._sig = sigKey;
     result._totalEvents = allWalletEvents.length;
-    result._pricedEvents = events.length;
+    result._pricedEvents = allWalletEvents.filter(e => typeof e.priceEUR === 'number').length;
     window[cacheKey] = result;
     return result;
   } catch (err) {
@@ -11998,9 +12002,10 @@ function getTxUrl(chain, txHash) {
 // Sprint 8.2: Render Fiscal Engine v2 panel — consumes fifoEngine
 // ════════════════════════════════════════════════════════
 function renderFiscalEngineV2(w, fiscalYear) {
-  // Collect all enriched events for this wallet
-  const events = _eventsForWallet(w).filter(e => typeof e.priceEUR === 'number');
-  // Also fold legacy collateral/cardSpends as synthetic events? Not yet — keep engine pure.
+  // Collect ALL events for this wallet — the FIFO engine needs the full chronological
+  // sequence (it handles unpriced events internally). Filtering to priced-only here was a
+  // bug: it created gaps and produced different totals than the audit report.
+  const events = _eventsForWallet(w);
 
   if (events.length === 0) {
     return `
@@ -12025,7 +12030,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // Process via FIFO engine
   let result;
   try {
-    result = window.aurumFifoEngine.process(events, { walletId: w.id });
+    result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
   } catch (err) {
     errorLogger.error('fifoEngine.process: ' + err.message, { wallet: w.id });
     return `
