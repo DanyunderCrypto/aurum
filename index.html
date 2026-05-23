@@ -1164,52 +1164,9 @@ td.muted  { color:var(--muted); }
   66%      { transform: scale(0.95) rotate(-1deg); opacity: 0.9; }
 }
 
-/* Layer 2: floating crypto symbols */
-.crypto-symbols {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
-.crypto-symbol {
-  position: absolute;
-  font-family: var(--num);
-  font-weight: 600;
-  color: rgba(212, 175, 122, 0.18);
-  user-select: none;
-  animation: matrixFade ease-in-out infinite;
-  text-shadow: 0 0 20px currentColor;
-  will-change: opacity, filter, transform;
-}
-
-@keyframes matrixFade {
-  /* Long invisible phase + brief shimmer + slow fade away */
-  0%   { opacity: 0; filter: brightness(1); transform: scale(0.95); }
-  8%   { opacity: 0.05; filter: brightness(1.4); transform: scale(1); }
-  10%  { opacity: 1; filter: brightness(2); }
-  12%  { opacity: 0.85; filter: brightness(1); }
-  45%  { opacity: 0.85; filter: brightness(1); }
-  60%  { opacity: 0.3; filter: brightness(1); }
-  80%  { opacity: 0; filter: brightness(1); }
-  100% { opacity: 0; filter: brightness(1); transform: scale(0.95); }
-}
-
-/* Individual symbol positions, sizes, speeds, delays */
-.crypto-symbol:nth-child(1) { left: 8%; top: 12%; font-size: 2.5rem; animation-delay: 0s; animation-duration: 18s; color: rgba(247,147,26,0.22); }
-.crypto-symbol:nth-child(2) { left: 88%; top: 8%; font-size: 2rem; animation-delay: 3s; animation-duration: 22s; color: rgba(98,126,234,0.22); }
-.crypto-symbol:nth-child(3) { left: 15%; top: 78%; font-size: 1.8rem; animation-delay: 6s; animation-duration: 16s; color: rgba(212,175,122,0.18); }
-.crypto-symbol:nth-child(4) { left: 92%; top: 65%; font-size: 2.2rem; animation-delay: 9s; animation-duration: 20s; color: rgba(212,175,122,0.18); }
-.crypto-symbol:nth-child(5) { left: 45%; top: 25%; font-size: 1.6rem; animation-delay: 2s; animation-duration: 24s; color: rgba(20,241,149,0.22); }
-.crypto-symbol:nth-child(6) { left: 72%; top: 45%; font-size: 2.8rem; animation-delay: 5s; animation-duration: 19s; color: rgba(247,147,26,0.20); }
-.crypto-symbol:nth-child(7) { left: 28%; top: 55%; font-size: 1.6rem; animation-delay: 11s; animation-duration: 21s; color: rgba(98,126,234,0.20); }
-.crypto-symbol:nth-child(8) { left: 60%; top: 88%; font-size: 2rem; animation-delay: 7s; animation-duration: 17s; color: rgba(212,175,122,0.16); }
-.crypto-symbol:nth-child(9) { left: 38%; top: 40%; font-size: 2.4rem; animation-delay: 13s; animation-duration: 23s; color: rgba(20,241,149,0.18); }
-.crypto-symbol:nth-child(10) { left: 80%; top: 30%; font-size: 1.8rem; animation-delay: 1s; animation-duration: 25s; color: rgba(98,126,234,0.22); }
-
 /* Reduced motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   .aurora-glow { animation: none; }
-  .crypto-symbol { display: none; }
 }
 
 
@@ -2586,21 +2543,9 @@ body.stealth-mode .stealth-badge {
 </style>
 </head>
 <body>
-<!-- R2: Crypto Aurora ambient background -->
+<!-- Ambient background: subtle gold aurora only (refined, no floating symbols) -->
 <div class="crypto-aurora" aria-hidden="true">
   <div class="aurora-glow"></div>
-  <div class="crypto-symbols">
-    <span class="crypto-symbol">₿</span>
-    <span class="crypto-symbol">Ξ</span>
-    <span class="crypto-symbol">$</span>
-    <span class="crypto-symbol">€</span>
-    <span class="crypto-symbol">◎</span>
-    <span class="crypto-symbol">₿</span>
-    <span class="crypto-symbol">Ξ</span>
-    <span class="crypto-symbol">$</span>
-    <span class="crypto-symbol">◎</span>
-    <span class="crypto-symbol">Ξ</span>
-  </div>
 </div>
 
 <canvas id="ghostCanvas"></canvas>
