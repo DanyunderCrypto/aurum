@@ -6391,6 +6391,21 @@ const fifoEngine = (() => {
 
     // Helper: record a disposal
     function _recordDisposal(event, qty, proceedsEUR, consumeResult, kind = 'sale') {
+      // Guard: a disposal must actually dispose of something. If no lots were consumed
+      // (qtyFulfilled ≈ 0), there is no basis and recording proceeds as gain would be a
+      // phantom/fictitious gain (e.g. selling a token whose acquisition lot lives in another
+      // wallet, or whose 'in' leg was never indexed). Skip and warn instead.
+      if (!consumeResult || consumeResult.qtyFulfilled <= 1e-9) {
+        warnings.push({
+          type: 'disposal_no_basis_lot',
+          eventId: event.id || event.txHash,
+          asset: event.asset,
+          chain: event.chain,
+          proceedsEUR,
+          message: `Alienação de ${qty} ${event.asset} (proceeds €${(proceedsEUR||0).toFixed(2)}) mas sem lot de aquisição nesta wallet — ignorado para evitar ganho fictício. Verifica se o token foi adquirido noutra wallet.`,
+        });
+        return null;
+      }
       disposalCounter++;
       const ts = event.timestamp || Math.floor(new Date(event.date).getTime() / 1000);
       const date = event.date || new Date(ts * 1000).toISOString().slice(0, 10);
