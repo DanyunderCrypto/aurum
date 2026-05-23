@@ -5585,6 +5585,8 @@ const USD_STABLECOINS = new Set([
   'USDC','USDT','DAI','BUSD','TUSD','USDP','GUSD','FRAX','LUSD','SUSD','MIM','USDD',
   'USDE','SUSDE','USD0','USD0++','USDT0','USD₮0','GHO','PYUSD','CRVUSD','GHST','DOLA',
   'USDAT','USDA','USDX','USDB','EUSD','FDUSD','USDM','USDS','SDAI','USDL','RLUSD',
+  'APXUSD','USOR','USDAT','OUSD','USDX','DUSD','YUSD','BOLD','USDF','DEUSD','SDEUSD',
+  'USDN','MUSD','HUSD','USDR','USDV','USDZ','AUSD','BUIDL','USYC',
 ]);
 // EUR-pegged stablecoins ≈ €1 (no FX conversion needed)
 const EUR_STABLECOINS = new Set(['EURE','EURC','EURS','AGEUR','EURT','CEUR']);
@@ -6191,7 +6193,8 @@ const fifoEngine = (() => {
   // borrowed positions (negative basis), or wrapped staking receipts.
   // Patterns are case-insensitive against the asset symbol.
   const PROTOCOL_RECEIPT_PATTERNS = [
-    /^a[A-Z][a-z]{1,3}[A-Za-z]*[A-Z]/,   // AAVE v3 aTokens: a+ChainPrefix+Asset (aBasUSDC, aBascbBTC, aEthWETH, aArbUSDC, aBasWETH...)
+    /^a[A-Z][a-z]{1,3}[A-Za-z]*[A-Z]/,   // AAVE v3 aTokens: a+ChainPrefix+Asset (aBasUSDC, aBascbBTC, aEthWETH...)
+    /^ab?(USDC|USDT|DAI|WETH|ETH|WBTC|cbBTC|USDbC|GHO)$/i, // aBUSDC, abUSDC, aWETH, aDAI etc (Moonwell/Aave short forms)
     /^variableDebt/i,                     // AAVE v3 variable debt tokens
     /^stableDebt/i,                       // AAVE v3 stable debt tokens
     /^c[A-Z]{2,}/,                        // Compound v3 cTokens (cUSDC, cETH, cWBTC)
@@ -6263,6 +6266,12 @@ const fifoEngine = (() => {
     if (disguiseChars.test(sym)) {
       const folded = _asciiFold(sym).toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (KNOWN_TICKERS.has(folded)) return true; // disguised as a known ticker → scam
+    }
+    // Digit homoglyphs (U5DC→USDC, US0C, etc.) — only when an ASCII symbol with digits
+    // folds to a known ticker and differs from the original.
+    if (/[0134568]/.test(sym) && /^[A-Za-z0-9]+$/.test(sym)) {
+      const df = sym.toUpperCase().replace(/5/g,'S').replace(/0/g,'O').replace(/1/g,'I').replace(/3/g,'E').replace(/4/g,'A').replace(/8/g,'B').replace(/[^A-Z0-9]/g,'');
+      if (KNOWN_TICKERS.has(df) && sym.toUpperCase() !== df) return true;
     }
     // Scam-name patterns (URLs, "claim at X", etc.)
     for (const pat of SPAM_NAME_PATTERNS) {
