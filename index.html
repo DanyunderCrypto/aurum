@@ -11667,12 +11667,18 @@ function renderHistory(w) {
   if (filterProto === '__unknown__') filtered = filtered.filter(e => !e.protocol);
   else if (filterProto !== 'all') filtered = filtered.filter(e => e.protocol === filterProto);
 
-  // Hide spam (user-marked OR auto-detected: no priceEUR for ERC-20 receives)
+  // Hide spam (user-marked OR engine-auto-detected via isSpamToken)
   const beforeSpamCount = filtered.length;
   let hiddenSpam = 0;
   if (hideSpam && !showSpamOverride) {
+    const eng = window.aurumFifoEngine;
     filtered = filtered.filter(e => {
+      // User explicitly un-flagged (forceFifo / manual txType) → always show
+      if (e.userOverride?.forceFifo) return true;
+      // Manually marked spam
       if (e.userOverride?.spam) { hiddenSpam++; return false; }
+      // Engine auto-detected spam (unicode/diacritic/digit homoglyphs, scam names)
+      if (eng && eng.isSpamToken && eng.isSpamToken(e) && !e.userOverride?.txType) { hiddenSpam++; return false; }
       return true;
     });
   }
