@@ -12116,9 +12116,6 @@ function renderFiscalEngineV2(w, fiscalYear) {
   const dispsInYear = disposals.filter(d => d.fiscalYear === fiscalYear);
   const rewardsInYear = rewards.filter(r => r.fiscalYear === fiscalYear);
 
-  // Warnings filtered for relevance
-  const visibleWarnings = warnings.slice(0, 5);
-
   return `
     <div class="panel" style="margin-bottom:1.3rem;border-color:var(--gold)">
       <div class="panel-head">
@@ -12162,15 +12159,44 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </div>
         ` : ''}
 
-        ${visibleWarnings.length > 0 ? `
-          <div class="alert alert-warn" style="margin-bottom:1rem;font-size:0.78rem">
-            <span>⚠</span>
+        ${warnings.length > 0 ? (() => {
+          // Group warnings by type for an honest data-quality summary
+          const wByType = {};
+          warnings.forEach(x => { wByType[x.type] = (wByType[x.type] || 0) + 1; });
+          const lang = state.lang || 'pt';
+          const labels = {
+            disposal_no_basis_lot: lang === 'en'
+              ? 'disposals with no acquisition lot in this wallet (asset likely acquired in another wallet or before the indexed period — gain not counted to avoid over-reporting)'
+              : 'alienações sem lot de aquisição nesta wallet (ativo provavelmente adquirido noutra wallet ou antes do período indexado — ganho não contado para evitar sobre-declaração)',
+            missing_price: lang === 'en'
+              ? 'acquisitions without a EUR price (mostly tokens never sold — does not affect realised gain; run Price Oracle or set price manually)'
+              : 'aquisições sem preço EUR (na maioria tokens nunca vendidos — não afeta o ganho realizado; corre o Price Oracle ou define preço manual)',
+            swap_shortfall: lang === 'en'
+              ? 'swaps where part of the basis was missing (related to native-asset inflows not captured by the indexer)'
+              : 'swaps onde faltava parte do basis (relacionado com entradas de ativo nativo não captadas pelo indexer)',
+            insufficient_basis: lang === 'en' ? 'disposals with partial basis' : 'alienações com basis parcial',
+            phantom_disposal_skipped: lang === 'en' ? 'spam/dust outflows ignored' : 'saídas de spam/dust ignoradas',
+            price_derived_onchain: lang === 'en' ? 'prices derived on-chain from swaps (automatic)' : 'preços derivados on-chain a partir de swaps (automático)',
+          };
+          const order = ['disposal_no_basis_lot', 'swap_shortfall', 'missing_price', 'insufficient_basis', 'phantom_disposal_skipped', 'price_derived_onchain'];
+          const rows = order.filter(t => wByType[t]).map(t =>
+            `<li style="margin-bottom:0.3rem"><strong style="font-family:var(--mono)">${wByType[t]}×</strong> ${labels[t] || t}</li>`
+          ).join('');
+          return `
+          <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.76rem">
+            <span>🔎</span>
             <div>
-              <strong>${warnings.length} aviso(s)</strong> do engine (mostrando ${visibleWarnings.length}):
-              ${visibleWarnings.map(w => `<br>· ${w.message}`).join('')}
+              <strong>${lang === 'en' ? 'Data quality' : 'Qualidade dos dados'}</strong>
+              — ${lang === 'en' ? 'transparency on what the engine could and could not fully resolve:' : 'transparência sobre o que o motor conseguiu e não conseguiu resolver totalmente:'}
+              <ul style="margin:0.5rem 0 0;padding-left:1.2rem">${rows}</ul>
+              <div style="margin-top:0.5rem;font-size:0.72rem;color:var(--text-muted)">
+                ${lang === 'en'
+                  ? 'These do not invalidate the calculation — they mark its known boundaries. Confirm with a certified accountant (TOC) before filing.'
+                  : 'Isto não invalida o cálculo — marca os seus limites conhecidos. Confirma com um TOC certificado antes de submeter.'}
+              </div>
             </div>
-          </div>
-        ` : ''}
+          </div>`;
+        })() : ''}
 
         <!-- Disposals table -->
         ${dispsInYear.length > 0 ? `
