@@ -16771,14 +16771,21 @@ function exportAuditReport() {
     if (e.priceNote === 'stablecoin_usd' || e.priceNote === 'stablecoin_eur') cStable++;
   }
 
-  // ── Disposals in fiscal year ──
-  const dispYear = disposals.filter(d => String(d.disposalDate || d.date || '').startsWith(String(fiscalYear)));
+  // ── Use the SAME summary source as the on-screen panel (single source of truth) ──
+  const summary = (typeof eng.summaryByYear === 'function')
+    ? eng.summaryByYear(disposals)
+    : (r.summary && r.summary.byYear ? r.summary.byYear : {});
+  const yr = summary[fiscalYear] || { anexoG: { gain:0, proceeds:0, basis:0, count:0 }, anexoG1: { gain:0, proceeds:0, basis:0, count:0 }, taxEstimateEUR: 0 };
+  const sumG  = yr.anexoG.gain;
+  const sumG1 = yr.anexoG1.gain;
+  const sumProceeds = yr.anexoG.proceeds + yr.anexoG1.proceeds;
+  const sumBasis = yr.anexoG.basis + yr.anexoG1.basis;
+  const taxG = (typeof yr.taxEstimateEUR === 'number') ? yr.taxEstimateEUR : Math.max(0, sumG) * 0.28;
+  const countG = yr.anexoG.count;
+
+  // Disposals listing for the trail — filter by the disposal's own fiscalYear (same as summary)
+  const dispYear = disposals.filter(d => d.fiscalYear === fiscalYear);
   const realDisp = dispYear.filter(d => d.qtyDisposed > 1e-9);
-  const sumG  = realDisp.reduce((s, d) => s + (d.anexoG  ? d.anexoG.gain  : 0), 0);
-  const sumG1 = realDisp.reduce((s, d) => s + (d.anexoG1 ? d.anexoG1.gain : 0), 0);
-  const sumProceeds = realDisp.reduce((s, d) => s + (d.proceedsEUR || 0), 0);
-  const sumBasis = realDisp.reduce((s, d) => s + (d.basisEUR || 0), 0);
-  const taxG = Math.max(0, sumG) * 0.28;
 
   // ── Warnings grouped ──
   const warnByType = {};
@@ -16845,7 +16852,7 @@ function exportAuditReport() {
 
 <h2>1. Resumo fiscal — ${fiscalYear}</h2>
 <div class="cards">
-  <div class="card"><div class="card-label">Anexo G · &lt;365d</div><div class="card-value ${sumG>=0?'red':'green'}">€${fmt(sumG)}</div><div class="muted" style="font-size:0.72rem">${realDisp.filter(d=>d.anexoG&&d.anexoG.gain).length} alienações</div></div>
+  <div class="card"><div class="card-label">Anexo G · &lt;365d</div><div class="card-value ${sumG>=0?'red':'green'}">€${fmt(sumG)}</div><div class="muted" style="font-size:0.72rem">${countG} alienações</div></div>
   <div class="card"><div class="card-label">Anexo G1 · ≥365d / pré-2023</div><div class="card-value gold">€${fmt(sumG1)}</div><div class="muted" style="font-size:0.72rem">isento, declarativo</div></div>
   <div class="card"><div class="card-label">Imposto estimado (28%)</div><div class="card-value">€${fmt(taxG)}</div><div class="muted" style="font-size:0.72rem">sobre G positivo</div></div>
   <div class="card"><div class="card-label">Proceeds / Basis</div><div class="card-value" style="font-size:1rem">€${fmt(sumProceeds)} / €${fmt(sumBasis)}</div></div>
