@@ -5576,6 +5576,31 @@ const COIN_ID_MAP = {
   'PYUSD':  'coingecko:paypal-usd',
 };
 
+// Stablecoins pegged to USD ≈ $1. For these we don't need a price API — the USD value
+// is ~1 by definition, converted to EUR by the ECB rate of the day. This resolves the
+// bulk of "missing price" cases instantly and reliably (USDC, USDT, DAI, and the many
+// newer variants like USDT0, USD0, USDe, etc.). Depeg events are rare and immaterial for
+// daily-granularity tax basis.
+const USD_STABLECOINS = new Set([
+  'USDC','USDT','DAI','BUSD','TUSD','USDP','GUSD','FRAX','LUSD','SUSD','MIM','USDD',
+  'USDE','SUSDE','USD0','USD0++','USDT0','USD₮0','GHO','PYUSD','CRVUSD','GHST','DOLA',
+  'USDAT','USDA','USDX','USDB','EUSD','FDUSD','USDM','USDS','SDAI','USDL','RLUSD',
+]);
+// EUR-pegged stablecoins ≈ €1 (no FX conversion needed)
+const EUR_STABLECOINS = new Set(['EURE','EURC','EURS','AGEUR','EURT','CEUR']);
+
+function _normalizeStableSym(asset) {
+  // Strip protocol wrappers: aBUSDC → USDC, abUSDC → USDC, etc handled elsewhere;
+  // here just uppercase and trim.
+  return (asset || '').toUpperCase().replace(/\s+/g, '');
+}
+function isUsdStablecoin(asset) {
+  return USD_STABLECOINS.has(_normalizeStableSym(asset));
+}
+function isEurStablecoin(asset) {
+  return EUR_STABLECOINS.has(_normalizeStableSym(asset));
+}
+
 // Normalize block timestamp to day-start (UTC midnight) for daily granularity
 function dayStartTs(ts) {
   if (typeof ts !== 'number' || ts <= 0) return null;
@@ -5918,6 +5943,26 @@ const priceOracle = (() => {
       if (e.category === 'erc721' || e.category === 'erc1155') {
         e.priceEUR = null; e.priceUSD = null; e.priceNote = 'nft_excluded';
         stats.skipped++; continue;
+      }
+
+      // ── Stablecoin fast-path: USD-pegged ≈ $1, EUR-pegged ≈ €1 ──
+      // No API call needed — resolves the bulk of "missing price" cases instantly.
+      const blockTsStable = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+      const dateStrStable = e.date || new Date((dayStartTs(blockTsStable) || blockTsStable) * 1000).toISOString().slice(0, 10);
+      if (isUsdStablecoin(e.asset)) {
+        const rate = await getEurRate(dateStrStable);
+        if (rate !== null) {
+          e.priceUSD = 1;
+          e.priceEUR = 1 * rate;        // per-unit EUR
+          e.priceNote = 'stablecoin_usd';
+          stats.enriched++; continue;
+        }
+        // If rate unavailable, fall through to normal path
+      } else if (isEurStablecoin(e.asset)) {
+        e.priceUSD = null;
+        e.priceEUR = 1;                 // €1 per unit
+        e.priceNote = 'stablecoin_eur';
+        stats.enriched++; continue;
       }
 
       const coinId = resolveCoinId(e.asset, e.chain, e.assetContract);
