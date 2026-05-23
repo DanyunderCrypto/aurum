@@ -6467,7 +6467,19 @@ const fifoEngine = (() => {
       // ─── SWAP handling ──────────────────────────────────
       // Lending txs (supply/withdraw/borrow/repay) are NOT swaps even if they have
       // both in and out legs (e.g. supply ETH out + aToken in). Skip swap branch.
-      if (txType === 'swap' && !isLendingTx && ins.length > 0 && outs.length > 0) {
+      //
+      // Implicit swap detection: even when the indexer tagged the legs as send/receive
+      // (not 'swap'), a transaction with BOTH an out-leg and an in-leg of DIFFERENT assets
+      // is economically a swap. This captures airdrop sales (e.g. L3 out → USDC in) where
+      // the airdrop token has no price but the received side does — so the proceeds (and
+      // thus the taxable gain) come from the priced side. Critical for fiscal correctness.
+      const isExplicitSwap = txType === 'swap';
+      const isImplicitSwap = !isExplicitSwap
+        && ins.length > 0 && outs.length > 0
+        && ins[0].asset !== outs[0].asset
+        // Don't treat self-transfers or pure receives as swaps
+        && txType !== 'self_transfer';
+      if ((isExplicitSwap || isImplicitSwap) && !isLendingTx && ins.length > 0 && outs.length > 0) {
         const swapIn = ins[0];   // simple case: 1-in 1-out (multi-leg handled below)
         const swapOut = outs[0];
 
@@ -6476,9 +6488,28 @@ const fifoEngine = (() => {
         if (swapMode === 'permuta' && cryptoToCrypto) {
           // Permuta: carry basis from outgoing asset's consumed lots to the incoming asset's new lot
           const consumeOut = _consumeFifo(swapOut.asset, swapOut.chain, swapOut.amount, swapOut.timestamp);
-          // New lot for swap_in with basis = consumed basis / qty_in
-          const basisPerUnit = swapIn.amount > 0 ? consumeOut.totalBasis / swapIn.amount : 0;
-          _openLot(swapIn, swapIn.amount, basisPerUnit, 'swap_in', swapOut.asset);
+
+          // Airdrop-sale detection: if the outgoing asset had (near) zero basis (typical of an
+          // airdrop/reward) AND the incoming asset has a known market price, this swap REALISES
+          // the airdrop's value. Record the received value as proceeds (Anexo G gain), because
+          // the gain is now tangible and the incoming priced asset would otherwise inherit a
+          // €0 basis and hide it forever. This is the fiscally correct treatment for sold airdrops.
+          const inHasPrice = typeof swapIn.priceEUR === 'number' && swapIn.amount > 0;
+          const inValueEUR = inHasPrice ? swapIn.priceEUR * swapIn.amount : null;
+          const outBasisNearZero = consumeOut.totalBasis < 0.01;
+          const isAirdropRealisation = outBasisNearZero && inHasPrice && inValueEUR > 0.01;
+
+          if (isAirdropRealisation) {
+            // Record disposal of the airdrop token: proceeds = received value, basis = consumed (≈0)
+            _recordDisposal(swapOut, swapOut.amount, inValueEUR, consumeOut, 'airdrop_sale');
+            // Open the incoming lot at its real market basis (so future moves are correct)
+            _openLot(swapIn, swapIn.amount, swapIn.priceEUR, 'buy');
+          } else {
+            // Standard permuta: carry basis to the incoming lot, no disposal recorded
+            const basisPerUnit = swapIn.amount > 0 ? consumeOut.totalBasis / swapIn.amount : 0;
+            _openLot(swapIn, swapIn.amount, basisPerUnit, 'swap_in', swapOut.asset);
+          }
+
           // Record meta only (no disposal entered)
           if (consumeOut.qtyShortfall > 1e-9) {
             warnings.push({
