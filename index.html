@@ -6285,12 +6285,25 @@ const fifoEngine = (() => {
     // Swaps: each side tagged separately (in=buy, out=sell)
     if (tx === 'swap') return dir === 'in' ? 'swap_buy' : 'swap_sell';
 
-    // ── Airdrops & passive rewards (OCC parecer PT28627, Jun 2025) ──
-    // Per the OCC technical opinion: airdrops/passive rewards in the form of crypto-assets
-    // are NOT taxed on receipt (Art. 10 nº 20 CIRS excludes income still held as crypto).
-    // They are zero-cost acquisitions, taxed as a capital gain (Annex G/G1) only when
-    // converted to FIAT. So: open a lot at basis €0, do NOT record Category E income.
+    // ── Genuine Category E income (rare in DeFi) ──
+    // Per OCC parecer PT28627, true Cat. E is e.g. dividends in asset-backed-tokens that
+    // confer a residual interest in an entity (equity instruments, IFRS9/NCRF27). These
+    // ARE income at receipt. Tagged explicitly so they're distinguishable from airdrops.
+    if (tx === 'dividend' || tx === 'interest_income' || tx === 'category_e') {
+      return 'reward';
+    }
+
+    // ── Staking / airdrops / rewards (AT informação vinculativa, 2025-2026) ──
+    // The AT distinguishes by FORM of payment:
+    //  • Paid in FIAT (EUR/USD) → Category E income, taxed 28% AT RECEIPT.
+    //  • Paid in CRYPTO → tax deferred; the income "waits" and is taxed as a capital gain
+    //    only when later converted to fiat. (Art. 10 nº 20 CIRS; OCC PT28627.)
     if (tx === 'airdrop' || tx === 'reward' || tx === 'cashback' || tx === 'staking_reward') {
+      const assetUp = (event.asset || '').toUpperCase();
+      const receivedInFiat = FIAT_SYMBOLS.has(assetUp);
+      // Reward paid directly in fiat → Category E income now
+      if (receivedInFiat) return 'reward';
+      // Reward paid in crypto → deferred; zero-cost lot, taxed on future fiat conversion
       return 'airdrop_acquisition';
     }
 
@@ -12325,7 +12338,8 @@ function renderFiscal(w) {
           <li>${t('fiscalPanel.cashback')}</li>
           <li>${t('fiscalPanel.cardLoan')}</li>
           <li>${t('fiscalPanel.fifoMandatory')}</li>
-          <li><strong>Airdrops/rewards</strong> em cripto — custo zero, não tributados na receção; tributam como mais-valia (G/G1) só na conversão para moeda fiduciária (parecer OCC PT28627, Art. 10º nº 20 CIRS).</li>
+          <li><strong>Airdrops/staking</strong> — se recebidos em moeda fiduciária, tributam já em Cat. E (28%); se recebidos em cripto, ficam "em espera" e tributam como mais-valia (G/G1) só na conversão para fiat (entendimento AT; OCC PT28627; Art. 10º nº 20 CIRS).</li>
+          <li><strong>Conversão para stablecoin</strong> (USDC/USDT) não é tributada — só a passagem final a moeda fiduciária com curso legal (info vinculativa AT, nov. 2025).</li>
         </ul>
         ${t('fiscalPanel.disclaimer')}
       </div>

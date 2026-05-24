@@ -272,6 +272,33 @@ run('S14: Airdrop (basis 0) sold to EUR → entire proceeds is the gain', () => 
   }
 });
 
+// ════════════════════════════════════════════════════════════════
+// SCENARIO 15: Staking reward paid in FIAT → Category E income at receipt
+// (AT informação vinculativa: 28% on receipt when paid in fiat)
+// ════════════════════════════════════════════════════════════════
+run('S15: Staking reward in EUR → Category E income at receipt', () => {
+  const events = [
+    ev({ direction: 'in', asset: 'EUR', amount: 500, priceEUR: 1, txType: 'staking_reward', date: '2024-04-01', timestamp: ts('2024-04-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w15' });
+  const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
+  assert(approx(anexoE, 500), `fiat staking reward must be Cat. E income €500, got €${anexoE}`);
+});
+
+// ════════════════════════════════════════════════════════════════
+// SCENARIO 16: Staking reward paid in CRYPTO → deferred (not Cat E now)
+// ════════════════════════════════════════════════════════════════
+run('S16: Staking reward in crypto → deferred, zero-cost lot, no Cat E', () => {
+  const events = [
+    ev({ direction: 'in', asset: 'ETH', amount: 0.5, priceEUR: 2000, txType: 'staking_reward', date: '2024-04-01', timestamp: ts('2024-04-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w16' });
+  const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
+  assert(anexoE === 0, `crypto staking reward must NOT be Cat. E at receipt, got €${anexoE}`);
+  const ethLot = (r.lots || []).find(l => l.asset === 'ETH');
+  assert(ethLot != null, `should open a lot for the crypto reward`);
+});
+
 // ── Summary ──────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
