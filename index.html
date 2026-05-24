@@ -6347,6 +6347,10 @@ const fifoEngine = (() => {
     /^ab?(USDC|USDT|DAI|WETH|ETH|WBTC|cbBTC|USDbC|GHO)$/i, // aBUSDC, abUSDC, aWETH, aDAI etc (Moonwell/Aave short forms)
     /^variableDebt/i,                     // AAVE v3 variable debt tokens
     /^stableDebt/i,                       // AAVE v3 stable debt tokens
+    /-DEBT$/i,                            // generic debt tokens (eWETH-1-DEBT, Euler/Morpho debt)
+    /\bDEBT\b/i,                          // any token labelled DEBT — it's a liability, not a holding
+    /^(PLP|PT|YT|LP|SY)-/i,               // structured-position / LP receipts (PLP-apxUSD, PT-sUSDe, Pendle YT/SY, LP tokens)
+    /-(\d{1,2})?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-?\d{2,4}$/i, // maturity-dated receipts (…-18JUN2026)
     /^c[A-Z]{2,}/,                        // Compound v3 cTokens (cUSDC, cETH, cWBTC)
     /^morpho/i,                           // Morpho positions
     /^mw[A-Z]/,                           // Morpho Wrapped variants
@@ -8720,15 +8724,32 @@ function renderPortfolioCharts(w) {
   const colors = ['#D4AF7A', '#E8C99B', '#A88556', '#F0D9A8', '#8E6B3D', '#B8956B', '#5C4624', '#D4B89C', '#998270'];
 
   // Donut SVG renderer — now with logos + PnL per asset
-  const donutSVG = renderDonutSVG(allocItems, colors, totalPortfolio, assetMeta, basisByAsset);
+  const donutSVG = renderDonutSVG(allocItems, colors, totalPortfolio, assetMeta, basisByAsset, fifoByAsset, avgCostByAsset);
 
-  // Total unrealized PnL across priced holdings (value now − FIFO basis of remaining lots)
+  // Total unrealized PnL — ONLY over assets where we have a reliable cost basis. Comparing
+  // the full portfolio value against a partial basis (some tokens received with ~zero
+  // recorded cost, e.g. protocol LP tokens) produces nonsense like +505%. We sum value and
+  // basis over the SAME set of assets (apples to apples) and flag how much value is excluded.
+  let pnlValueCovered = 0;   // market value of assets that have a basis
   let totalBasisHeld = 0;
+  let valueWithoutBasis = 0; // value of assets we can't compute PnL for
   for (const [asset, m] of assetMeta.entries()) {
-    totalBasisHeld += (basisByAsset.get(asset) || 0);
+    const basis = basisByAsset.get(asset);
+    if (basis && basis > 0.01) {
+      // Only count the portion of value backed by basis qty (cap to avoid inflated %).
+      const avg = avgCostByAsset.get(asset) || 0;
+      const fifoQty = (fifoByAsset.get(asset)?.qty) || 0;
+      const qtyForBasis = Math.min(m.qty, fifoQty);
+      const ppu = m.qty > 0 ? m.value / m.qty : 0;
+      pnlValueCovered += qtyForBasis * ppu;
+      totalBasisHeld += basis;
+    } else {
+      valueWithoutBasis += m.value;
+    }
   }
-  const totalUnrealized = totalPortfolio - totalBasisHeld;
+  const totalUnrealized = pnlValueCovered - totalBasisHeld;
   const unrealizedPct = totalBasisHeld > 0 ? (totalUnrealized / totalBasisHeld) * 100 : 0;
+  const pnlReliable = totalBasisHeld > 0 && (valueWithoutBasis / totalPortfolio) < 0.5;
   // Chain bars
   const chainBarsHTML = sortedChains.map(([chain, val], i) => {
     const pct = (val / totalPortfolio) * 100;
@@ -8748,7 +8769,7 @@ function renderPortfolioCharts(w) {
       <div class="panel">
         <div class="panel-head">
           <span class="panel-title">${t('section.allocationByAsset')}</span>
-          <span style="font-size:0.7rem;color:var(--text-muted)">${valueSource === 'onchain' ? '🟢 saldo on-chain' : '⏳ a estimar…'} · €${fmt(totalPortfolio)}${totalBasisHeld > 0 ? ` · <span style="color:${totalUnrealized>=0?'var(--green)':'var(--red)'}">${totalUnrealized>=0?'+':'−'}€${fmt(Math.abs(totalUnrealized))} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</span>` : ''}</span>
+          <span style="font-size:0.7rem;color:var(--text-muted)">${valueSource === 'onchain' ? '🟢 saldo on-chain' : '⏳ a estimar…'} · €${fmt(totalPortfolio)}${pnlReliable ? ` · <span style="color:${totalUnrealized>=0?'var(--green)':'var(--red)'}">${totalUnrealized>=0?'+':'−'}€${fmt(Math.abs(totalUnrealized))} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</span>` : ''}</span>
         </div>
         <div class="panel-body">
           ${donutSVG}
@@ -8769,7 +8790,7 @@ function renderPortfolioCharts(w) {
 }
 
 // Pure SVG donut chart — now with token logos and per-asset unrealized PnL in the legend
-function renderDonutSVG(items, colors, total, assetMeta, basisByAsset) {
+function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAsset, avgCostByAsset) {
   if (!items.length || total === 0) return '<div style="text-align:center;color:var(--text-muted);padding:1rem">Sem dados</div>';
 
   const size = 220;
@@ -8802,15 +8823,27 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset) {
     } else {
       logo = `<div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>`;
     }
-    // Unrealized PnL for this asset (value now − FIFO basis of remaining lots)
+    // Unrealized PnL for this asset. Compare ONLY the portion of value backed by a known
+    // basis (avoids inflated % when on-chain qty exceeds the FIFO-recorded qty or when the
+    // token was received with ~zero recorded cost, e.g. protocol LP tokens).
     let pnlHtml = '';
     if (!isOther && basisByAsset) {
       const basis = basisByAsset.get(s.label) || 0;
-      if (basis > 0.01) {
-        const pnl = s.value - basis;
+      const m = assetMeta && assetMeta.get(s.label);
+      if (basis > 0.01 && m && m.qty > 0) {
+        const ppu = m.value / m.qty;
+        const fifoQty = (typeof fifoByAsset !== 'undefined' && fifoByAsset.get) ? (fifoByAsset.get(s.label)?.qty || 0) : 0;
+        const avg = (typeof avgCostByAsset !== 'undefined' && avgCostByAsset.get) ? (avgCostByAsset.get(s.label) || 0) : 0;
+        const qtyForBasis = avg > 0 ? Math.min(m.qty, basis / avg) : m.qty;
+        const valueCovered = qtyForBasis * ppu;
+        const pnl = valueCovered - basis;
         const pnlPct = (pnl / basis) * 100;
-        const col = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-        pnlHtml = `<div style="font-size:0.62rem;color:${col};font-family:var(--mono)">${pnl>=0?'+':'−'}€${fmt(Math.abs(pnl))} ${pnlPct>=0?'+':''}${pnlPct.toFixed(0)}%</div>`;
+        // Suppress absurd %: if basis covers <30% of the holding's value, it's unreliable.
+        const coverage = valueCovered / (m.value || 1);
+        if (coverage >= 0.3 && Math.abs(pnlPct) < 1000) {
+          const col = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+          pnlHtml = `<div style="font-size:0.62rem;color:${col};font-family:var(--mono)">${pnl>=0?'+':'−'}€${fmt(Math.abs(pnl))} ${pnlPct>=0?'+':''}${pnlPct.toFixed(0)}%</div>`;
+        }
       }
     }
     return `
