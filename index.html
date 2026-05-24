@@ -8306,7 +8306,11 @@ async function fetchRealBalances(w, { force = false } = {}) {
           const probe = { asset: meta.symbol || '?', chain, assetContract: t.contractAddress, amount: qty };
           if (eng?.isSpamToken?.(probe)) continue;                       // filter scam/impostor
           if (eng?.isProtocolReceiptToken?.(meta.symbol || '')) continue; // filter aTokens
-          holdings.push({ asset: meta.symbol || '?', chain, contract: t.contractAddress, qty, decimals: meta.decimals });
+          holdings.push({
+            asset: meta.symbol || '?', chain, contract: t.contractAddress, qty,
+            decimals: meta.decimals,
+            logoUrl: meta.logo || null,           // Alchemy sometimes provides a logo
+          });
         } catch (e) { /* skip token on metadata error */ }
       }
     } catch (e) {
@@ -8318,6 +8322,36 @@ async function fetchRealBalances(w, { force = false } = {}) {
   return holdings;
 }
 window.fetchRealBalances = fetchRealBalances;
+
+// ── DexScreener price + logo (no API key; covers DEX/protocol tokens DefiLlama misses) ──
+// Returns { priceUSD, logoUrl } for a token by contract. Picks the most-liquid pair as the
+// reference price. Cached per contract for the session. Fails gracefully → null.
+const _dexScreenerCache = new Map();
+async function fetchDexScreenerPrice(chain, contract) {
+  if (!contract) return null;
+  const ck = `${chain}:${contract.toLowerCase()}`;
+  if (_dexScreenerCache.has(ck)) return _dexScreenerCache.get(ck);
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${contract}`);
+    if (!res.ok) throw new Error('ds ' + res.status);
+    const j = await res.json();
+    const pairs = (j && j.pairs) || [];
+    if (!pairs.length) { _dexScreenerCache.set(ck, null); return null; }
+    // Pick the most liquid pair (highest USD liquidity) for a robust reference price.
+    pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+    const best = pairs[0];
+    const priceUSD = parseFloat(best.priceUsd);
+    if (!isFinite(priceUSD) || priceUSD <= 0) { _dexScreenerCache.set(ck, null); return null; }
+    const logoUrl = best.info?.imageUrl || null;
+    const out = { priceUSD, logoUrl };
+    _dexScreenerCache.set(ck, out);
+    return out;
+  } catch (e) {
+    _dexScreenerCache.set(ck, null);
+    return null;
+  }
+}
+window.fetchDexScreenerPrice = fetchDexScreenerPrice;
 
 // ── Fiscal hero panel: KPIs no topo do dashboard ──
 function renderDashboardFiscalHero(w) {
@@ -8601,8 +8635,16 @@ function renderPortfolioCharts(w) {
   const realBal = window['_balCache_' + w.id]?.data;
   if (realBal && realBal.length > 0) {
     valueSource = 'onchain';
+    const eurRate = (window._lastEurUsdRate || 0.92); // USD→EUR approx; refined elsewhere
+    const needDexPrice = [];
     for (const h of realBal) {
-      const ppu = _priceFor(h.asset, h.chain, h.contract);
+      let ppu = _priceFor(h.asset, h.chain, h.contract);
+      // DexScreener fallback (cached): covers DEX/protocol tokens DefiLlama misses (jrUSDat…)
+      if (ppu == null && h.contract) {
+        const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
+        if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
+        else if (ds === undefined) needDexPrice.push(h); // not yet fetched
+      }
       if (ppu == null) {
         unpricedCount++;
         if (unpricedSamples.length < 6) unpricedSamples.push(h.asset);
@@ -8613,10 +8655,17 @@ function renderPortfolioCharts(w) {
       if (value > 100_000_000) continue;
       allocationMap.set(h.asset, (allocationMap.get(h.asset) || 0) + value);
       chainMap.set(h.chain, (chainMap.get(h.chain) || 0) + value);
-      const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0 };
+      const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0, logoUrl: h.logoUrl };
       m.qty += h.qty; m.value += value; m.contract = m.contract || h.contract; m.chain = h.chain;
+      if (h.logoUrl && !m.logoUrl) m.logoUrl = h.logoUrl;
       assetMeta.set(h.asset, m);
       totalPortfolio += value;
+    }
+    // Batch-fetch DexScreener prices for the still-unpriced tokens, then re-render once.
+    if (needDexPrice.length > 0) {
+      Promise.all(needDexPrice.slice(0, 20).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
+        .then(results => { if (results.some(Boolean) && typeof render === 'function') render(); })
+        .catch(() => {});
     }
   } else {
     for (const lot of fifoState.lots) {
@@ -8741,10 +8790,18 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset) {
   const legend = segments.map(s => {
     const meta = assetMeta && assetMeta.get(s.label);
     const isOther = s.label === 'Outros';
-    // Logo (real token logo for known assets; colored dot for "Outros")
-    const logo = (!isOther && meta && typeof tokenLogo === 'function')
-      ? tokenLogo(s.label, meta.chain, meta.contract, 18)
-      : `<div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>`;
+    // Logo: prefer a direct URL from DexScreener/Alchemy, else token logo by contract/symbol.
+    let logo;
+    if (isOther) {
+      logo = `<div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>`;
+    } else if (meta && meta.logoUrl) {
+      const fb = (typeof _logoFallbackCircle === 'function') ? _logoFallbackCircle(s.label, s.color, 18) : '';
+      logo = `<span style="position:relative;display:inline-flex;width:18px;height:18px;flex-shrink:0;vertical-align:middle"><img src="${meta.logoUrl}" width="18" height="18" loading="lazy" style="width:18px;height:18px;border-radius:50%;object-fit:cover;background:var(--bg2)" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex'"><span style="display:none;position:absolute;inset:0">${fb}</span></span>`;
+    } else if (meta && typeof tokenLogo === 'function') {
+      logo = tokenLogo(s.label, meta.chain, meta.contract, 18);
+    } else {
+      logo = `<div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>`;
+    }
     // Unrealized PnL for this asset (value now − FIFO basis of remaining lots)
     let pnlHtml = '';
     if (!isOther && basisByAsset) {
