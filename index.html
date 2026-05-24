@@ -6390,6 +6390,21 @@ const fifoEngine = (() => {
   //     to disguise itself (clear impersonation), OR has obvious scam-name patterns.
   //   - A contract allowlist guarantees known-legit tokens are never flagged.
   const KNOWN_TICKERS = new Set(['USDC','USDT','DAI','WETH','WBTC','CBBTC','BUSD','TUSD','FRAX','LUSD','GHO','USDE','SUSDE','WSTETH','STETH','RETH','WEETH','AERO','VIRTUAL','AAVE']);
+  // Official contract addresses for high-value tickers, per chain (lowercased). A token
+  // bearing one of these symbols but with a DIFFERENT contract is an impostor (scam reusing
+  // a famous symbol — e.g. fake "AAVE" with billions of supply). Only list tickers we're
+  // confident about; absence here means we don't impostor-check that symbol (no false positives).
+  const OFFICIAL_CONTRACTS = {
+    'AAVE:base':  new Set(['0x63706e401c06ac8513145b7687a14804d17f814b']),
+    'AAVE:eth':   new Set(['0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9']),
+    'AERO:base':  new Set(['0x940181a94a35a4569e4529a3cdfb74e38fd98631']),
+    'USDC:base':  new Set(['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913','0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca']), // native + USDbC
+    'USDC:eth':   new Set(['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']),
+    'USDT:eth':   new Set(['0xdac17f958d2ee523a2206206994597c13d831ec7']),
+    'WETH:base':  new Set(['0x4200000000000000000000000000000000000006']),
+    'WETH:eth':   new Set(['0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2']),
+    'CBBTC:base': new Set(['0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf']),
+  };
   // Legit token contracts that must NEVER be flagged (lowercased {chain}:{address})
   const LEGIT_CONTRACTS = new Set([
     'base:0x102d758f688a4c1c5a80b116bd945d4455460282', // USD₮0 (USDT0) on Base — legit
@@ -6410,6 +6425,16 @@ const fifoEngine = (() => {
     // Allowlist by contract → never spam
     const contractKey = event.assetContract ? `${event.chain}:${(event.assetContract||'').toLowerCase()}` : null;
     if (contractKey && LEGIT_CONTRACTS.has(contractKey)) return false;
+
+    // Impostor check: a famous ticker with the WRONG contract is a scam reusing the symbol.
+    // (e.g. fake "AAVE" on Base with billions of supply and a contract that isn't the real one.)
+    const symUp = sym.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const officialKey = `${symUp}:${event.chain}`;
+    if (OFFICIAL_CONTRACTS[officialKey] && event.assetContract) {
+      if (!OFFICIAL_CONTRACTS[officialKey].has((event.assetContract||'').toLowerCase())) {
+        return true; // claims to be a known ticker but contract doesn't match → impostor
+      }
+    }
 
     // Impersonation check: does the symbol use disguise-homoglyphs (Cyrillic/Lisu/etc.)
     // to fold EXACTLY into a known ticker? Those specific homoglyphs are in our fold map.
@@ -8441,16 +8466,20 @@ function renderPortfolioCharts(w) {
   const fifoState = _getFifoStateFor(w);
   if (!fifoState) return '';
 
-  // Compute allocation by asset (using current market value where available)
+  // Compute allocation by asset (using current market value where available).
+  // CRITICAL: key prices by CONTRACT, not just symbol. Scam tokens routinely reuse popular
+  // symbols ("AAVE", "USDC") with a different contract. Keying by symbol alone would apply
+  // the real token's price to billions of impostor units → absurd portfolio totals.
   const livePrices = new Map();
+  const _priceKey = (e) => `${(e.assetContract||e.asset||'').toLowerCase()}:${e.chain}`;
   for (const e of _eventsForWallet(w)) {
     if (typeof e.priceEUR !== 'number' || !e.amount || e.amount === 0) continue;
-    const key = `${e.asset}:${e.chain}`;
+    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;            // skip detected spam
+    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(e.asset)) continue; // skip aTokens
+    const key = _priceKey(e);
     const cur = livePrices.get(key);
     const ts = e.timestamp || 0;
-    // priceEUR is per-unit
-    const ppu = e.priceEUR;
-    if (!cur || cur.timestamp < ts) livePrices.set(key, { priceEURPerUnit: ppu, timestamp: ts });
+    if (!cur || cur.timestamp < ts) livePrices.set(key, { priceEURPerUnit: e.priceEUR, timestamp: ts });
   }
 
   const allocationMap = new Map();   // asset → totalValue EUR
@@ -8458,11 +8487,14 @@ function renderPortfolioCharts(w) {
   let totalPortfolio = 0;
   for (const lot of fifoState.lots) {
     if (lot.qtyRemaining <= 1e-9) continue;
-    const key = `${lot.asset}:${lot.chain}`;
-    const live = livePrices.get(key);
+    const lotKey = `${(lot.assetContract||lot.asset||'').toLowerCase()}:${lot.chain}`;
+    const live = livePrices.get(lotKey);
     if (!live) continue;
     const value = lot.qtyRemaining * live.priceEURPerUnit;
     if (value < 0.01) continue; // ignore dust
+    // Sanity guard: a single lot worth more than €100M for a personal wallet is almost
+    // certainly an impostor/decimals issue — skip it rather than poison the whole chart.
+    if (value > 100_000_000) continue;
     allocationMap.set(lot.asset, (allocationMap.get(lot.asset) || 0) + value);
     chainMap.set(lot.chain, (chainMap.get(lot.chain) || 0) + value);
     totalPortfolio += value;
