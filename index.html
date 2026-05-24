@@ -4100,8 +4100,7 @@ function protocolLogo(key, proto, size = 24) {
   const slug = (proto && proto.slug) || key;
   const fallback = _logoFallbackCircle(key, (proto && proto.color) || 'var(--gold)', s);
   const urls = [
-    `https://cdn.jsdelivr.net/npm/@web3icons/common@latest/dist/svgs/protocols/branded/${slug}.svg`,
-    `https://cdn.jsdelivr.net/npm/@web3icons/common@latest/dist/svgs/protocols/mono/${slug}.svg`,
+    `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${slug}.svg`,
   ];
   return _cascadingImg(urls, (proto&&proto.name)||key, s, fallback, 'contain', (proto&&proto.color)||'var(--bg3)');
 }
@@ -8247,6 +8246,79 @@ function _getFifoStateFor(w) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Real on-chain balance reader — the source of truth for portfolio value.
+// The FIFO inventory is for TAX (which lots were disposed), not for current holdings.
+// To show what the wallet ACTUALLY holds now, we read live token balances via Alchemy
+// (alchemy_getTokenBalances + getTokenMetadata) and price them at current market.
+// Cached in-memory per wallet for the session; refreshed on demand.
+// ══════════════════════════════════════════════════════════════
+async function _alchemyRpc(chain, method, params, key) {
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return null;
+  const res = await fetch(base + key, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`RPC ${method} ${res.status}`);
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message || 'RPC error');
+  return j.result;
+}
+
+async function fetchRealBalances(w, { force = false } = {}) {
+  const cacheKey = '_balCache_' + w.id;
+  const now = Date.now();
+  if (!force && window[cacheKey] && (now - window[cacheKey].at) < 120000) {
+    return window[cacheKey].data; // 2-min cache
+  }
+  const key = w.alchemyKey || state.globalAlchemyKey || '';
+  const evmAddr = w.evm || w.addr;
+  if (!key || !evmAddr) return null;
+
+  const eng = window.aurumFifoEngine;
+  const holdings = []; // { asset, chain, contract, qty, decimals }
+  const chains = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c]);
+
+  for (const chain of chains) {
+    try {
+      // 1. Native balance (ETH/etc.)
+      const nativeHex = await _alchemyRpc(chain, 'eth_getBalance', [evmAddr, 'latest'], key);
+      if (nativeHex) {
+        const nativeQty = parseInt(nativeHex, 16) / 1e18;
+        if (nativeQty > 1e-9) {
+          const sym = (chain === 'polygon') ? 'POL' : 'ETH';
+          holdings.push({ asset: sym, chain, contract: null, qty: nativeQty, decimals: 18, native: true });
+        }
+      }
+      // 2. ERC-20 balances
+      const bal = await _alchemyRpc(chain, 'alchemy_getTokenBalances', [evmAddr, 'erc20'], key);
+      const tokens = (bal && bal.tokenBalances) || [];
+      const nonZero = tokens.filter(t => t.tokenBalance && t.tokenBalance !== '0x' && parseInt(t.tokenBalance, 16) > 0);
+      // Fetch metadata in series (rate-friendly); cap to avoid huge wallets hammering API
+      for (const t of nonZero.slice(0, 100)) {
+        try {
+          const meta = await _alchemyRpc(chain, 'alchemy_getTokenMetadata', [t.contractAddress], key);
+          if (!meta || meta.decimals == null) continue;
+          const qty = parseInt(t.tokenBalance, 16) / Math.pow(10, meta.decimals);
+          if (qty <= 0) continue;
+          const probe = { asset: meta.symbol || '?', chain, assetContract: t.contractAddress, amount: qty };
+          if (eng?.isSpamToken?.(probe)) continue;                       // filter scam/impostor
+          if (eng?.isProtocolReceiptToken?.(meta.symbol || '')) continue; // filter aTokens
+          holdings.push({ asset: meta.symbol || '?', chain, contract: t.contractAddress, qty, decimals: meta.decimals });
+        } catch (e) { /* skip token on metadata error */ }
+      }
+    } catch (e) {
+      errorLogger?.warn?.(`balances ${chain}: ${e.message}`);
+    }
+  }
+
+  window[cacheKey] = { at: now, data: holdings };
+  return holdings;
+}
+window.fetchRealBalances = fetchRealBalances;
+
 // ── Fiscal hero panel: KPIs no topo do dashboard ──
 function renderDashboardFiscalHero(w) {
   const fifoState = _getFifoStateFor(w);
@@ -8467,17 +8539,14 @@ function renderPortfolioCharts(w) {
   const fifoState = _getFifoStateFor(w);
   if (!fifoState) return '';
 
-  // Compute allocation by asset (using current market value where available).
-  // Key prices by CONTRACT when available (scam tokens reuse symbols like "AAVE"/"USDC"
-  // with a different contract; symbol-only keying would apply the real price to impostor
-  // units → absurd totals). Native assets (ETH) have no contract → keyed by symbol. We
-  // store BOTH keys per priced event and try contract-key first, then symbol-key.
+  // Build current-price lookup (by contract, then symbol) from priced events — used to value
+  // whatever the wallet holds. (DefiLlama "current" price = most recent priced event we have.)
   const livePricesByContract = new Map();
   const livePricesBySymbol = new Map();
   for (const e of _eventsForWallet(w)) {
     if (typeof e.priceEUR !== 'number' || !e.amount || e.amount === 0) continue;
-    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;                  // skip detected spam (incl. impostors)
-    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(e.asset)) continue; // skip aTokens
+    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;
+    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(e.asset)) continue;
     const ts = e.timestamp || 0;
     if (e.assetContract) {
       const ck = `${e.assetContract.toLowerCase()}:${e.chain}`;
@@ -8488,32 +8557,54 @@ function renderPortfolioCharts(w) {
     const curS = livePricesBySymbol.get(sk);
     if (!curS || curS.timestamp < ts) livePricesBySymbol.set(sk, { priceEURPerUnit: e.priceEUR, timestamp: ts });
   }
-
-  const allocationMap = new Map();   // asset → totalValue EUR
-  const chainMap = new Map();         // chain → totalValue EUR
-  let totalPortfolio = 0;
-  for (const lot of fifoState.lots) {
-    if (lot.qtyRemaining <= 1e-9) continue;
-    // Skip lots whose token is spam/impostor (e.g. fake "AAVE" with a non-official contract).
-    // Without this, an impostor lot could fall through to the symbol-key and inherit the
-    // real token's price again. We probe the spam detector with the lot's own identity.
-    const probe = { asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining };
-    if (window.aurumFifoEngine?.isSpamToken?.(probe)) continue;
-    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(lot.asset)) continue;
-    // Contract-key first (precise), then symbol-key (covers native ETH and cached lots
-    // without a stored contract).
+  const _priceFor = (asset, chain, contract) => {
     let live = null;
-    if (lot.assetContract) live = livePricesByContract.get(`${lot.assetContract.toLowerCase()}:${lot.chain}`);
-    if (!live) live = livePricesBySymbol.get(`${lot.asset}:${lot.chain}`);
-    if (!live) continue;
-    const value = lot.qtyRemaining * live.priceEURPerUnit;
-    if (value < 0.01) continue; // ignore dust
-    // Sanity guard: a single personal-wallet lot worth >€100M is almost certainly an
-    // impostor/decimals artifact — skip rather than poison the chart.
-    if (value > 100_000_000) continue;
-    allocationMap.set(lot.asset, (allocationMap.get(lot.asset) || 0) + value);
-    chainMap.set(lot.chain, (chainMap.get(lot.chain) || 0) + value);
-    totalPortfolio += value;
+    if (contract) live = livePricesByContract.get(`${contract.toLowerCase()}:${chain}`);
+    if (!live) live = livePricesBySymbol.get(`${asset}:${chain}`);
+    return live ? live.priceEURPerUnit : null;
+  };
+
+  const allocationMap = new Map();
+  const chainMap = new Map();
+  let totalPortfolio = 0;
+  let valueSource = 'fifo';
+
+  // PREFERRED: real on-chain balances (what the wallet actually holds NOW).
+  const realBal = window['_balCache_' + w.id]?.data;
+  if (realBal && realBal.length > 0) {
+    valueSource = 'onchain';
+    for (const h of realBal) {
+      const ppu = _priceFor(h.asset, h.chain, h.contract);
+      if (ppu == null) continue;                 // no price → can't value, skip
+      const value = h.qty * ppu;
+      if (value < 0.01) continue;                // dust
+      if (value > 100_000_000) continue;         // sanity guard
+      allocationMap.set(h.asset, (allocationMap.get(h.asset) || 0) + value);
+      chainMap.set(h.chain, (chainMap.get(h.chain) || 0) + value);
+      totalPortfolio += value;
+    }
+  } else {
+    // FALLBACK (until balances load): estimate from FIFO remaining lots. Flagged as estimate.
+    for (const lot of fifoState.lots) {
+      if (lot.qtyRemaining <= 1e-9) continue;
+      const probe = { asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining };
+      if (window.aurumFifoEngine?.isSpamToken?.(probe)) continue;
+      if (window.aurumFifoEngine?.isProtocolReceiptToken?.(lot.asset)) continue;
+      const ppu = _priceFor(lot.asset, lot.chain, lot.assetContract);
+      if (ppu == null) continue;
+      const value = lot.qtyRemaining * ppu;
+      if (value < 0.01) continue;
+      if (value > 100_000_000) continue;
+      allocationMap.set(lot.asset, (allocationMap.get(lot.asset) || 0) + value);
+      chainMap.set(lot.chain, (chainMap.get(lot.chain) || 0) + value);
+      totalPortfolio += value;
+    }
+    // Kick off a real-balance fetch; re-render when it lands (only once per render cycle).
+    if (w.alchemyKey || state.globalAlchemyKey) {
+      fetchRealBalances(w).then(b => {
+        if (b && b.length > 0 && typeof render === 'function') render();
+      }).catch(() => {});
+    }
   }
 
   if (totalPortfolio < 1) return '';
@@ -8551,7 +8642,7 @@ function renderPortfolioCharts(w) {
       <div class="panel">
         <div class="panel-head">
           <span class="panel-title">${t('section.allocationByAsset')}</span>
-          <span style="font-size:0.7rem;color:var(--text-muted)">Top ${top8.length}${otherSum > 0 ? ' + outros' : ''} · €${fmt(totalPortfolio)}</span>
+          <span style="font-size:0.7rem;color:var(--text-muted)">${valueSource === 'onchain' ? '🟢 saldo on-chain' : '⏳ a estimar…'} · Top ${top8.length}${otherSum > 0 ? ' + outros' : ''} · €${fmt(totalPortfolio)}</span>
         </div>
         <div class="panel-body">
           ${donutSVG}
