@@ -2639,15 +2639,30 @@ body.stealth-mode .stealth-badge {
         </span>
       </div>
       <div class="form-group form-full">
-        <label class="form-label">Alchemy API Key <span style="color:var(--green)">(Recomendado — funciona em todas as chains)</span></label>
+        <label class="form-label">Alchemy API Key <span style="color:var(--green)">(necessária para indexar — grátis)</span></label>
         <input class="form-input" id="w_alchemy_key" placeholder="Cole a tua API key do Alchemy">
-        <span class="form-note">Grátis em alchemy.com → Create App → escolhe a chain → copia a API Key. Funciona para Base, ETH, Arbitrum, Linea, etc.</span>
+        <details style="margin-top:0.5rem;font-size:0.8rem">
+          <summary style="cursor:pointer;color:var(--gold,#C6A35A);user-select:none">📖 Como obter a API key do Alchemy (1 minuto, grátis)</summary>
+          <ol style="margin:0.6rem 0 0;padding-left:1.2rem;line-height:1.7;color:var(--text-muted,#aaa)">
+            <li>Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> e cria conta grátis (Google/email).</li>
+            <li>No dashboard, clica <strong>Create new app</strong> (ou "Apps" → "+ Create app").</li>
+            <li>Dá um nome qualquer (ex: "Aurum") e cria.</li>
+            <li>Abre a app → botão <strong>API Key</strong> (canto superior direito).</li>
+            <li>Copia a <strong>API Key</strong> e cola aqui em cima.</li>
+          </ol>
+          <div style="margin-top:0.5rem;padding:0.5rem 0.7rem;background:rgba(198,163,90,0.08);border-radius:6px;color:var(--text-muted,#aaa)">
+            ✓ Uma só key funciona para <strong>todas as chains</strong> (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.
+          </div>
+        </details>
       </div>
-      <div class="form-group form-full">
-        <label class="form-label">Etherscan API Key <span style="color:var(--muted)">(alternativa — só ETH mainnet no plano free)</span></label>
-        <input class="form-input" id="w_apikey" placeholder="Cole a tua API key do Etherscan (opcional)">
-        <span class="form-note">etherscan.io → My Account → API Keys. Só funciona para ETH mainnet no plano gratuito.</span>
-      </div>
+      <details style="margin:0 0 0.5rem">
+        <summary style="cursor:pointer;color:var(--text-muted,#888);font-size:0.78rem;user-select:none">Opções avançadas</summary>
+        <div class="form-group form-full" style="margin-top:0.6rem">
+          <label class="form-label">Etherscan API Key <span style="color:var(--muted)">(alternativa — só ETH mainnet)</span></label>
+          <input class="form-input" id="w_apikey" placeholder="Opcional — só se não usares Alchemy">
+          <span class="form-note">etherscan.io → My Account → API Keys. Limitada a ETH mainnet no plano gratuito. A Alchemy é recomendada por cobrir todas as chains.</span>
+        </div>
+      </details>
       <div class="form-group form-full">
         <label class="form-label">Notas <span style="color:var(--muted)">(opcional)</span></label>
         <input class="form-input" id="w_notes" placeholder="ex: wallet principal MetaMask">
@@ -7944,8 +7959,20 @@ function renderSetup() {
       <div class="panel-body">
         <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="sw_name" placeholder="ex: Wallet Principal DeFi"></div>
         <div class="form-group"><label class="form-label">Endereço EVM (Ethereum/Base/etc.) *</label><input class="form-input" id="sw_addr" placeholder="0x..."></div>
-        <div class="form-group"><label class="form-label">Etherscan API Key <span style="color:var(--muted)">(para histórico — grátis em etherscan.io)</span></label><input class="form-input" id="sw_apikey" placeholder="Opcional mas recomendado"></div>
-        <div class="form-group"><label class="form-label">Endereço Solana <span style="color:var(--muted)">(Kamino/Jupiter)</span></label><input class="form-input" id="sw_sol" placeholder="Opcional"></div>
+        <div class="form-group">
+          <label class="form-label">Alchemy API Key <span style="color:var(--green)">(grátis · necessária para o histórico)</span></label>
+          <input class="form-input" id="sw_alchemy" placeholder="Cole a tua API key do Alchemy">
+          <details style="margin-top:0.5rem;font-size:0.8rem">
+            <summary style="cursor:pointer;color:var(--gold,#C6A35A);user-select:none">📖 Como obter (1 minuto, grátis)</summary>
+            <ol style="margin:0.6rem 0 0;padding-left:1.2rem;line-height:1.7;color:var(--text-muted,#aaa)">
+              <li>Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> → cria conta grátis.</li>
+              <li>Clica <strong>Create new app</strong>, dá um nome (ex: "Aurum").</li>
+              <li>Abre a app → botão <strong>API Key</strong> → copia.</li>
+              <li>Cola aqui. Uma key serve <strong>todas as chains</strong>.</li>
+            </ol>
+          </details>
+        </div>
+        <div class="form-group"><label class="form-label">Endereço Solana <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_sol" placeholder="Opcional"></div>
         <button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:0.5rem" onclick="saveFirstWallet()">INICIAR TRACKING ⬡</button>
       </div>
     </div>
@@ -7955,7 +7982,7 @@ function renderSetup() {
 function saveFirstWallet() {
   const addr = document.getElementById('sw_addr')?.value?.trim();
   if (!addr?.startsWith('0x') || addr.length !== 42) { toast('Endereço EVM inválido','warn'); return; }
-  const w = { id:genId(), name:document.getElementById('sw_name')?.value?.trim()||'Minha Wallet', addr, sol:document.getElementById('sw_sol')?.value?.trim()||'', apiKey:document.getElementById('sw_apikey')?.value?.trim()||'' };
+  const w = { id:genId(), name:document.getElementById('sw_name')?.value?.trim()||'Minha Wallet', addr, sol:document.getElementById('sw_sol')?.value?.trim()||'', alchemyKey:document.getElementById('sw_alchemy')?.value?.trim()||'' };
   state.wallets.push(w);
   state.activeWId = w.id;
   saveState(); boot();
