@@ -6680,6 +6680,7 @@ const fifoEngine = (() => {
         walletId,
         asset: event.asset,
         chain: event.chain,
+        assetContract: event.assetContract || null,
         qtyOpened: qty,
         qtyRemaining: qty,
         basisEURPerUnit,
@@ -8467,19 +8468,25 @@ function renderPortfolioCharts(w) {
   if (!fifoState) return '';
 
   // Compute allocation by asset (using current market value where available).
-  // CRITICAL: key prices by CONTRACT, not just symbol. Scam tokens routinely reuse popular
-  // symbols ("AAVE", "USDC") with a different contract. Keying by symbol alone would apply
-  // the real token's price to billions of impostor units → absurd portfolio totals.
-  const livePrices = new Map();
-  const _priceKey = (e) => `${(e.assetContract||e.asset||'').toLowerCase()}:${e.chain}`;
+  // Key prices by CONTRACT when available (scam tokens reuse symbols like "AAVE"/"USDC"
+  // with a different contract; symbol-only keying would apply the real price to impostor
+  // units → absurd totals). Native assets (ETH) have no contract → keyed by symbol. We
+  // store BOTH keys per priced event and try contract-key first, then symbol-key.
+  const livePricesByContract = new Map();
+  const livePricesBySymbol = new Map();
   for (const e of _eventsForWallet(w)) {
     if (typeof e.priceEUR !== 'number' || !e.amount || e.amount === 0) continue;
-    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;            // skip detected spam
+    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;                  // skip detected spam (incl. impostors)
     if (window.aurumFifoEngine?.isProtocolReceiptToken?.(e.asset)) continue; // skip aTokens
-    const key = _priceKey(e);
-    const cur = livePrices.get(key);
     const ts = e.timestamp || 0;
-    if (!cur || cur.timestamp < ts) livePrices.set(key, { priceEURPerUnit: e.priceEUR, timestamp: ts });
+    if (e.assetContract) {
+      const ck = `${e.assetContract.toLowerCase()}:${e.chain}`;
+      const cur = livePricesByContract.get(ck);
+      if (!cur || cur.timestamp < ts) livePricesByContract.set(ck, { priceEURPerUnit: e.priceEUR, timestamp: ts });
+    }
+    const sk = `${e.asset}:${e.chain}`;
+    const curS = livePricesBySymbol.get(sk);
+    if (!curS || curS.timestamp < ts) livePricesBySymbol.set(sk, { priceEURPerUnit: e.priceEUR, timestamp: ts });
   }
 
   const allocationMap = new Map();   // asset → totalValue EUR
@@ -8487,13 +8494,22 @@ function renderPortfolioCharts(w) {
   let totalPortfolio = 0;
   for (const lot of fifoState.lots) {
     if (lot.qtyRemaining <= 1e-9) continue;
-    const lotKey = `${(lot.assetContract||lot.asset||'').toLowerCase()}:${lot.chain}`;
-    const live = livePrices.get(lotKey);
+    // Skip lots whose token is spam/impostor (e.g. fake "AAVE" with a non-official contract).
+    // Without this, an impostor lot could fall through to the symbol-key and inherit the
+    // real token's price again. We probe the spam detector with the lot's own identity.
+    const probe = { asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining };
+    if (window.aurumFifoEngine?.isSpamToken?.(probe)) continue;
+    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(lot.asset)) continue;
+    // Contract-key first (precise), then symbol-key (covers native ETH and cached lots
+    // without a stored contract).
+    let live = null;
+    if (lot.assetContract) live = livePricesByContract.get(`${lot.assetContract.toLowerCase()}:${lot.chain}`);
+    if (!live) live = livePricesBySymbol.get(`${lot.asset}:${lot.chain}`);
     if (!live) continue;
     const value = lot.qtyRemaining * live.priceEURPerUnit;
     if (value < 0.01) continue; // ignore dust
-    // Sanity guard: a single lot worth more than €100M for a personal wallet is almost
-    // certainly an impostor/decimals issue — skip it rather than poison the whole chart.
+    // Sanity guard: a single personal-wallet lot worth >€100M is almost certainly an
+    // impostor/decimals artifact — skip rather than poison the chart.
     if (value > 100_000_000) continue;
     allocationMap.set(lot.asset, (allocationMap.get(lot.asset) || 0) + value);
     chainMap.set(lot.chain, (chainMap.get(lot.chain) || 0) + value);
