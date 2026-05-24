@@ -4040,14 +4040,73 @@ const AAVE_ATOKEN_CONTRACTS = {
 };
 
 const PROTOCOLS = {
-  aave:     { name:'AAVE V3',         color:'#B6509E', chains:['eth','base','arbitrum','optimism','polygon','scroll','linea'], hasHF:true },
-  morpho:   { name:'Morpho Blue',     color:'#1C55FE', chains:['eth','base'],                                                  hasHF:true },
-  compound: { name:'Compound V3',     color:'#00D395', chains:['eth','base','arbitrum','polygon'],                             hasHF:false },
-  spark:    { name:'SparkLend',       color:'#F15A24', chains:['eth','gnosis'],                                               hasHF:true },
-  maple:    { name:'Maple Finance',   color:'#1F6342', chains:['eth'],                                                        hasHF:false },
-  kamino:   { name:'Kamino Lend',     color:'#5CA4F1', chains:['solana'],                                                     hasHF:true },
-  jupiter:  { name:'Jupiter Lend',    color:'#C7F284', chains:['solana'],                                                     hasHF:false },
+  aave:     { name:'AAVE V3',         color:'#B6509E', chains:['eth','base','arbitrum','optimism','polygon','scroll','linea'], hasHF:true,  slug:'aave' },
+  morpho:   { name:'Morpho Blue',     color:'#1C55FE', chains:['eth','base'],                                                  hasHF:true,  slug:'morpho' },
+  compound: { name:'Compound V3',     color:'#00D395', chains:['eth','base','arbitrum','polygon'],                             hasHF:false, slug:'compound' },
+  spark:    { name:'SparkLend',       color:'#F15A24', chains:['eth','gnosis'],                                               hasHF:true,  slug:'spark' },
+  maple:    { name:'Maple Finance',   color:'#1F6342', chains:['eth'],                                                        hasHF:false, slug:'maple' },
+  kamino:   { name:'Kamino Lend',     color:'#5CA4F1', chains:['solana'],                                                     hasHF:true,  slug:'kamino' },
+  jupiter:  { name:'Jupiter Lend',    color:'#C7F284', chains:['solana'],                                                     hasHF:false, slug:'jupiter' },
 };
+
+// ── Logo system ──────────────────────────────────────────────
+// Real token/protocol logos with graceful multi-source fallback. Each <img> tries a CDN;
+// on error it advances to the next source, and the final fallback is a colored initial
+// circle. The user never sees a broken image. (We can't validate the CDNs from the build
+// sandbox — its egress proxy blocks image hosts — so robustness is handled at runtime.)
+const TRUSTWALLET_CHAIN = {
+  eth: 'ethereum', base: 'base', arbitrum: 'arbitrum', optimism: 'optimism',
+  polygon: 'polygon', avalanche: 'avalanchec', bnb: 'smartchain', gnosis: 'xdai',
+};
+function _logoFallbackCircle(label, color, size) {
+  const s = size || 24;
+  const init = (label || '?').slice(0, 2).toUpperCase();
+  const fs = s <= 20 ? '0.5rem' : s <= 28 ? '0.6rem' : '0.7rem';
+  return `<div class="logo-fallback" style="width:${s}px;height:${s}px;border-radius:50%;background:${color || 'var(--bg3)'};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:${fs};color:#fff;font-weight:700;flex-shrink:0">${init}</div>`;
+}
+// Build an <img> that walks an array of candidate URLs via onerror, then reveals the
+// fallback sibling when all sources fail.
+function _cascadingImg(urls, alt, size, fallbackHtml, objectFit, bg) {
+  const s = size;
+  const list = JSON.stringify(urls).replace(/"/g, '&quot;');
+  return `<span style="position:relative;display:inline-flex;width:${s}px;height:${s}px;flex-shrink:0;vertical-align:middle">
+    <img alt="${(alt||'').replace(/"/g,'')}" width="${s}" height="${s}" loading="lazy"
+      data-srcs="${list}" data-idx="0"
+      src="${urls[0]}"
+      style="width:${s}px;height:${s}px;border-radius:50%;object-fit:${objectFit||'cover'};background:${bg||'var(--bg2)'}"
+      onerror="(function(im){var a;try{a=JSON.parse(im.getAttribute('data-srcs'));}catch(e){a=[];}var i=parseInt(im.getAttribute('data-idx'))+1;if(a&&i<a.length){im.setAttribute('data-idx',i);im.src=a[i];}else{im.style.display='none';if(im.nextElementSibling)im.nextElementSibling.style.display='flex';}})(this)">
+    <span style="display:none;position:absolute;inset:0">${fallbackHtml}</span>
+  </span>`;
+}
+
+function tokenLogo(symbol, chain, contract, size = 24) {
+  const s = size;
+  const fallback = _logoFallbackCircle(symbol, 'var(--bg3)', s);
+  const twChain = TRUSTWALLET_CHAIN[chain];
+  const urls = [];
+  if (twChain && contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
+    urls.push(`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twChain}/assets/${contract}/logo.png`);
+  }
+  if (symbol) {
+    const lc = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
+    urls.push(`https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${lc}.svg`);
+  }
+  if (urls.length === 0) return fallback;
+  return _cascadingImg(urls, symbol, s, fallback, 'cover', 'var(--bg2)');
+}
+
+function protocolLogo(key, proto, size = 24) {
+  const s = size;
+  const slug = (proto && proto.slug) || key;
+  const fallback = _logoFallbackCircle(key, (proto && proto.color) || 'var(--gold)', s);
+  const urls = [
+    `https://cdn.jsdelivr.net/npm/@web3icons/common@latest/dist/svgs/protocols/branded/${slug}.svg`,
+    `https://cdn.jsdelivr.net/npm/@web3icons/common@latest/dist/svgs/protocols/mono/${slug}.svg`,
+  ];
+  return _cascadingImg(urls, (proto&&proto.name)||key, s, fallback, 'contain', (proto&&proto.color)||'var(--bg3)');
+}
+window.tokenLogo = tokenLogo;
+window.protocolLogo = protocolLogo;
 
 const CARD_ISSUERS = {
   etherfi: {
@@ -9169,7 +9228,7 @@ function renderProtocols(w) {
       <div class="panel-head"><span class="panel-title" style="color:var(--muted)">⬡ Sem posição activa</span></div>
       <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem">
         ${inactiveProtos.map(({key,proto})=>`<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.8rem;background:var(--bg2);border-radius:var(--radius);opacity:0.6">
-          <div style="width:20px;height:20px;border-radius:50%;background:${proto.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.5rem;color:#fff;font-weight:700">${key.slice(0,2).toUpperCase()}</div>
+          ${protocolLogo(key, proto, 20)}
           <span style="font-size:0.85rem">${proto.name}</span>
           <span style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);letter-spacing:0.15em">${proto.chains.filter(c=>c!=='solana').map(c=>CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join('·')}</span>
         </div>`).join('')}
@@ -9183,7 +9242,7 @@ function renderProtocols(w) {
       <div style="padding-top:0.75rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem">
         ${comingSoonProtos.map(({key,proto})=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem;opacity:0.55">
           <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
-            <div style="width:22px;height:22px;border-radius:50%;background:${proto.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.55rem;color:#fff;font-weight:700">${key.slice(0,2).toUpperCase()}</div>
+            ${protocolLogo(key, proto, 22)}
             <strong style="font-size:0.88rem">${proto.name}</strong>
             <span class="badge badge-muted" style="margin-left:auto;font-size:0.5rem">Em breve</span>
           </div>
