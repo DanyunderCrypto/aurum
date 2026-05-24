@@ -4226,7 +4226,46 @@ const storageManager = (() => {
   let _saveSeq = 0;
   let _lastBackupAt = 0;
 
+  // A state "looks valid" if it has the core structure. Guards against promoting an empty
+  // or corrupt blob over a good one during auto-restore.
+  function _looksValid(st) {
+    if (!st || typeof st !== 'object') return false;
+    return Array.isArray(st.wallets) || Array.isArray(st.events);
+  }
+
+  function _dayStamp(ts) {
+    return new Date(ts || Date.now()).toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
   async function rotateBackups() {
+    // DAILY snapshots: only create a new backup if backup_0 is from a DIFFERENT day. This
+    // keeps up to BACKUP_KEEP days of history instead of burning all slots within minutes
+    // of active use (the failure mode that lost the old config). Each slot = a distinct day.
+    try {
+      const main = await idb.get(IDB_KEY_MAIN);
+      if (!main || !main.state || !_looksValid(main.state)) return;
+      const today = _dayStamp(Date.now());
+      const b0 = await idb.get('backup_0');
+      const b0Day = b0 ? _dayStamp(b0.savedAt || b0._backupAt) : null;
+
+      if (b0Day === today) {
+        // Same day → just refresh backup_0 in place, don't rotate (preserves older days)
+        await idb.set('backup_0', { ...main, _backupAt: Date.now(), _day: today });
+        return;
+      }
+      // New day → shift everything down (backup_0 becomes backup_1, etc.) and snapshot today
+      for (let i = BACKUP_KEEP - 1; i > 0; i--) {
+        const older = await idb.get(`backup_${i-1}`);
+        if (older) await idb.set(`backup_${i}`, older);
+      }
+      await idb.set('backup_0', { ...main, _backupAt: Date.now(), _day: today });
+      console.log(`[storage] daily backup snapshot created for ${today}`);
+    } catch (err) {
+      console.warn('[storage] backup rotation failed:', err.message);
+    }
+  }
+
+  async function _rotateBackupsLegacyUNUSED() {
     try {
       const main = await idb.get(IDB_KEY_MAIN);
       if (!main) return;
@@ -4249,13 +4288,10 @@ const storageManager = (() => {
         schemaVersion: stateObj._schemaVersion || 1,
       };
       try {
-        const shouldBackup = _lastBackupAt > 0 &&
-                             (Date.now() - _lastBackupAt) > BACKUP_MIN_INTERVAL_MS &&
-                             !opts.skipBackup;
-        if (shouldBackup) {
+        // Daily backup BEFORE overwriting main (idempotent per-day, cheap to call always).
+        // This guarantees the previous good state is snapshotted before we risk the new write.
+        if (!opts.skipBackup) {
           await rotateBackups();
-          _lastBackupAt = Date.now();
-        } else if (_lastBackupAt === 0) {
           _lastBackupAt = Date.now();
         }
         await idb.set(IDB_KEY_MAIN, payload);
@@ -4288,13 +4324,37 @@ const storageManager = (() => {
     async load() {
       try {
         const payload = await idb.get(IDB_KEY_MAIN);
-        if (payload?.state) {
+        if (payload?.state && _looksValid(payload.state)) {
           console.log(`[storage] loaded from IDB`);
           return { state: payload.state, source: 'idb', savedAt: payload.savedAt };
+        }
+        if (payload && !payload.state) {
+          console.warn('[storage] IDB main exists but has no state — will try backups');
         }
       } catch (err) {
         console.warn('[storage] IDB load failed:', err.message);
       }
+
+      // ── AUTO-RESTORE: main missing/corrupt → recover from most recent valid backup ──
+      // This is the safety net that prevents data loss: if the main record failed to load
+      // (interrupted save, partial eviction), we transparently restore the newest backup
+      // instead of starting fresh. Critical — without this, a failed main load makes the
+      // user reconfigure, which then overwrites the good backups (the cascade we hit).
+      try {
+        for (let i = 0; i < BACKUP_KEEP; i++) {
+          const b = await idb.get(`backup_${i}`);
+          const st = b && (b.state || (b._backupAt ? b.state : null));
+          if (b && b.state && _looksValid(b.state)) {
+            console.warn(`[storage] main unavailable — auto-restored from backup_${i} (${b.savedAt ? new Date(b.savedAt).toISOString() : '?'})`);
+            // Promote the backup back to main so subsequent saves build on it
+            try { await idb.set(IDB_KEY_MAIN, { state: b.state, savedAt: b.savedAt || Date.now(), schemaVersion: b.schemaVersion || 1 }); } catch (e) {}
+            return { state: b.state, source: `backup_${i}`, savedAt: b.savedAt || 0, autoRestored: true };
+          }
+        }
+      } catch (err) {
+        console.warn('[storage] backup auto-restore failed:', err.message);
+      }
+
       const lsRaw = localStorage.getItem(LS_KEY);
       if (lsRaw) {
         try {
@@ -7262,6 +7322,21 @@ async function loadState() {
       storageManager.requestPersistence().catch(() => {});
 
       boot();
+
+      // If data was auto-restored from a backup, let the user know (transparency + prompt
+      // to export an external backup so they're never caught out again).
+      if (result.autoRestored) {
+        setTimeout(() => {
+          try {
+            toast(
+              (state.lang === 'en'
+                ? '⚠ Main data was unavailable — auto-restored from backup. Consider exporting a backup file (Settings).'
+                : '⚠ Dados principais indisponíveis — recuperados automaticamente do backup. Considera exportar um ficheiro de backup (Definições).'),
+              'warn', 8000
+            );
+          } catch (e) {}
+        }, 1500);
+      }
 
       // ── Restore live cache (positions, history, prices) ──
       try {
