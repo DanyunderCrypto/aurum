@@ -8422,6 +8422,11 @@ function renderTaxLossHarvest(w) {
   const openLots = fifoState.lots.filter(l => l.qtyRemaining > 1e-9);
   const positionMap = new Map();
   for (const lot of openLots) {
+    // Exclude spam/impostor/receipt tokens — they'd produce bogus loss lines (e.g. an
+    // impostor "AAVE" or a 228M-supply "AYE" with a junk basis).
+    const probe = { asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining };
+    if (window.aurumFifoEngine?.isSpamToken?.(probe)) continue;
+    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(lot.asset)) continue;
     const key = `${lot.asset}:${lot.chain}`;
     if (!positionMap.has(key)) {
       positionMap.set(key, {
@@ -8572,12 +8577,24 @@ function renderPortfolioCharts(w) {
   let unpricedCount = 0;
   let unpricedSamples = [];
 
-  // FIFO basis lookup per asset (for unrealized PnL): sum of remaining lots' basis.
-  const basisByAsset = new Map();
+  // FIFO basis lookup per asset (for unrealized PnL). We track BOTH total basis and total
+  // qty so we can derive an average acquisition cost per unit. When the real on-chain
+  // balance differs from the FIFO remaining qty (the indexer doesn't capture every native
+  // transfer), applying the full FIFO basis to a tiny real balance produces absurd PnL
+  // (e.g. ETH €1 holding showing −€583). Instead we value the real balance at the FIFO
+  // AVERAGE cost per unit — consistent and sane.
+  const fifoByAsset = new Map(); // asset → { qty, basis }
   for (const lot of fifoState.lots) {
     if (lot.qtyRemaining <= 1e-9) continue;
-    const cur = basisByAsset.get(lot.asset) || 0;
-    basisByAsset.set(lot.asset, cur + lot.qtyRemaining * (lot.basisEURPerUnit || 0));
+    const cur = fifoByAsset.get(lot.asset) || { qty: 0, basis: 0 };
+    cur.qty += lot.qtyRemaining;
+    cur.basis += lot.qtyRemaining * (lot.basisEURPerUnit || 0);
+    fifoByAsset.set(lot.asset, cur);
+  }
+  // avgCostPerUnit per asset
+  const avgCostByAsset = new Map();
+  for (const [asset, f] of fifoByAsset.entries()) {
+    avgCostByAsset.set(asset, f.qty > 0 ? f.basis / f.qty : 0);
   }
 
   // PREFERRED: real on-chain balances (what the wallet actually holds NOW).
@@ -8627,6 +8644,19 @@ function renderPortfolioCharts(w) {
   }
 
   if (totalPortfolio < 1) return '';
+
+  // Build per-asset basis for PnL: scale the FIFO average cost to the quantity we actually
+  // hold. This keeps PnL sane when on-chain balance diverges from FIFO remaining qty.
+  // We cap the basis-qty at the FIFO remaining qty (can't have more cost basis than lots).
+  const basisByAsset = new Map();
+  for (const [asset, m] of assetMeta.entries()) {
+    const avg = avgCostByAsset.get(asset) || 0;
+    if (avg <= 0) continue;                       // no known acquisition cost → no PnL line
+    const fifoQty = (fifoByAsset.get(asset)?.qty) || 0;
+    const qtyForBasis = Math.min(m.qty, fifoQty); // don't assign basis to qty we never acquired
+    if (qtyForBasis <= 0) continue;
+    basisByAsset.set(asset, qtyForBasis * avg);
+  }
 
   // Sort and take top 8 + "Outros"
   const sortedAssets = [...allocationMap.entries()].sort((a, b) => b[1] - a[1]);
