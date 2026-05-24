@@ -119,17 +119,64 @@
   --text-dim:     rgba(26,24,18,0.38);
   --muted:        rgba(26,24,18,0.50);
 
-  /* Borders */
-  --border:       rgba(154,118,53,0.18);
-  --border2:      rgba(154,118,53,0.32);
-  --border-soft:  rgba(20,20,15,0.08);
+  /* Borders — neutral and barely-there. In light mode, gold borders on every card read as
+     visual noise ("traços"). We separate with soft shadow instead, reserving gold for
+     accents (text, icons, buttons), the way premium light UIs (Stripe/Linear) do. */
+  --border:       rgba(20,18,12,0.07);
+  --border2:      rgba(20,18,12,0.12);
+  --border-soft:  rgba(20,18,12,0.05);
 
-  /* Glows — softer/lighter on light bg */
-  --glow-g:       0 0 24px rgba(154,118,53,0.12);
-  --glow-r:       0 0 24px rgba(214,58,92,0.15);
-  --glow-gr:      0 0 24px rgba(0,168,118,0.12);
-  --glow-soft:    0 8px 28px rgba(120,100,60,0.14);
+  /* Glows — replaced by soft neutral shadows for card elevation (less harsh than glows) */
+  --glow-g:       0 1px 3px rgba(20,18,12,0.06), 0 4px 16px rgba(20,18,12,0.05);
+  --glow-r:       0 1px 3px rgba(214,58,92,0.10), 0 4px 16px rgba(20,18,12,0.05);
+  --glow-gr:      0 1px 3px rgba(0,168,118,0.10), 0 4px 16px rgba(20,18,12,0.05);
+  --glow-soft:    0 1px 3px rgba(20,18,12,0.06), 0 6px 24px rgba(20,18,12,0.06);
+  --shadow-soft:  0 1px 3px rgba(20,18,12,0.06), 0 4px 16px rgba(20,18,12,0.05);
 }
+
+/* Light-mode refinements: lean on shadow + whitespace, not lines. */
+[data-theme="light"] .card,
+[data-theme="light"] .panel,
+[data-theme="light"] .stat,
+[data-theme="light"] .modal {
+  border-color: var(--border-soft);
+  box-shadow: 0 1px 3px rgba(20,18,12,0.05), 0 4px 20px rgba(20,18,12,0.045);
+}
+[data-theme="light"] .panel-head,
+[data-theme="light"] .modal-foot,
+[data-theme="light"] .modal-head {
+  border-color: var(--border-soft);
+}
+/* Soften internal dividers so they whisper rather than cut */
+[data-theme="light"] hr,
+[data-theme="light"] .divider,
+[data-theme="light"] thead th {
+  border-color: rgba(20,18,12,0.06);
+}
+/* Topbar: a hairline + subtle shadow instead of a gold rule */
+[data-theme="light"] .topbar {
+  border-bottom: 1px solid rgba(20,18,12,0.06);
+  box-shadow: 0 1px 12px rgba(20,18,12,0.04);
+  background: rgba(255,255,255,0.85);
+}
+/* THE scanlines: a CRT-style repeating gradient overlays the whole page. It's near-invisible
+   on dark bg but becomes obvious horizontal streaks on light bg. Disable it in light mode. */
+[data-theme="light"] body::before { display: none; }
+
+/* The ambient aurora glow is tuned for dark bg; dial it right down on light. */
+[data-theme="light"] .aurora-glow { opacity: 0.35; }
+
+/* THE "traços": the 1px gold gradient on top of every panel reads as a full-width line
+   on light bg. Remove it in light mode — the soft shadow already separates panels. */
+[data-theme="light"] .panel::before { display: none; }
+/* Stats grid uses a 1px gap over a border-colored background to fake gridlines; on light
+   bg those lines are the faint streaks. Make the gap blend into the page instead. */
+[data-theme="light"] .stats-grid { background: transparent; gap: var(--space-md); }
+[data-theme="light"] .panel { box-shadow: 0 1px 3px rgba(20,18,12,0.05), 0 4px 20px rgba(20,18,12,0.045); }
+/* Kill the faint text-shadow glows on light (they smear on light bg) */
+[data-theme="light"] .sv-gold,
+[data-theme="light"] .sv-green,
+[data-theme="light"] .sv-red { text-shadow: none; }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; scroll-behavior: smooth; }
