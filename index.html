@@ -8578,6 +8578,57 @@ function renderTaxLossHarvest(w) {
 }
 
 // ── Portfolio charts: SVG-based, no external deps ──
+// ── DeFi positions panel: loops/lending shown as NET value (collateral − debt) ──
+// Loops (Morpho/AAVE) hold value that isn't visible in spot balances — the collateral is
+// locked and there's offsetting debt. We surface the net economic value here so the user's
+// total net worth reflects their leveraged positions, not just free tokens.
+function renderDefiPositions(w) {
+  const positions = live.positions || {};
+  const rows = [];
+  let totalNetUSD = 0, totalCollatUSD = 0, totalDebtUSD = 0;
+
+  // AAVE: per-chain positions (exclude the 'morpho' pseudo-key)
+  for (const [key, p] of Object.entries(positions)) {
+    if (!p || (p.totalCollateral <= 0 && p.totalDebt <= 0)) continue;
+    const collat = p.totalCollateral || 0;
+    const debt = p.totalDebt || 0;
+    const net = collat - debt;
+    totalNetUSD += net; totalCollatUSD += collat; totalDebtUSD += debt;
+    const protoName = key === 'morpho' ? 'Morpho' : (CHAINS[key]?.name || key) + ' · AAVE';
+    const hf = p.hf;
+    const hfColor = !hf ? 'var(--muted)' : hf < 1.2 ? 'var(--red)' : hf < 1.5 ? 'var(--gold)' : 'var(--green)';
+    rows.push(`
+      <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.85rem;font-weight:600">${protoName}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">
+            colat $${fmt(collat)} · dívida $${fmt(debt)}${hf ? ` · HF <span style="color:${hfColor}">${hf.toFixed(2)}</span>` : ''}
+          </div>
+        </div>
+        <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">$${fmt(net)}</div>
+      </div>
+    `);
+  }
+
+  if (rows.length === 0) return ''; // no DeFi positions → don't render the panel
+
+  const eurRate = (window._lastEurUsdRate || 0.92);
+  return `
+    <div class="panel" style="margin-top:1.5rem">
+      <div class="panel-head">
+        <span class="panel-title">⚖ Posições DeFi · valor líquido</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">colat $${fmt(totalCollatUSD)} − dívida $${fmt(totalDebtUSD)} = <strong style="color:var(--gold)">$${fmt(totalNetUSD)}</strong> (~€${fmt(totalNetUSD * eurRate)})</span>
+      </div>
+      <div class="panel-body">
+        ${rows.join('')}
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:var(--text-muted);line-height:1.5">
+          Valor líquido = colateral − dívida. Loops e lending bloqueiam colateral com dívida compensatória; o valor económico real é o líquido. Fiscalmente, depositar/pedir emprestado não é alienação — só o yield realizado em fiat é tributável.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderPortfolioCharts(w) {
   const fifoState = _getFifoStateFor(w);
   if (!fifoState) return '';
@@ -9040,6 +9091,8 @@ function renderDashboard(w) {
     </div>
 
     ${renderPortfolioCharts(w)}
+
+    ${renderDefiPositions(w)}
 
     ${renderTaxLossHarvest(w)}
 
