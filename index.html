@@ -7336,6 +7336,14 @@ async function loadState() {
             );
           } catch (e) {}
         }, 1500);
+      } else {
+        // Smart, low-friction external-backup nudge. Fires ONLY when there's genuine risk:
+        //  • meaningful data (≥1 wallet with events), AND
+        //  • no external backup taken in the last 14 days, AND
+        //  • not already nudged in the last 7 days.
+        // Shows a single dismissible toast with a one-click action — never a modal, never
+        // an automatic download. Invisible when the user backs up regularly.
+        setTimeout(() => { try { _maybeNudgeBackup(); } catch (e) {} }, 3000);
       }
 
       // ── Restore live cache (positions, history, prices) ──
@@ -12874,6 +12882,9 @@ async function exportFullBackup() {
 
     const sizeKB = Math.round(json.length / 1024);
     const stats = backup._priceCacheStats;
+    // Record that an external backup was taken (used to decide when to gently remind again)
+    state.lastExternalBackupAt = Date.now();
+    try { saveState(); } catch (e) {}
     toast(`✓ Backup exportado (${sizeKB}KB · ${state.events?.length||0} events · ${stats.prices} prices · ${stats.rates} rates)`, 'success');
   } catch (err) {
     toast('Export falhou: ' + err.message, 'warn');
@@ -17159,6 +17170,53 @@ function toast(msg, type='info', dur=5000) {
   t.innerHTML=`<span>${type==='danger'?'⚠️':type==='warn'?'⚠':type==='success'?'✓':'◆'}</span><span>${msg}</span>`;
   tc.appendChild(t); setTimeout(()=>t.remove(),dur);
 }
+
+// Smart, low-friction external-backup reminder. One dismissible toast with a one-click
+// "Backup now" action. Only fires when there's real data + no recent external backup +
+// not nagged recently. Designed to be invisible for users who back up regularly.
+function _maybeNudgeBackup() {
+  const hasData = (state.wallets?.length > 0) && (state.events?.length > 50);
+  if (!hasData) return;
+  const now = Date.now();
+  const DAY = 86400000;
+  const lastBackup = state.lastExternalBackupAt || 0;
+  const lastNudge = state.lastBackupNudgeAt || 0;
+  const daysSinceBackup = lastBackup ? (now - lastBackup) / DAY : 999;
+  const daysSinceNudge = lastNudge ? (now - lastNudge) / DAY : 999;
+  // Conditions: no external backup in 14d AND not nudged in last 7d
+  if (daysSinceBackup < 14 || daysSinceNudge < 7) return;
+
+  state.lastBackupNudgeAt = now;
+  try { saveState(); } catch (e) {}
+
+  const en = state.lang === 'en';
+  const tc = document.getElementById('toastContainer');
+  if (!tc) return;
+  const t = document.createElement('div');
+  t.className = 'toast info';
+  t.style.cursor = 'default';
+  const msg = en
+    ? `Tip: keep a backup file of your data — browsers can clear local storage.`
+    : `Dica: guarda um ficheiro de backup dos teus dados — o browser pode limpar o armazenamento local.`;
+  const btn = en ? 'Backup now' : 'Backup agora';
+  const dismiss = en ? 'Later' : 'Depois';
+  t.innerHTML = `<span>◆</span><span style="flex:1">${msg}</span>`;
+  const actions = document.createElement('span');
+  actions.style.cssText = 'display:flex;gap:0.4rem;margin-left:0.5rem';
+  const b1 = document.createElement('button');
+  b1.textContent = btn;
+  b1.style.cssText = 'background:var(--gold,#C6A35A);color:#1a1a1a;border:none;border-radius:5px;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;font-weight:600;white-space:nowrap';
+  b1.onclick = () => { t.remove(); try { exportFullBackup(); } catch (e) {} };
+  const b2 = document.createElement('button');
+  b2.textContent = dismiss;
+  b2.style.cssText = 'background:transparent;color:var(--text-muted,#999);border:1px solid rgba(255,255,255,0.15);border-radius:5px;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;white-space:nowrap';
+  b2.onclick = () => t.remove();
+  actions.appendChild(b1); actions.appendChild(b2);
+  t.appendChild(actions);
+  tc.appendChild(t);
+  // Stays until acted upon (no auto-dismiss) but is non-blocking
+}
+window._maybeNudgeBackup = _maybeNudgeBackup;
 
 // ══════════════════════════════════════════════════════════
 // BOOT
