@@ -8566,8 +8566,19 @@ function renderPortfolioCharts(w) {
 
   const allocationMap = new Map();
   const chainMap = new Map();
+  const assetMeta = new Map();   // asset → { chain, contract, qty, basisEUR } for logos + PnL
   let totalPortfolio = 0;
   let valueSource = 'fifo';
+  let unpricedCount = 0;
+  let unpricedSamples = [];
+
+  // FIFO basis lookup per asset (for unrealized PnL): sum of remaining lots' basis.
+  const basisByAsset = new Map();
+  for (const lot of fifoState.lots) {
+    if (lot.qtyRemaining <= 1e-9) continue;
+    const cur = basisByAsset.get(lot.asset) || 0;
+    basisByAsset.set(lot.asset, cur + lot.qtyRemaining * (lot.basisEURPerUnit || 0));
+  }
 
   // PREFERRED: real on-chain balances (what the wallet actually holds NOW).
   const realBal = window['_balCache_' + w.id]?.data;
@@ -8575,31 +8586,39 @@ function renderPortfolioCharts(w) {
     valueSource = 'onchain';
     for (const h of realBal) {
       const ppu = _priceFor(h.asset, h.chain, h.contract);
-      if (ppu == null) continue;                 // no price → can't value, skip
+      if (ppu == null) {
+        unpricedCount++;
+        if (unpricedSamples.length < 6) unpricedSamples.push(h.asset);
+        continue;
+      }
       const value = h.qty * ppu;
-      if (value < 0.01) continue;                // dust
-      if (value > 100_000_000) continue;         // sanity guard
+      if (value < 0.01) continue;
+      if (value > 100_000_000) continue;
       allocationMap.set(h.asset, (allocationMap.get(h.asset) || 0) + value);
       chainMap.set(h.chain, (chainMap.get(h.chain) || 0) + value);
+      const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0 };
+      m.qty += h.qty; m.value += value; m.contract = m.contract || h.contract; m.chain = h.chain;
+      assetMeta.set(h.asset, m);
       totalPortfolio += value;
     }
   } else {
-    // FALLBACK (until balances load): estimate from FIFO remaining lots. Flagged as estimate.
     for (const lot of fifoState.lots) {
       if (lot.qtyRemaining <= 1e-9) continue;
       const probe = { asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining };
       if (window.aurumFifoEngine?.isSpamToken?.(probe)) continue;
       if (window.aurumFifoEngine?.isProtocolReceiptToken?.(lot.asset)) continue;
       const ppu = _priceFor(lot.asset, lot.chain, lot.assetContract);
-      if (ppu == null) continue;
+      if (ppu == null) { unpricedCount++; continue; }
       const value = lot.qtyRemaining * ppu;
       if (value < 0.01) continue;
       if (value > 100_000_000) continue;
       allocationMap.set(lot.asset, (allocationMap.get(lot.asset) || 0) + value);
       chainMap.set(lot.chain, (chainMap.get(lot.chain) || 0) + value);
+      const m = assetMeta.get(lot.asset) || { chain: lot.chain, contract: lot.assetContract, qty: 0, value: 0 };
+      m.qty += lot.qtyRemaining; m.value += value; m.contract = m.contract || lot.assetContract; m.chain = lot.chain;
+      assetMeta.set(lot.asset, m);
       totalPortfolio += value;
     }
-    // Kick off a real-balance fetch; re-render when it lands (only once per render cycle).
     if (w.alchemyKey || state.globalAlchemyKey) {
       fetchRealBalances(w).then(b => {
         if (b && b.length > 0 && typeof render === 'function') render();
@@ -8621,8 +8640,16 @@ function renderPortfolioCharts(w) {
   // Color palette (gold-tinted)
   const colors = ['#D4AF7A', '#E8C99B', '#A88556', '#F0D9A8', '#8E6B3D', '#B8956B', '#5C4624', '#D4B89C', '#998270'];
 
-  // Donut SVG renderer
-  const donutSVG = renderDonutSVG(allocItems, colors, totalPortfolio);
+  // Donut SVG renderer — now with logos + PnL per asset
+  const donutSVG = renderDonutSVG(allocItems, colors, totalPortfolio, assetMeta, basisByAsset);
+
+  // Total unrealized PnL across priced holdings (value now − FIFO basis of remaining lots)
+  let totalBasisHeld = 0;
+  for (const [asset, m] of assetMeta.entries()) {
+    totalBasisHeld += (basisByAsset.get(asset) || 0);
+  }
+  const totalUnrealized = totalPortfolio - totalBasisHeld;
+  const unrealizedPct = totalBasisHeld > 0 ? (totalUnrealized / totalBasisHeld) * 100 : 0;
   // Chain bars
   const chainBarsHTML = sortedChains.map(([chain, val], i) => {
     const pct = (val / totalPortfolio) * 100;
@@ -8642,10 +8669,11 @@ function renderPortfolioCharts(w) {
       <div class="panel">
         <div class="panel-head">
           <span class="panel-title">${t('section.allocationByAsset')}</span>
-          <span style="font-size:0.7rem;color:var(--text-muted)">${valueSource === 'onchain' ? '🟢 saldo on-chain' : '⏳ a estimar…'} · Top ${top8.length}${otherSum > 0 ? ' + outros' : ''} · €${fmt(totalPortfolio)}</span>
+          <span style="font-size:0.7rem;color:var(--text-muted)">${valueSource === 'onchain' ? '🟢 saldo on-chain' : '⏳ a estimar…'} · €${fmt(totalPortfolio)}${totalBasisHeld > 0 ? ` · <span style="color:${totalUnrealized>=0?'var(--green)':'var(--red)'}">${totalUnrealized>=0?'+':'−'}€${fmt(Math.abs(totalUnrealized))} (${unrealizedPct>=0?'+':''}${unrealizedPct.toFixed(1)}%)</span>` : ''}</span>
         </div>
         <div class="panel-body">
           ${donutSVG}
+          ${unpricedCount > 0 ? `<div style="margin-top:0.6rem;padding:0.5rem 0.7rem;background:var(--surface-soft);border-radius:6px;font-size:0.7rem;color:var(--text-muted)">⚠ ${unpricedCount} ${unpricedCount===1?'token sem preço de mercado':'tokens sem preço de mercado'}${unpricedSamples.length?` (${unpricedSamples.join(', ')}${unpricedCount>unpricedSamples.length?'…':''})`:''} — não incluídos no total. Cobertura DefiLlama limitada para tokens muito pequenos.</div>` : ''}
         </div>
       </div>
       <div class="panel">
@@ -8661,8 +8689,8 @@ function renderPortfolioCharts(w) {
   `;
 }
 
-// Pure SVG donut chart — no dependencies
-function renderDonutSVG(items, colors, total) {
+// Pure SVG donut chart — now with token logos and per-asset unrealized PnL in the legend
+function renderDonutSVG(items, colors, total, assetMeta, basisByAsset) {
   if (!items.length || total === 0) return '<div style="text-align:center;color:var(--text-muted);padding:1rem">Sem dados</div>';
 
   const size = 220;
@@ -8677,18 +8705,36 @@ function renderDonutSVG(items, colors, total) {
     const dashArray = `${pct * circumference} ${circumference}`;
     const rotation = cumulativePct * 360 - 90;
     cumulativePct += pct;
-    return {
-      label, value, pct, color: colors[i % colors.length], dashArray, rotation,
-    };
+    return { label, value, pct, color: colors[i % colors.length], dashArray, rotation };
   });
 
-  const legend = segments.map(s => `
-    <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;padding:0.2rem 0">
-      <div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>
-      <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${s.label}</strong></div>
-      <div style="font-family:var(--mono);font-size:0.72rem;text-align:right">€${fmt(s.value)}<br><span style="opacity:0.6">${(s.pct*100).toFixed(1)}%</span></div>
-    </div>
-  `).join('');
+  const legend = segments.map(s => {
+    const meta = assetMeta && assetMeta.get(s.label);
+    const isOther = s.label === 'Outros';
+    // Logo (real token logo for known assets; colored dot for "Outros")
+    const logo = (!isOther && meta && typeof tokenLogo === 'function')
+      ? tokenLogo(s.label, meta.chain, meta.contract, 18)
+      : `<div style="width:10px;height:10px;background:${s.color};border-radius:2px;flex-shrink:0"></div>`;
+    // Unrealized PnL for this asset (value now − FIFO basis of remaining lots)
+    let pnlHtml = '';
+    if (!isOther && basisByAsset) {
+      const basis = basisByAsset.get(s.label) || 0;
+      if (basis > 0.01) {
+        const pnl = s.value - basis;
+        const pnlPct = (pnl / basis) * 100;
+        const col = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        pnlHtml = `<div style="font-size:0.62rem;color:${col};font-family:var(--mono)">${pnl>=0?'+':'−'}€${fmt(Math.abs(pnl))} ${pnlPct>=0?'+':''}${pnlPct.toFixed(0)}%</div>`;
+      }
+    }
+    return `
+      <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;padding:0.25rem 0">
+        ${logo}
+        <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong>${s.label}</strong></div>
+        <div style="font-family:var(--mono);font-size:0.72rem;text-align:right">€${fmt(s.value)}<br><span style="opacity:0.6">${(s.pct*100).toFixed(1)}%</span></div>
+        ${pnlHtml ? `<div style="min-width:70px;text-align:right">${pnlHtml}</div>` : ''}
+      </div>
+    `;
+  }).join('');
 
   const svgSegments = segments.map(s => `
     <circle cx="${center}" cy="${center}" r="${radius}"
