@@ -6932,9 +6932,20 @@ const fifoEngine = (() => {
 
         if (klass === 'acquisition') {
           // Generic incoming with value: basis = priceEUR (full)
-          const basisPerUnit = eventPriceEURPerUnit ?? 0;
-          _openLot(e, e.amount, basisPerUnit, 'buy');
+          let basisPerUnit = eventPriceEURPerUnit ?? 0;
+          // STABLECOIN BASIS RECOVERY: if the acquisition price is missing (no_coverage) but
+          // the asset is a known stablecoin, its basis is NOT zero — a stablecoin is acquired
+          // at its peg (~$1 or ~€1). Leaving basis at 0 would make a later disposal record the
+          // FULL proceeds as a phantom gain (e.g. USDC "sold" for €10.97 showed €10.97 gain
+          // instead of ~€0). Recover the basis from the peg. General: fixes inflated gains for
+          // any stablecoin acquired without price coverage, across all wallets.
           if (eventPriceEURPerUnit === null) {
+            const rate = (typeof _eurRateForTs === 'function' ? _eurRateForTs(e.timestamp) : 0.92) || 0.92;
+            if (isUsdStablecoin(e.asset)) basisPerUnit = 1 * rate;       // $1 → EUR
+            else if (isEurStablecoin(e.asset)) basisPerUnit = 1;          // €1
+          }
+          _openLot(e, e.amount, basisPerUnit, 'buy');
+          if (eventPriceEURPerUnit === null && basisPerUnit === 0) {
             warnings.push({
               type: 'missing_price',
               eventId: e.id || e.txHash,
@@ -9169,7 +9180,14 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
         const pnl = valueCovered - basis;
         const pnlPct = (pnl / basis) * 100;
         const coverage = valueCovered / (m.value || 1);
-        if (coverage >= 0.3 && Math.abs(pnlPct) < 1000) {
+        // Suppress PnL when the recorded average cost is wildly inconsistent with the current
+        // market price (avg > 5× price or < 1/5× price). Such a basis almost always comes from
+        // partial no_coverage acquisitions (e.g. PENDLE: a tiny priced lot + a large unpriced
+        // one produced an avg cost of €25 vs a €1.7 market price → a fake −93%). Showing it
+        // would mislead. Better to show no PnL than a wrong one.
+        const ratio = (avg > 0 && ppu > 0) ? avg / ppu : 1;
+        const basisLooksSane = ratio >= 0.2 && ratio <= 5;
+        if (coverage >= 0.3 && Math.abs(pnlPct) < 1000 && basisLooksSane) {
           const col = pnl >= 0 ? 'var(--green)' : 'var(--red)';
           pnlHtml = `<div style="font-size:0.72rem;color:${col};font-family:var(--mono);white-space:nowrap">${pnl>=0?'+':'−'}€${fmt(Math.abs(pnl))} · ${pnlPct>=0?'+':''}${pnlPct.toFixed(0)}%</div>`;
         }
