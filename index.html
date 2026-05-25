@@ -9153,9 +9153,7 @@ function renderDashboard(w) {
     ${alertHTML}
     ${lotSugBanner}
 
-    ${renderDashboardFiscalHero(w)}
-
-    <!-- HERO BLOCK -->
+    <!-- HERO BLOCK — net worth first (what everyone wants to see) -->
     <div class="hero-block">
       <div class="hero-main">
         <div class="hero-label">${t('hero.netPosition')}</div>
@@ -9208,6 +9206,14 @@ function renderDashboard(w) {
       </div>
     </div>
 
+    <!-- ALLOCATION — "what do I hold" comes early, right after the headline numbers -->
+    ${renderPortfolioCharts(w)}
+
+    ${renderDefiPositions(w)}
+
+    <!-- FISCAL HERO — Aurum's signature, prominent but after the portfolio snapshot -->
+    ${renderDashboardFiscalHero(w)}
+
     <!-- ACTIVE POSITIONS -->
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
@@ -9218,6 +9224,8 @@ function renderDashboard(w) {
       </div>
       <div class="panel-body no-pad">${renderUnifiedPositions()}</div>
     </div>
+
+    ${renderTaxLossHarvest(w)}
 
     <!-- UPCOMING + RECENT (single column on mobile, two on desktop) -->
     <div class="two-col" style="margin-top:1.5rem">
@@ -9230,12 +9238,6 @@ function renderDashboard(w) {
         <div class="panel-body no-pad"><div class="table-wrap">${renderRecentHistory()}</div></div>
       </div>
     </div>
-
-    ${renderPortfolioCharts(w)}
-
-    ${renderDefiPositions(w)}
-
-    ${renderTaxLossHarvest(w)}
 
     ${live.lastRefresh?`<div class="dashboard-footer">
       <span>Última actualização <strong>${live.lastRefresh}</strong></span>
