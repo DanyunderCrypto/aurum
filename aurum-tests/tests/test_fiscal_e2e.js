@@ -299,6 +299,22 @@ run('S16: Staking reward in crypto → deferred, zero-cost lot, no Cat E', () =>
   assert(ethLot != null, `should open a lot for the crypto reward`);
 });
 
+run('S17: Disposal of qty exceeding indexed lots → proceeds scaled to matched fraction (no phantom gain)', () => {
+  // Acquired only 0.01 ETH (basis €20), but sells 1.0 ETH for €2000 (rest entered un-indexed).
+  // Without scaling: gain = €2000 − €20 = €1980 phantom. With scaling: only the 0.01 matched
+  // fraction is taxed → proceeds €20, basis €20, gain ≈ €0.
+  const events = [
+    ev({ direction: 'in',  asset: 'ETH', amount: 0.01, priceEUR: 2000, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'ETH', amount: 1.0,  priceEUR: 2000, date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w17' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  // Without scaling the phantom gain would be ~€1980 (proceeds €2000 − basis €20). Scaling to
+  // the matched 1% fraction must cut it by ~99%. We assert the gain is a small fraction of the
+  // un-scaled proceeds, proving the phantom gain is prevented.
+  assert(totalGain < 50, `partial-basis disposal must not invent a large gain (un-scaled would be ~€1980), got €${totalGain.toFixed(2)}`);
+});
+
 // ── Summary ──────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
