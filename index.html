@@ -8819,9 +8819,15 @@ function renderPortfolioCharts(w) {
     if (!curS || curS.timestamp < ts) livePricesBySymbol.set(sk, { priceEURPerUnit: e.priceEUR, timestamp: ts });
   }
   const _priceFor = (asset, chain, contract) => {
-    let live = null;
-    if (contract) live = livePricesByContract.get(`${contract.toLowerCase()}:${chain}`);
-    if (!live) live = livePricesBySymbol.get(`${asset}:${chain}`);
+    // If the token HAS a contract, price ONLY by that exact contract. Falling back to symbol
+    // would let one "POOL" inherit another "POOL"'s price (same bug class as impostor tokens)
+    // — that's what inflated a spam POOL to €737. Symbol-keyed price is reserved for native
+    // assets (ETH, POL) which legitimately have no contract.
+    if (contract) {
+      const live = livePricesByContract.get(`${contract.toLowerCase()}:${chain}`);
+      return live ? live.priceEURPerUnit : null;
+    }
+    const live = livePricesBySymbol.get(`${asset}:${chain}`);
     return live ? live.priceEURPerUnit : null;
   };
 
@@ -9816,7 +9822,7 @@ function renderAaveFullDetail(w) {
   return `<div class="panel" style="margin-bottom:1.3rem">
     <div class="panel-head">
       <div style="display:flex;align-items:center;gap:0.6rem">
-        <div style="width:32px;height:32px;border-radius:50%;background:#B6509E;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.65rem;color:#fff;font-weight:700">AA</div>
+        ${protocolLogo('aave', PROTOCOLS.aave, 32)}
         <div>
           <div style="font-family:var(--display);font-size:1.3rem;color:#B6509E;line-height:1">AAVE V3</div>
           <div style="font-family:var(--mono);font-size:0.58rem;color:var(--muted);letter-spacing:0.15em">${aaveChains.length} REDE${aaveChains.length>1?'S':''} ACTIVA${aaveChains.length>1?'S':''}</div>
@@ -9868,7 +9874,7 @@ function renderMorphoFullDetail(w) {
   return `<div class="panel" style="margin-bottom:1.3rem">
     <div class="panel-head">
       <div style="display:flex;align-items:center;gap:0.6rem">
-        <div style="width:32px;height:32px;border-radius:50%;background:#1C55FE;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.65rem;color:#fff;font-weight:700">MO</div>
+        ${protocolLogo('morpho', PROTOCOLS.morpho, 32)}
         <div>
           <div style="font-family:var(--display);font-size:1.3rem;color:#1C55FE;line-height:1">Morpho Blue</div>
           <div style="font-family:var(--mono);font-size:0.58rem;color:var(--muted);letter-spacing:0.15em">${markets.length} MERCADO${markets.length>1?'S':''} ACTIVO${markets.length>1?'S':''}</div>
@@ -10586,6 +10592,7 @@ function renderStrategy(w) {
   const fifoState = _getFifoStateFor(w);
   const autoCols = [];
   let skippedNegative = 0;
+  let skippedSpam = 0;
   if (fifoState && fifoState.lots) {
     for (const lot of fifoState.lots) {
       if (lot.qtyRemaining <= 1e-9) continue; // skip fully consumed
@@ -10594,6 +10601,14 @@ function renderStrategy(w) {
       if (basisTotal < -0.01) { skippedNegative++; continue; }
       // Skip lots with essentially zero basis AND zero qty value (dust)
       if (Math.abs(basisTotal) < 0.01 && lot.qtyRemaining < 0.0001) continue;
+      // VISUAL declutter: hide zero-basis airdrop/dust lots from this list. A lot with €0
+      // basis came from an unsolicited airdrop (never bought) — hundreds of these (FLOCK,
+      // KEKIUS, meme-spam) bury the real lots. Hiding from the VIEW doesn't change the tax
+      // report (engine processes every event; a €0-basis lot contributes €0 anyway). We keep
+      // genuine rewards (Cat. E) visible since those ARE fiscally relevant.
+      const isZeroBasis = Math.abs(basisTotal) < 0.01;
+      const isDetectedSpam = window.aurumFifoEngine?.isSpamToken?.({ asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining });
+      if (isZeroBasis && lot.source !== 'reward' && (isDetectedSpam || lot.source === 'receive' || lot.source === 'airdrop_acquisition')) { skippedSpam++; continue; }
       autoCols.push({
         id: 'auto_' + lot.lotId,
         walletId: w.id,
@@ -10687,6 +10702,7 @@ function renderStrategy(w) {
           : `<strong>Estratégia:</strong> Após 365 dias de holding, a mais-valia fica isenta de IRS (Anexo G1, declarativo). O FIFO garante que o lote mais antigo é "consumido" primeiro ao alienar.`}
         ${autoCount > 0 ? `<br><span style="color:var(--gold)">✓ ${autoCount} ${t('lot.lotsAuto')}</span>${(state.lang||'pt')==='en'?' from indexed on-chain events.':' dos eventos on-chain indexados.'}${manualCount > 0 ? ` + ${manualCount} ${t('lot.lotsManual')}.` : ''}` : `<br><span style="color:var(--text-muted)">${(state.lang||'pt')==='en'?'Add lots manually or index transactions in History for auto-detection.':'Adiciona lots manualmente ou indexa transactions no Histórico para detecção automática.'}</span>`}
         ${skippedNegative > 0 ? `<br><span style="color:var(--text-muted);font-size:0.78rem">ℹ ${skippedNegative} ${(state.lang||'pt')==='en'?'lots hidden (debt tokens from protocols like AAVE — not fiscally relevant).':'lots ocultados (debt tokens de protocolos como AAVE — não relevantes fiscalmente).'}</span>` : ''}
+        ${skippedSpam > 0 ? `<br><span style="color:var(--text-muted);font-size:0.78rem">ℹ ${skippedSpam} ${(state.lang||'pt')==='en'?'airdrop/dust lots hidden from view (€0 basis — no impact on the tax report).':'lots de airdrop/dust ocultados da vista (basis €0 — sem impacto no relatório fiscal).'}</span>` : ''}
       </div>
     </div>
 
