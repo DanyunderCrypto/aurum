@@ -8375,6 +8375,7 @@ window.fetchRealBalances = fetchRealBalances;
 // Returns { priceUSD, logoUrl } for a token by contract. Picks the most-liquid pair as the
 // reference price. Cached per contract for the session. Fails gracefully → null.
 const _dexScreenerCache = new Map();
+const DEX_MIN_LIQUIDITY_USD = 50000; // pairs below this are unreliable (scam/fake liquidity)
 async function fetchDexScreenerPrice(chain, contract) {
   if (!contract) return null;
   const ck = `${chain}:${contract.toLowerCase()}`;
@@ -8388,10 +8389,19 @@ async function fetchDexScreenerPrice(chain, contract) {
     // Pick the most liquid pair (highest USD liquidity) for a robust reference price.
     pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
     const best = pairs[0];
+    const liq = best.liquidity?.usd || 0;
     const priceUSD = parseFloat(best.priceUsd);
     if (!isFinite(priceUSD) || priceUSD <= 0) { _dexScreenerCache.set(ck, null); return null; }
+    // LIQUIDITY GATE: scam/airdrop tokens reuse popular symbols ("POOL", "ISS") and create
+    // tiny fake liquidity pairs. Trusting their price inflates the portfolio with worthless
+    // tokens. We only trust a price backed by real liquidity. (Generic — no token blacklist,
+    // no quantity heuristic; just "is this price backed by a real market?")
+    if (liq < DEX_MIN_LIQUIDITY_USD) {
+      _dexScreenerCache.set(ck, { priceUSD: null, logoUrl: best.info?.imageUrl || null, lowLiquidity: true, liq });
+      return _dexScreenerCache.get(ck);
+    }
     const logoUrl = best.info?.imageUrl || null;
-    const out = { priceUSD, logoUrl };
+    const out = { priceUSD, logoUrl, liq };
     _dexScreenerCache.set(ck, out);
     return out;
   } catch (e) {
@@ -8920,11 +8930,24 @@ function renderPortfolioCharts(w) {
     basisByAsset.set(asset, qtyForBasis * avg);
   }
 
-  // Sort and take top 8 + "Outros"
-  const sortedAssets = [...allocationMap.entries()].sort((a, b) => b[1] - a[1]);
-  const top8 = sortedAssets.slice(0, 8);
-  const otherSum = sortedAssets.slice(8).reduce((s, [, v]) => s + v, 0);
-  const allocItems = otherSum > 0 ? [...top8, ['Outros', otherSum]] : top8;
+  // Sort assets, then split into significant vs low-value (DeBank-style). Tokens worth less
+  // than the threshold are aggregated into one "X tokens de baixo valor" line so dust and
+  // residual airdrops don't clutter the chart — but they're not hidden (count + sum shown).
+  // This is a VALUE threshold, never a quantity one (a real asset is never hidden for being
+  // "big"; only genuinely tiny holdings get folded).
+  const LOW_VALUE_THRESHOLD = 1; // €1
+  const sortedAll = [...allocationMap.entries()].sort((a, b) => b[1] - a[1]);
+  const significant = sortedAll.filter(([, v]) => v >= LOW_VALUE_THRESHOLD);
+  const lowValue = sortedAll.filter(([, v]) => v < LOW_VALUE_THRESHOLD);
+  const lowValueSum = lowValue.reduce((s, [, v]) => s + v, 0);
+  const lowValueCount = lowValue.length;
+
+  // Top 8 of the significant ones, rest into "Outros"
+  const top8 = significant.slice(0, 8);
+  const otherSum = significant.slice(8).reduce((s, [, v]) => s + v, 0);
+  let allocItems = [...top8];
+  if (otherSum > 0) allocItems.push(['Outros', otherSum]);
+  if (lowValueSum > 0) allocItems.push([`${lowValueCount} ${lowValueCount===1?'token de baixo valor':'tokens de baixo valor'}`, lowValueSum]);
 
   // Sort chains
   const sortedChains = [...chainMap.entries()].sort((a, b) => b[1] - a[1]);
@@ -9019,7 +9042,7 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
 
   const legend = segments.map(s => {
     const meta = assetMeta && assetMeta.get(s.label);
-    const isOther = s.label === 'Outros';
+    const isOther = s.label === 'Outros' || /baixo valor$/.test(s.label);
     // Logo: prefer a direct URL from DexScreener/Alchemy, else token logo by contract/symbol.
     let logo;
     if (isOther) {
