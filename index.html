@@ -8311,20 +8311,32 @@ async function fetchRealBalances(w, { force = false } = {}) {
           const sym = meta.symbol || '?';
           const probe = { asset: sym, chain, assetContract: t.contractAddress, amount: qty };
           if (eng?.isSpamToken?.(probe)) continue;                       // filter scam/impostor
-          const isReceipt = eng?.isProtocolReceiptToken?.(sym);
-          if (isReceipt) {
-            // Receipt token — try to read it as an ERC-4626 vault to recover its real value.
-            const vault = await readErc4626Vault(chain, t.contractAddress, t.tokenBalance, key);
-            if (vault) {
-              vaults.push({
-                asset: sym, chain, vaultContract: t.contractAddress,
-                shares: qty, decimals: meta.decimals,
-                underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw,
-                logoUrl: meta.logo || null,
-              });
-            }
-            continue; // either way, receipts don't go into spot holdings
+
+          // UNIVERSAL VAULT DETECTION — by interface, not by name.
+          // Probe EVERY non-spam token for the ERC-4626 interface (convertToAssets/asset).
+          // This catches any yield vault / optimizer / curator vault / vault-of-vaults —
+          // Morpho, Yearn, Beefy, MetaMorpho, Yieldseeker, and protocols that don't exist
+          // yet — WITHOUT any per-protocol list. If it speaks 4626, we read its real value.
+          // We skip the probe only for tokens we already have a market price for (those are
+          // ordinary spot assets, not vaults — saves an RPC call).
+          const hasKnownPrice = !!_priceForContractStatic(t.contractAddress, chain);
+          let vault = null;
+          if (!hasKnownPrice) {
+            vault = await readErc4626Vault(chain, t.contractAddress, t.tokenBalance, key);
           }
+          if (vault) {
+            vaults.push({
+              asset: sym, chain, vaultContract: t.contractAddress,
+              shares: qty, decimals: meta.decimals,
+              underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw,
+              logoUrl: meta.logo || null,
+            });
+            continue; // vault share → not a spot holding
+          }
+          // Not a vault. If it's a known receipt/debt token by name (aToken, -DEBT, LP/PT/YT,
+          // maturity-dated), keep it out of spot — it's a protocol position we value elsewhere.
+          if (eng?.isProtocolReceiptToken?.(sym)) continue;
+
           holdings.push({
             asset: sym, chain, contract: t.contractAddress, qty,
             decimals: meta.decimals,
@@ -8408,6 +8420,25 @@ async function readErc4626Vault(chain, vaultContract, sharesRawHex, key) {
   }
 }
 window.readErc4626Vault = readErc4626Vault;
+
+// Quick check: do we already consider this an ordinary priced spot asset? Used to skip the
+// ERC-4626 probe on obvious tokens (stablecoins, blue-chips) and save an RPC call. Generic —
+// based on well-known symbols/contracts, not a per-protocol list.
+function _priceForContractStatic(contract, chain) {
+  if (!contract) return false;
+  const eng = window.aurumFifoEngine;
+  // Stablecoins and majors are spot, never vaults — skip probe.
+  const c = contract.toLowerCase();
+  const KNOWN_SPOT = new Set([
+    '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // USDC base
+    '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC eth
+    '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT eth
+    '0x4200000000000000000000000000000000000006', // WETH base
+    '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH eth
+    '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', // cbBTC base
+  ]);
+  return KNOWN_SPOT.has(c);
+}
 
 // ── Fiscal hero panel: KPIs no topo do dashboard ──
 function renderDashboardFiscalHero(w) {
