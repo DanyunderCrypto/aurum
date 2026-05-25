@@ -4093,14 +4093,17 @@ function _cascadingImg(urls, alt, size, fallbackHtml, objectFit, bg) {
 function tokenLogo(symbol, chain, contract, size = 24) {
   const s = size;
   const fallback = _logoFallbackCircle(symbol, 'var(--bg3)', s);
-  const twChain = TRUSTWALLET_CHAIN[chain];
   const urls = [];
-  if (twChain && contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
-    urls.push(`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twChain}/assets/${contract}/logo.png`);
+  // DexScreener by contract — broadest coverage (2M+ tokens incl. DeFi/protocol tokens).
+  const DS_CHAIN = { eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon', avalanche:'avalanche', bnb:'bsc' };
+  const dsChain = DS_CHAIN[chain];
+  if (dsChain && contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
+    urls.push(`https://dd.dexscreener.com/ds-data/tokens/${dsChain}/${contract.toLowerCase()}.png`);
   }
+  // cryptocurrency-icons by symbol — well-known coins fallback.
   if (symbol) {
     const lc = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
-    urls.push(`https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${lc}.svg`);
+    if (lc) urls.push(`https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${lc}.svg`);
   }
   if (urls.length === 0) return fallback;
   return _cascadingImg(urls, symbol, s, fallback, 'cover', 'var(--bg2)');
@@ -4110,7 +4113,9 @@ function protocolLogo(key, proto, size = 24) {
   const s = size;
   const slug = (proto && proto.slug) || key;
   const fallback = _logoFallbackCircle(key, (proto && proto.color) || 'var(--gold)', s);
+  // DefiLlama protocol icons cover DeFi protocols (aave, morpho, compound, spark…).
   const urls = [
+    `https://icons.llamao.fi/icons/protocols/${slug}?w=48&h=48`,
     `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${slug}.svg`,
   ];
   return _cascadingImg(urls, (proto&&proto.name)||key, s, fallback, 'contain', (proto&&proto.color)||'var(--bg3)');
