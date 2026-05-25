@@ -9005,7 +9005,7 @@ function renderPortfolioCharts(w) {
         </div>
         <div class="panel-body">
           ${donutSVG}
-          ${unpricedCount > 0 ? `<div style="margin-top:0.6rem;padding:0.5rem 0.7rem;background:var(--surface-soft);border-radius:6px;font-size:0.7rem;color:var(--text-muted)">⚠ ${unpricedCount} ${unpricedCount===1?'token sem preço de mercado':'tokens sem preço de mercado'}${unpricedSamples.length?` (${unpricedSamples.join(', ')}${unpricedCount>unpricedSamples.length?'…':''})`:''} — não incluídos no total. Cobertura DefiLlama limitada para tokens muito pequenos.</div>` : ''}
+          ${unpricedCount > 0 ? `<div style="margin-top:0.6rem;padding:0.5rem 0.7rem;background:var(--surface-soft);border-radius:6px;font-size:0.7rem;color:var(--text-muted)">${unpricedCount} ${unpricedCount===1?'token sem valor de mercado':'tokens sem valor de mercado significativo'} (maioritariamente airdrops/dust) — não incluídos no total.</div>` : ''}
         </div>
       </div>
       <div class="panel">
