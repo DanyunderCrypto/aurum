@@ -8316,9 +8316,25 @@ async function fetchRealBalances(w, { force = false } = {}) {
       // 2. ERC-20 balances
       const bal = await _alchemyRpc(chain, 'alchemy_getTokenBalances', [evmAddr, 'erc20'], key);
       const tokens = (bal && bal.tokenBalances) || [];
-      const nonZero = tokens.filter(t => t.tokenBalance && t.tokenBalance !== '0x' && parseInt(t.tokenBalance, 16) > 0);
-      // Fetch metadata in series (rate-friendly); cap to avoid huge wallets hammering API
-      for (const t of nonZero.slice(0, 100)) {
+      let nonZero = tokens.filter(t => t.tokenBalance && t.tokenBalance !== '0x' && parseInt(t.tokenBalance, 16) > 0);
+      // PRIORITIZE real holdings over spam. A wallet may hold 100s of unsolicited airdrop
+      // tokens that would push genuine assets (cbBTC, EURC…) past the metadata-fetch cap and
+      // make them silently disappear. Tokens the user has actually interacted with appear in
+      // the indexed event history — sort those FIRST so they're never cut off.
+      try {
+        const knownContracts = new Set(
+          (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : [])
+            .filter(e => e.assetContract && e.chain === chain)
+            .map(e => e.assetContract.toLowerCase())
+        );
+        nonZero.sort((a, b) => {
+          const ak = knownContracts.has((a.contractAddress||'').toLowerCase()) ? 0 : 1;
+          const bk = knownContracts.has((b.contractAddress||'').toLowerCase()) ? 0 : 1;
+          return ak - bk;
+        });
+      } catch (e) { /* sorting is best-effort */ }
+      // Cap raised to 150 (with prioritization, real assets are now always within range).
+      for (const t of nonZero.slice(0, 150)) {
         try {
           const meta = await _alchemyRpc(chain, 'alchemy_getTokenMetadata', [t.contractAddress], key);
           if (!meta || meta.decimals == null) continue;
