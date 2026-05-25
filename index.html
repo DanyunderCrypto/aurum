@@ -8861,10 +8861,24 @@ function renderPortfolioCharts(w) {
   // whatever the wallet holds. (DefiLlama "current" price = most recent priced event we have.)
   const livePricesByContract = new Map();
   const livePricesBySymbol = new Map();
+  const _eng = window.aurumFifoEngine;
   for (const e of _eventsForWallet(w)) {
     if (typeof e.priceEUR !== 'number' || !e.amount || e.amount === 0) continue;
-    if (window.aurumFifoEngine?.isSpamToken?.(e)) continue;
-    if (window.aurumFifoEngine?.isProtocolReceiptToken?.(e.asset)) continue;
+    if (_eng?.isSpamToken?.(e)) continue;
+    if (_eng?.isProtocolReceiptToken?.(e.asset)) continue;
+    // RE-VALIDATE stale stablecoin prices. A price stored as stablecoin_usd/_eur was set by
+    // the $1 fast-path at processing time. If the symbol is NO LONGER recognized as a
+    // stablecoin (e.g. we removed a wrongly-listed entry like the spam token "USOR", or fixed
+    // a bad list), that stored ~$1 price is invalid and would otherwise persist forever in the
+    // saved events. Drop it here so the token falls through to real pricing (DexScreener with
+    // its liquidity gate) — which correctly yields "no price" for spam. General: self-heals
+    // every wallet whenever the stablecoin list changes, with no re-processing needed.
+    if ((e.priceNote === 'stablecoin_usd' || e.priceNote === 'stablecoin_eur')) {
+      const stillStable = _eng?.isUsdStablecoin?.(e.asset) || _eng?.isEurStablecoin?.(e.asset)
+        || (typeof isUsdStablecoin === 'function' && isUsdStablecoin(e.asset))
+        || (typeof isEurStablecoin === 'function' && isEurStablecoin(e.asset));
+      if (!stillStable) continue; // stale stablecoin price for a non-stablecoin → ignore
+    }
     const ts = e.timestamp || 0;
     if (e.assetContract) {
       const ck = `${e.assetContract.toLowerCase()}:${e.chain}`;
