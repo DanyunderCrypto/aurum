@@ -8283,6 +8283,7 @@ async function fetchRealBalances(w, { force = false } = {}) {
 
   const eng = window.aurumFifoEngine;
   const holdings = []; // { asset, chain, contract, qty, decimals }
+  const vaults = [];   // ERC-4626 vault positions { asset, chain, vaultContract, shares, underlyingContract, assetsRaw }
   const chains = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c]);
 
   for (const chain of chains) {
@@ -8307,13 +8308,27 @@ async function fetchRealBalances(w, { force = false } = {}) {
           if (!meta || meta.decimals == null) continue;
           const qty = parseInt(t.tokenBalance, 16) / Math.pow(10, meta.decimals);
           if (qty <= 0) continue;
-          const probe = { asset: meta.symbol || '?', chain, assetContract: t.contractAddress, amount: qty };
+          const sym = meta.symbol || '?';
+          const probe = { asset: sym, chain, assetContract: t.contractAddress, amount: qty };
           if (eng?.isSpamToken?.(probe)) continue;                       // filter scam/impostor
-          if (eng?.isProtocolReceiptToken?.(meta.symbol || '')) continue; // filter aTokens
+          const isReceipt = eng?.isProtocolReceiptToken?.(sym);
+          if (isReceipt) {
+            // Receipt token — try to read it as an ERC-4626 vault to recover its real value.
+            const vault = await readErc4626Vault(chain, t.contractAddress, t.tokenBalance, key);
+            if (vault) {
+              vaults.push({
+                asset: sym, chain, vaultContract: t.contractAddress,
+                shares: qty, decimals: meta.decimals,
+                underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw,
+                logoUrl: meta.logo || null,
+              });
+            }
+            continue; // either way, receipts don't go into spot holdings
+          }
           holdings.push({
-            asset: meta.symbol || '?', chain, contract: t.contractAddress, qty,
+            asset: sym, chain, contract: t.contractAddress, qty,
             decimals: meta.decimals,
-            logoUrl: meta.logo || null,           // Alchemy sometimes provides a logo
+            logoUrl: meta.logo || null,
           });
         } catch (e) { /* skip token on metadata error */ }
       }
@@ -8322,8 +8337,9 @@ async function fetchRealBalances(w, { force = false } = {}) {
     }
   }
 
-  window[cacheKey] = { at: now, data: holdings };
-  return holdings;
+  const result = { holdings, vaults };
+  window[cacheKey] = { at: now, data: holdings, vaults };
+  return result;
 }
 window.fetchRealBalances = fetchRealBalances;
 
@@ -8356,6 +8372,42 @@ async function fetchDexScreenerPrice(chain, contract) {
   }
 }
 window.fetchDexScreenerPrice = fetchDexScreenerPrice;
+
+// ── ERC-4626 vault reader (universal) ──────────────────────────
+// Most yield vaults (Morpho Vaults, Yearn V3, Beefy, Spark sDAI, etc.) implement the
+// ERC-4626 standard. We read the underlying asset and the redeemable value of the user's
+// shares directly from the contract — one interface covers them all, no per-protocol code.
+//   asset()                       → 0x38d52e0f  → underlying token address
+//   convertToAssets(uint256)      → 0x07a2d13a  → assets redeemable for given shares
+//   decimals()                    → 0x313ce567
+// Returns { underlyingContract, assetsQty } or null if not a vault / call fails.
+const _vaultCache = new Map();
+async function readErc4626Vault(chain, vaultContract, sharesRawHex, key) {
+  if (!vaultContract || !sharesRawHex) return null;
+  const ck = `${chain}:${vaultContract.toLowerCase()}:${sharesRawHex}`;
+  if (_vaultCache.has(ck)) return _vaultCache.get(ck);
+  try {
+    // asset() — underlying token address
+    const assetRes = await _alchemyRpc(chain, 'eth_call', [{ to: vaultContract, data: '0x38d52e0f' }, 'latest'], key);
+    if (!assetRes || assetRes === '0x' || assetRes.length < 66) { _vaultCache.set(ck, null); return null; }
+    const underlyingContract = '0x' + assetRes.slice(-40);
+
+    // convertToAssets(shares) — value of the user's shares in underlying units
+    const sharesHex = sharesRawHex.replace(/^0x/, '').padStart(64, '0');
+    const convRes = await _alchemyRpc(chain, 'eth_call', [{ to: vaultContract, data: '0x07a2d13a' + sharesHex }, 'latest'], key);
+    if (!convRes || convRes === '0x') { _vaultCache.set(ck, null); return null; }
+    const assetsRaw = BigInt(convRes);
+    if (assetsRaw === 0n) { _vaultCache.set(ck, null); return null; }
+
+    const out = { underlyingContract, assetsRaw: assetsRaw.toString() };
+    _vaultCache.set(ck, out);
+    return out;
+  } catch (e) {
+    _vaultCache.set(ck, null);
+    return null;
+  }
+}
+window.readErc4626Vault = readErc4626Vault;
 
 // ── Fiscal hero panel: KPIs no topo do dashboard ──
 function renderDashboardFiscalHero(w) {
@@ -8610,19 +8662,76 @@ function renderDefiPositions(w) {
     `);
   }
 
-  if (rows.length === 0) return ''; // no DeFi positions → don't render the panel
+  if (rows.length === 0 && !(window['_balCache_' + w.id]?.vaults?.length)) return '';
 
+  // ── Vaults (ERC-4626): value = redeemable underlying × underlying price ──
   const eurRate = (window._lastEurUsdRate || 0.92);
+  const vaults = window['_balCache_' + w.id]?.vaults || [];
+  let totalVaultEUR = 0;
+  const vaultRows = [];
+  // Build a quick price lookup (EUR per unit) from priced events, keyed by contract.
+  const evPrice = new Map();
+  for (const e of _eventsForWallet(w)) {
+    if (typeof e.priceEUR === 'number' && e.assetContract) {
+      const k = `${e.assetContract.toLowerCase()}:${e.chain}`;
+      if (!evPrice.has(k)) evPrice.set(k, e.priceEUR);
+    }
+  }
+  for (const v of vaults) {
+    // assetsRaw is in underlying token base units; we need the underlying's decimals.
+    // Most stablecoin vaults use 6 or 18; we approximate via the vault's own decimals if
+    // unknown (shares decimals usually match underlying for 4626). Price via event cache or
+    // DexScreener (cached).
+    let underlyingDecimals = v.decimals;
+    const assetsQty = Number(BigInt(v.assetsRaw)) / Math.pow(10, underlyingDecimals);
+    if (!isFinite(assetsQty) || assetsQty <= 0) continue;
+    const pk = `${(v.underlyingContract || '').toLowerCase()}:${v.chain}`;
+    let ppu = evPrice.get(pk);
+    if (ppu == null) {
+      const ds = _dexScreenerCache.get(pk);
+      if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
+    }
+    // Stablecoin vaults: if underlying looks like a stablecoin, assume €≈$.
+    if (ppu == null && /USD|DAI|EUR/i.test(v.asset)) ppu = eurRate;
+    if (ppu == null) {
+      // can't price → still show qty, no value
+      vaultRows.push(`
+        <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:0.85rem;font-weight:600">${v.asset} <span style="font-size:0.6rem;color:var(--muted)">vault</span></div>
+            <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unid. subjacente · sem preço</div>
+          </div>
+          <div style="text-align:right;font-family:var(--mono);font-size:0.8rem;color:var(--muted)">—</div>
+        </div>`);
+      continue;
+    }
+    const valueEUR = assetsQty * ppu;
+    if (valueEUR < 0.01) continue;
+    totalVaultEUR += valueEUR;
+    vaultRows.push(`
+      <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.85rem;font-weight:600">${v.asset} <span style="font-size:0.6rem;color:var(--gold)">vault · ${CHAINS[v.chain]?.name||v.chain}</span></div>
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unid. subjacente</div>
+        </div>
+        <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">€${fmt(valueEUR)}</div>
+      </div>`);
+  }
+  const lendNetEUR = totalNetUSD * eurRate;
+  const grandTotalEUR = lendNetEUR + totalVaultEUR;
+  if (rows.length === 0 && vaultRows.length === 0) return '';
+
   return `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
-        <span class="panel-title">⚖ Posições DeFi · valor líquido</span>
-        <span style="font-size:0.7rem;color:var(--text-muted)">colat $${fmt(totalCollatUSD)} − dívida $${fmt(totalDebtUSD)} = <strong style="color:var(--gold)">$${fmt(totalNetUSD)}</strong> (~€${fmt(totalNetUSD * eurRate)})</span>
+        <span class="panel-title">⚖ Posições DeFi</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">total <strong style="color:var(--gold)">€${fmt(grandTotalEUR)}</strong></span>
       </div>
       <div class="panel-body">
-        ${rows.join('')}
+        ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
+        ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:0.8rem 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
         <div style="margin-top:0.6rem;font-size:0.68rem;color:var(--text-muted);line-height:1.5">
-          Valor líquido = colateral − dívida. Loops e lending bloqueiam colateral com dívida compensatória; o valor económico real é o líquido. Fiscalmente, depositar/pedir emprestado não é alienação — só o yield realizado em fiat é tributável.
+          Loops/lending: valor líquido = colateral − dívida. Vaults (ERC-4626): valor resgatável do subjacente. Fiscalmente, depositar/pedir emprestado/entrar em vault não é alienação — só o yield realizado em fiat é tributável (ver parecer OCC).
         </div>
       </div>
     </div>
@@ -8742,7 +8851,8 @@ function renderPortfolioCharts(w) {
     }
     if (w.alchemyKey || state.globalAlchemyKey) {
       fetchRealBalances(w).then(b => {
-        if (b && b.length > 0 && typeof render === 'function') render();
+        const h = b && (b.holdings || b);
+        if (h && h.length > 0 && typeof render === 'function') render();
       }).catch(() => {});
     }
   }
