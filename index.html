@@ -8376,6 +8376,47 @@ async function fetchRealBalances(w, { force = false } = {}) {
           });
         } catch (e) { /* skip token on metadata error */ }
       }
+
+      // GUARANTEE PASS: alchemy_getTokenBalances('erc20') uses Alchemy's internal token list
+      // and sometimes OMITS real holdings (e.g. cbBTC was missing despite a $104 balance).
+      // For every token the user has actually interacted with (present in indexed history)
+      // on this chain that wasn't returned above, query balanceOf() directly on the contract.
+      // This guarantees genuine assets are never silently dropped by the indexer's gaps.
+      try {
+        const seen = new Set(holdings.filter(h => h.chain === chain && h.contract).map(h => h.contract.toLowerCase()));
+        const seenVaults = new Set(vaults.filter(v => v.chain === chain).map(v => v.vaultContract.toLowerCase()));
+        const knownTokens = new Map(); // contract → {asset}
+        for (const e of (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : [])) {
+          if (e.chain !== chain || !e.assetContract) continue;
+          const c = e.assetContract.toLowerCase();
+          if (!knownTokens.has(c)) knownTokens.set(c, { asset: e.asset });
+        }
+        for (const [contract, info] of knownTokens) {
+          if (seen.has(contract) || seenVaults.has(contract)) continue;
+          // skip spam/receipts by name quickly
+          if (eng?.isProtocolReceiptToken?.(info.asset)) continue;
+          // balanceOf(address) → 0x70a08231 + 32-byte padded address
+          const addrPadded = evmAddr.replace(/^0x/, '').toLowerCase().padStart(64, '0');
+          const balHex = await _alchemyRpc(chain, 'eth_call', [{ to: contract, data: '0x70a08231' + addrPadded }, 'latest'], key);
+          if (!balHex || balHex === '0x') continue;
+          const raw = BigInt(balHex);
+          if (raw === 0n) continue;
+          const meta = await _alchemyRpc(chain, 'alchemy_getTokenMetadata', [contract], key);
+          if (!meta || meta.decimals == null) continue;
+          const qty = Number(raw) / Math.pow(10, meta.decimals);
+          if (qty <= 0) continue;
+          const sym = meta.symbol || info.asset || '?';
+          if (eng?.isSpamToken?.({ asset: sym, chain, assetContract: contract, amount: qty })) continue;
+          // vault check
+          const vault = await readErc4626Vault(chain, contract, '0x' + raw.toString(16), key);
+          if (vault) {
+            vaults.push({ asset: sym, chain, vaultContract: contract, shares: qty, decimals: meta.decimals, underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw, logoUrl: meta.logo || null });
+            continue;
+          }
+          if (eng?.isProtocolReceiptToken?.(sym)) continue;
+          holdings.push({ asset: sym, chain, contract, qty, decimals: meta.decimals, logoUrl: meta.logo || null });
+        }
+      } catch (e) { /* guarantee pass best-effort */ }
     } catch (e) {
       errorLogger?.warn?.(`balances ${chain}: ${e.message}`);
     }
