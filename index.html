@@ -8954,6 +8954,14 @@ function renderPortfolioCharts(w) {
     const needDexPrice = [];
     for (const h of realBal) {
       let ppu = _priceFor(h.asset, h.chain, h.contract);
+      // Native tokens (ETH, POL — contract null) get their price from the live market feed
+      // (CoinGecko), never from derived_onchain. This is essential: we ban derived_onchain
+      // from the portfolio (it's garbage for spam), but ETH/POL must still be valued. Without
+      // this, real ETH spread across chains silently vanished from the total.
+      if (ppu == null && h.native) {
+        const mkt = live.prices && (live.prices[h.asset] || live.prices[h.asset === 'POL' ? 'MATIC' : h.asset]);
+        if (typeof mkt === 'number' && mkt > 0) ppu = mkt * eurRate;
+      }
       // DexScreener fallback (cached): covers DEX/protocol tokens DefiLlama misses (jrUSDat…)
       if (ppu == null && h.contract) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
