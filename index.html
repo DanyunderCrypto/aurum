@@ -406,7 +406,7 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 .hf-widget.warn   { border-color:var(--gold); box-shadow:var(--glow-g); }
 .hf-widget.danger { border-color:var(--red); box-shadow:var(--glow-r); animation:dangerPulse 0.6s infinite; }
 .hf-widget-num { font-family:var(--display); font-size:1.2rem; line-height:1; }
-.hf-widget-label { font-family:var(--mono); font-size:0.45rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); }
+.hf-widget-label { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); }
 .hf-widget.hidden { display:none; }
 
 /* ══════════════════════════════════════════════════
@@ -1066,10 +1066,10 @@ td.muted  { color:var(--muted); }
 .proto-card.active { border-color:var(--gold); box-shadow:var(--glow-g); }
 .proto-header { display:flex; align-items:center; gap:0.8rem; }
 .proto-info h3 { font-size:1rem; font-weight:600; }
-.proto-info small { font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.15em; text-transform:uppercase; }
+.proto-info small { font-family:var(--mono); font-size:0.7rem; color:var(--muted); letter-spacing:0.15em; text-transform:uppercase; }
 .proto-metrics { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; }
 .proto-metric { background:var(--bg2); padding:0.6rem 0.75rem; border-radius:var(--radius); }
-.proto-metric-label { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); margin-bottom:0.2rem; }
+.proto-metric-label { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); margin-bottom:0.2rem; }
 .proto-metric-value { font-family:var(--display); font-size:1.2rem; }
 
 /* ══════════════════════════════════════════════════
@@ -1080,7 +1080,7 @@ td.muted  { color:var(--muted); }
 .hf-ring svg { display:block; }
 .hf-ring-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
 .hf-big-num { font-family:var(--display); font-size:2.4rem; line-height:1; }
-.hf-small-label { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--muted); }
+.hf-small-label { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--muted); }
 
 /* ══════════════════════════════════════════════════
    MINI CHART (HF History)
@@ -1100,7 +1100,7 @@ td.muted  { color:var(--muted); }
 ══════════════════════════════════════════════════ */
 .col-mapper { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-top:1rem; }
 .col-map-item { display:flex; flex-direction:column; gap:0.3rem; }
-.col-map-label { font-family:var(--mono); font-size:0.6rem; text-transform:uppercase; letter-spacing:0.18em; color:var(--muted); }
+.col-map-label { font-family:var(--mono); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.18em; color:var(--muted); }
 
 /* ══════════════════════════════════════════════════
    SIMULATOR
@@ -1186,7 +1186,7 @@ td.muted  { color:var(--muted); }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:1.3rem; }
 .three-col { display:grid; grid-template-columns:repeat(3,1fr); gap:1.3rem; }
 .section-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
-.section-label { font-family:var(--mono); font-size:0.65rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--muted); }
+.section-label { font-family:var(--mono); font-size:0.72rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--muted); }
 .divider { height:1px; background:var(--border); margin:1rem 0; }
 .txhash { font-family:var(--mono); font-size:0.68rem; color:var(--muted); cursor:pointer; transition:color 0.2s; }
 .txhash a { color:inherit; text-decoration:none; }
@@ -9412,25 +9412,25 @@ function renderMorphoMarketCard(m) {
       </div>
       <div style="text-align:right">
         <div style="font-family:var(--num);font-weight:700;font-size:1.4rem;color:${hfColor}">${m.hf?m.hf.toFixed(3):'—'}</div>
-        <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);letter-spacing:0.15em">HEALTH FACTOR</div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">Health Factor</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
       <div style="padding:0.5rem 0.6rem;background:var(--bg);border-radius:2px">
-        <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div>
         <div style="color:var(--gold);font-weight:600">${m.colAmt.toFixed(4)} ${m.colSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.collateralUsd)}</div>
       </div>
       <div style="padding:0.5rem 0.6rem;background:var(--bg);border-radius:2px">
-        <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div>
         <div style="color:var(--amber);font-weight:600">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.borrowUsd)}</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;font-family:var(--mono);font-size:0.68rem">
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.55rem;letter-spacing:0.15em">LLTV</span><br><span style="color:var(--white)">${fmt(m.lltv,1)}%</span></div>
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.55rem;letter-spacing:0.15em">Borrow APR</span><br><span style="color:var(--red)">${(m.borrowApy*100).toFixed(2)}%</span></div>
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.55rem;letter-spacing:0.15em">Utilização</span><br><span style="color:${utilColor}">${(m.utilization*100).toFixed(1)}%</span></div>
+      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">LLTV</span><br><span style="color:var(--white)">${fmt(m.lltv,1)}%</span></div>
+      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">Borrow APR</span><br><span style="color:var(--red)">${(m.borrowApy*100).toFixed(2)}%</span></div>
+      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">Utilização</span><br><span style="color:${utilColor}">${(m.utilization*100).toFixed(1)}%</span></div>
     </div>
     ${m.supplyUsd > 0 ? `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.7rem">Supply (yield): <span style="color:var(--gold)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>`:''}
   </div>`;
@@ -9729,7 +9729,7 @@ function renderProtocols(w) {
         ${inactiveProtos.map(({key,proto})=>`<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.8rem;background:var(--bg2);border-radius:var(--radius);opacity:0.6">
           ${protocolLogo(key, proto, 20)}
           <span style="font-size:0.85rem">${proto.name}</span>
-          <span style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);letter-spacing:0.15em">${proto.chains.filter(c=>c!=='solana').map(c=>CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join('·')}</span>
+          <span style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">${proto.chains.filter(c=>c!=='solana').map(c=>CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join('·')}</span>
         </div>`).join('')}
       </div>
     </div>` : ''}
@@ -9745,7 +9745,7 @@ function renderProtocols(w) {
             <strong style="font-size:0.88rem">${proto.name}</strong>
             <span class="badge badge-muted" style="margin-left:auto;font-size:0.5rem">Em breve</span>
           </div>
-          <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);letter-spacing:0.15em">
+          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">
             ${proto.chains.map(c=>c==='solana'?'SOLANA':CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join(' · ')}
           </div>
         </div>`).join('')}
@@ -9800,14 +9800,14 @@ function renderAaveFullDetail(w) {
               </div>
               <div style="text-align:right">
                 <div style="font-family:var(--num);font-weight:700;font-size:1.4rem;color:${ahfColor};line-height:1">${p.hf?p.hf.toFixed(3):'—'}</div>
-                <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);letter-spacing:0.15em">HEALTH FACTOR</div>
+                <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">Health Factor</div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div><div class="gold mono" style="font-weight:600">$${fmt(p.totalCollateral)}</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div><div class="amber mono" style="font-weight:600">$${fmt(p.totalDebt)}</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">LTV</div><div class="mono" style="font-weight:600;color:${p.ltv>70?'var(--red)':p.ltv>50?'var(--gold)':'var(--green)'}">${fmt(p.ltv,2)}%</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Disponível</div><div class="blue mono" style="font-weight:600">$${fmt(p.available||0)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div><div class="gold mono" style="font-weight:600">$${fmt(p.totalCollateral)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div><div class="amber mono" style="font-weight:600">$${fmt(p.totalDebt)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">LTV</div><div class="mono" style="font-weight:600;color:${p.ltv>70?'var(--red)':p.ltv>50?'var(--gold)':'var(--green)'}">${fmt(p.ltv,2)}%</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Disponível</div><div class="blue mono" style="font-weight:600">$${fmt(p.available||0)}</div></div>
             </div>
             <div style="margin-top:0.5rem"><a href="https://app.aave.com" target="_blank" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.aave.com</a></div>
           </div>`;
