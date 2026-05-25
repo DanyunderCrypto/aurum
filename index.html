@@ -4252,7 +4252,7 @@ let state = {
 let live = {
   positions: {},
   history:   {},
-  eurRate:   0.92,
+  eurRate:   0.86,
   prices:    {}, // {symbol: usdPrice}
   lastRefresh: null,
 };
@@ -7921,12 +7921,19 @@ async function fetchEurRate() {
       const usd = j[cgId]?.usd;
       if (usd) syms.forEach(s => { live.prices[s] = usd; });
     });
-    // EUR rate from EUR per USD (use stable assumption)
-    live.eurRate = 0.92;
-    console.log('Prices loaded:', Object.keys(live.prices).length, 'tokens');
+    // EUR rate: fetch the real USD→EUR rate for today (ECB/Frankfurter). The old hardcoded
+    // 0.92 was stale — EUR/USD moved to ~1.16 (rate ~0.86), which threw every EUR value off.
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const r = await window.aurumFifoEngine?.getEurRate?.(today);
+      live.eurRate = (typeof r === 'number' && r > 0.5 && r < 1.5) ? r : 0.86;
+    } catch (e) { live.eurRate = 0.86; }
+    window._lastEurUsdRate = live.eurRate;
+    console.log('Prices loaded:', Object.keys(live.prices).length, 'tokens', '| EUR rate:', live.eurRate);
   } catch(e) {
     console.warn('Price fetch failed:', e.message);
-    live.eurRate = 0.92;
+    live.eurRate = 0.86;
+    window._lastEurUsdRate = 0.86;
     live.prices = {
       ETH:3500, WETH:3500, BTC:95000, WBTC:95000, cbBTC:95000, tBTC:95000, LBTC:95000,
       USDC:1, USDT:1, DAI:1, USDbC:1, GHO:1, USDe:1, sUSDe:1, USDS:1, sDAI:1.05, RLUSD:1, EURC:1.08, EURe:1.08,
