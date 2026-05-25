@@ -356,13 +356,21 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   margin-top: 3px;
 }
 
-.nav-tabs { display:flex; }
+.nav-tabs { display:flex; align-items:center; }
+.nav-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border2);
+  margin: 0 0.5rem;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
 .nav-tab {
-  padding: 0 1.2rem;
+  padding: 0 0.95rem;
   height: 64px;
   font-family: var(--body);
   font-size: 0.72rem;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 500;
   color: var(--text-dim);
@@ -1197,7 +1205,7 @@ td.muted  { color:var(--muted); }
 ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background:var(--gold); }
 @media(max-width:900px) { .two-col,.three-col{grid-template-columns:1fr} }
-@media(max-width:640px) { .main{padding:0.9rem} .nav-tab{padding:0 0.6rem;font-size:0.56rem} .form-row,.form-row-3{grid-template-columns:1fr} }
+@media(max-width:640px) { .main{padding:0.9rem} .nav-tab{padding:0 0.6rem;font-size:0.56rem} .nav-divider{display:none} .form-row,.form-row-3{grid-template-columns:1fr} }
 
 /* Protocol logo placeholders with colors */
 .logo-aave    { background:#B6509E; }
@@ -2659,12 +2667,15 @@ body.stealth-mode .stealth-badge {
   <div class="nav-tabs" id="navTabs">
     <button class="nav-tab active" data-i18n="tab.dashboard" onclick="showTab('dashboard')">Dashboard</button>
     <button class="nav-tab" data-i18n="tab.positions" onclick="showTab('protocols')">Posições</button>
-    <button class="nav-tab" data-i18n="tab.cards" onclick="showTab('cards')">Cartões</button>
-    <button class="nav-tab" data-i18n="tab.history" onclick="showTab('history')">Histórico</button>
+    <button class="nav-tab" data-i18n="tab.wallets" onclick="showTab('wallets')">Wallets</button>
+    <span class="nav-divider"></span>
+    <button class="nav-tab" data-i18n="tab.fiscal" onclick="showTab('fiscal')">Fiscal PT</button>
     <button class="nav-tab" data-i18n="tab.strategy" onclick="showTab('strategy')">365 Dias</button>
     <button class="nav-tab" data-i18n="tab.simulator" onclick="showTab('simulator')">Simulador</button>
-    <button class="nav-tab" data-i18n="tab.wallets" onclick="showTab('wallets')">Wallets</button>
-    <button class="nav-tab" data-i18n="tab.fiscal" onclick="showTab('fiscal')">Fiscal PT</button>
+    <span class="nav-divider"></span>
+    <button class="nav-tab" data-i18n="tab.history" onclick="showTab('history')">Histórico</button>
+    <button class="nav-tab" data-i18n="tab.cards" onclick="showTab('cards')">Cartões</button>
+    <span class="nav-divider"></span>
     <button class="nav-tab" data-i18n="tab.config" onclick="showTab('settings')">Config</button>
   </div>
   <div class="topbar-right">
