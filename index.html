@@ -8886,6 +8886,15 @@ function renderPortfolioCharts(w) {
         || (typeof isEurStablecoin === 'function' && isEurStablecoin(e.asset));
       if (!stillStable) continue; // stale stablecoin price for a non-stablecoin → ignore
     }
+    // EXCLUDE derived_onchain prices from PORTFOLIO valuation. These are inferred from
+    // on-chain swap ratios and are unreliable for spam/scam tokens (a fake-liquidity swap
+    // produced ISS at €932,920,000,000/unit and POOL at €9.50 — pure garbage). For the
+    // portfolio we trust ONLY market-verified prices (DexScreener with its liquidity gate, or
+    // a confirmed stablecoin). Tokens whose only price is derived_onchain fall through to the
+    // DexScreener path; if that has no liquid market, they correctly show "no price" and stay
+    // out of the total. (The fiscal engine still uses derived_onchain for cost basis — that's
+    // separate; here we only guard what inflates the displayed portfolio value.)
+    if (e.priceNote === 'derived_onchain') continue;
     const ts = e.timestamp || 0;
     if (e.assetContract) {
       const ck = `${e.assetContract.toLowerCase()}:${e.chain}`;
@@ -10686,7 +10695,14 @@ function renderStrategy(w) {
       // genuine rewards (Cat. E) visible since those ARE fiscally relevant.
       const isZeroBasis = Math.abs(basisTotal) < 0.01;
       const isDetectedSpam = window.aurumFifoEngine?.isSpamToken?.({ asset: lot.asset, chain: lot.chain, assetContract: lot.assetContract, amount: lot.qtyRemaining });
-      if (isZeroBasis && lot.source !== 'reward' && (isDetectedSpam || lot.source === 'receive' || lot.source === 'airdrop_acquisition')) { skippedSpam++; continue; }
+      // Hide zero-basis lots that aren't genuine rewards. A €0-basis lot means no acquisition
+      // cost was recorded — that's an unsolicited airdrop (sometimes misclassified as 'buy'
+      // when it arrived via a swap-like tx) or dust. Hundreds of these (ChatGPT, CTA, KEVIN,
+      // ETF…) bury the real lots. Hiding from the VIEW never changes the tax report: the engine
+      // processes every event, and a €0-basis disposal is computed identically whether or not
+      // the lot is shown here. Genuine staking/airdrop REWARDS (Cat. E) keep their own source
+      // and stay visible because they ARE fiscally relevant even at €0 basis.
+      if (isZeroBasis && lot.source !== 'reward' && lot.source !== 'airdrop_reward') { skippedSpam++; continue; }
       autoCols.push({
         id: 'auto_' + lot.lotId,
         walletId: w.id,
