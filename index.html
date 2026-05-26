@@ -9146,6 +9146,28 @@ function renderDefiPositions(w) {
   const lpRows = [];
   let totalLpEUR = 0, totalLpFeesEUR = 0;
   const _lpEurRate = (window._lastEurUsdRate || 0.86);
+  // Prefetch Chainlink for LP token legs not yet cached. LP legs (e.g. WETH inside a
+  // WETH/USDC pool) may not be wallet holdings, so the holdings prefetch never fetched them.
+  // Without this, a token with a valid feed but cold cache reads as "no price" → position
+  // shows "—" despite being worth thousands. Fire async, re-render when prices land.
+  (() => {
+    const klKey = w.alchemyKey || state.globalAlchemyKey || '';
+    const need = [];
+    for (const lp of lpPositions) {
+      for (const leg of [lp.token0, lp.token1]) {
+        if (!leg.address) continue;
+        const ck = `${lp.chain}:${leg.address.toLowerCase()}`;
+        if (_chainlinkCache.get(ck) === undefined && CHAINLINK_FEEDS[lp.chain]?.[leg.address.toLowerCase()]) {
+          need.push({ chain: lp.chain, contract: leg.address });
+        }
+      }
+    }
+    if (need.length) {
+      Promise.all(need.map(n => fetchChainlinkPrice(n.chain, n.contract, klKey)))
+        .then(rs => { if (rs.some(r => r != null) && typeof render === 'function') render(); })
+        .catch(() => {});
+    }
+  })();
   const _priceLeg = (chain, contract, symbol) => {
     if (!contract) return null;
     const clk = _chainlinkCache.get(`${chain}:${contract.toLowerCase()}`);
