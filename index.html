@@ -8476,6 +8476,70 @@ async function _v3TokenInfo(chain, addr, key) {
   } catch { return { symbol: '???', decimals: 18 }; }
 }
 
+// ── LP metrics helpers: mint discovery, initial deposits, historical fees ──
+// (for IL / Net / APR — ported from MyWalletPulse uniswapV3.js)
+const _INCREASE_LIQ_TOPIC = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+// Find the mint tx of an LP NFT via alchemy_getAssetTransfers (0x0 → owner). Returns {block, hash}|null.
+async function _findMintBlock(chain, nftManager, tokenId, owner, key) {
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return null;
+  try {
+    const res = await fetch(base + key, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
+        params: [{ fromAddress: '0x0000000000000000000000000000000000000000', toAddress: owner,
+          contractAddresses: [nftManager], category: ['erc721'], withMetadata: false,
+          excludeZeroValue: false, maxCount: '0x3e8', order: 'asc' }] }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    if (j.error || !j.result?.transfers) return null;
+    for (const t of j.result.transfers) {
+      if (t.erc721TokenId && BigInt(t.erc721TokenId) === BigInt(tokenId)) {
+        return { block: parseInt(t.blockNum, 16), hash: t.hash };
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+// Read initial deposit amounts from the IncreaseLiquidity event in the mint tx receipt.
+async function _getDepositAmounts(chain, txHash, nftManager, tokenId, key) {
+  if (!txHash) return null;
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return null;
+  try {
+    const res = await fetch(base + key, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    if (j.error || !j.result?.logs) return null;
+    const wantT1 = ('0x' + BigInt(tokenId).toString(16).padStart(64, '0')).toLowerCase();
+    const wantAddr = nftManager.toLowerCase();
+    let total0 = 0n, total1 = 0n, found = false;
+    for (const log of j.result.logs) {
+      if (!log.address || log.address.toLowerCase() !== wantAddr) continue;
+      if (!log.topics || log.topics.length < 2) continue;
+      if (log.topics[0].toLowerCase() !== _INCREASE_LIQ_TOPIC) continue;
+      if (log.topics[1].toLowerCase() !== wantT1) continue;
+      const data = (log.data || '').replace(/^0x/, '');
+      if (data.length < 192) continue;
+      total0 += BigInt('0x' + data.slice(64, 128));
+      total1 += BigInt('0x' + data.slice(128, 192));
+      found = true;
+    }
+    return found ? { amount0Raw: total0, amount1Raw: total1 } : null;
+  } catch { return null; }
+}
+// Block timestamp.
+async function _getBlockTs(chain, blockNum, key) {
+  try {
+    const r = await _alchemyRpc(chain, 'eth_getBlockByNumber', ['0x' + blockNum.toString(16), false], key);
+    return r ? parseInt(r.timestamp, 16) : null;
+  } catch { return null; }
+}
+
 // Read all Uniswap V3 LP positions for a wallet on one chain.
 // Returns: [{ chain, protocol, tokenId, token0, token1, feeTier, inRange, ... }]
 async function _fetchUniV3OnChain(chain, address, key) {
@@ -8546,6 +8610,21 @@ async function _fetchUniV3OnChain(chain, address, key) {
   const uniq = [...new Set(decoded.flatMap(d => [d.token0, d.token1]).filter(Boolean))];
   const tokenInfos = {};
   await Promise.all(uniq.map(async t => { tokenInfos[t.toLowerCase()] = await _v3TokenInfo(chain, t, key); }));
+  // 7b) Mint discovery + initial deposits + open timestamp (for IL / Net / APR).
+  // Best-effort: failures leave the metric fields null (position still shows value/fees).
+  await Promise.all(decoded.map(async d => {
+    try {
+      const mint = await _findMintBlock(chain, c.nftManager, d.tokenIdRaw, address, key);
+      if (!mint) return;
+      d.openBlock = mint.block;
+      const [ts, deposits] = await Promise.all([
+        _getBlockTs(chain, mint.block, key),
+        mint.hash ? _getDepositAmounts(chain, mint.hash, c.nftManager, d.tokenIdRaw, key) : Promise.resolve(null),
+      ]);
+      d.openTimestamp = ts;
+      if (deposits) { d.deposit0Raw = deposits.amount0Raw; d.deposit1Raw = deposits.amount1Raw; }
+    } catch {}
+  }));
   // 8) build positions
   return decoded.map(d => {
     if (!d.token0 || !d.token1) return null;
@@ -8557,12 +8636,15 @@ async function _fetchUniV3OnChain(chain, address, key) {
     const fee0 = Number(d.fee0Raw) / Math.pow(10, t0.decimals);
     const fee1 = Number(d.fee1Raw) / Math.pow(10, t1.decimals);
     const inRange = d.currentTick >= d.tickLower && d.currentTick < d.tickUpper;
+    const dep0 = d.deposit0Raw != null ? Number(d.deposit0Raw) / Math.pow(10, t0.decimals) : null;
+    const dep1 = d.deposit1Raw != null ? Number(d.deposit1Raw) / Math.pow(10, t1.decimals) : null;
     return {
       chain, protocol: 'Uniswap V3', tokenId: d.tokenId, poolAddress: d.pool,
-      token0: { address: d.token0, symbol: t0.symbol, decimals: t0.decimals, amount: amt0, fees: fee0 },
-      token1: { address: d.token1, symbol: t1.symbol, decimals: t1.decimals, amount: amt1, fees: fee1 },
+      token0: { address: d.token0, symbol: t0.symbol, decimals: t0.decimals, amount: amt0, fees: fee0, deposit: dep0 },
+      token1: { address: d.token1, symbol: t1.symbol, decimals: t1.decimals, amount: amt1, fees: fee1, deposit: dep1 },
       feeTier: (d.fee / 10000).toFixed(2) + '%',
       inRange,
+      openTimestamp: d.openTimestamp || null,
     };
   }).filter(Boolean);
 }
@@ -9415,6 +9497,34 @@ function renderDefiPositions(w) {
     const earnLabel = aeroValue > 0.01
       ? ` · ${lp.aeroEarned.toFixed(2)} AERO (€${fmt(aeroValue)})`
       : (feesValue > 0.01 ? ` · fees €${fmt(feesValue)}` : '');
+    // ── IL / Net / APR (when we have deposit + open data) ──
+    // IL = current LP value − value if you'd just HODL'd the deposited tokens at today's prices.
+    // Net = IL + fees (the bottom line: did fees beat impermanent loss?).
+    // APR = (fees / principal) annualized since open.
+    let metricsLine = '';
+    if (posValue != null && lp.token0.deposit != null && lp.token1.deposit != null && p0 != null && p1 != null) {
+      const hodlValue = lp.token0.deposit * p0 + lp.token1.deposit * p1;
+      if (hodlValue > 0) {
+        const ilUSD = posValue - hodlValue;
+        const ilPct = (ilUSD / hodlValue) * 100;
+        const netUSD = ilUSD + feesValue;
+        const ilColor = ilUSD >= 0 ? 'var(--green)' : 'var(--red)';
+        const netColor = netUSD >= 0 ? 'var(--green)' : 'var(--red)';
+        let aprStr = '';
+        if (lp.openTimestamp && posValue > 0) {
+          const ageDays = (Date.now() / 1000 - lp.openTimestamp) / 86400;
+          if (ageDays >= 0.5) {
+            const apr = (feesValue / posValue) * (365 / ageDays) * 100;
+            aprStr = ` · APR <span style="color:var(--gold)">${apr.toFixed(1)}%</span>`;
+          }
+        }
+        metricsLine = `
+          <div style="font-size:0.66rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.15rem">
+            IL <span style="color:${ilColor}">${ilUSD>=0?'+':'−'}€${fmt(Math.abs(ilUSD))} (${ilPct>=0?'+':''}${ilPct.toFixed(1)}%)</span>
+            · Net <span style="color:${netColor}">${netUSD>=0?'+':'−'}€${fmt(Math.abs(netUSD))}</span>${aprStr}
+          </div>`;
+      }
+    }
     lpRows.push(`
       <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
         <div style="flex:1;min-width:0">
@@ -9422,6 +9532,7 @@ function renderDefiPositions(w) {
           <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">
             ${lp.protocol} · ${chainName} · ${rangeBadge}${earnLabel}
           </div>
+          ${metricsLine}
         </div>
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">${posValue != null ? '€' + fmt(posValue) : '—'}</div>
       </div>
