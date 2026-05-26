@@ -8568,6 +8568,207 @@ async function _fetchUniV3OnChain(chain, address, key) {
 }
 window._fetchUniV3OnChain = _fetchUniV3OnChain;
 
+// ── Aerodrome Slipstream reader for Base (browser port of aerodromeSlipstream.js) ──
+// Slipstream is a Uniswap V3 fork on Base. Two complications vs plain V3:
+//  1. Positions can be STAKED in a gauge (earn AERO emissions) or UNSTAKED (earn fees).
+//  2. Staked NFTs leave the wallet (held by the gauge), so we discover them via transfer
+//     history (alchemy_getAssetTransfers user→gauge) + gauge.stakedValues(user).
+// Two NFPM versions (V1 original, V2 redeploy) — we probe both and merge.
+const _SLIP = {
+  NFPM_V1: '0x827922686190790b37229fd06084350E74485b72',
+  NFPM_V2: '0xe1f8cd9ac4e4a65f54f38a5cdafca44f6dd68b53',
+  FACTORY: '0xeC8E5342B19977B4eF8892e02D8DAEcfa1315831',
+  AERO:    '0x940181a94a35a4569e4529a3cdfb74e38fd98631',
+};
+const _SEL = {
+  balanceOf: '0x70a08231', tokenOfOwnerByIndex: '0x2f745c59', positions: '0x99fbab88',
+  stakedValues: '0x4b937763', earned: '0x3e491d47', getPool: '0x28af8d0b', gaugePool: '0x16f0115b',
+  slot0: '0x3850c7bd', fee: '0xddca3f43',
+};
+
+// Discover candidate gauges: ERC721 transfers FROM user OF the NFPM (each `to` is a gauge).
+async function _slipDiscoverGauges(chain, user, nfpm, key) {
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return [];
+  try {
+    const res = await fetch(base + key, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
+        params: [{ fromAddress: user, contractAddresses: [nfpm], category: ['erc721'],
+          withMetadata: false, excludeZeroValue: false, maxCount: '0x3e8', order: 'asc' }] }),
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    if (j.error || !j.result?.transfers) return [];
+    const seen = new Set();
+    for (const t of j.result.transfers) {
+      if (!t.to) continue;
+      const to = t.to.toLowerCase();
+      if (to === user.toLowerCase() || to === '0x0000000000000000000000000000000000000000') continue;
+      seen.add(to);
+    }
+    return [...seen];
+  } catch { return []; }
+}
+
+// For each candidate gauge, gauge.stakedValues(user) → staked tokenIds (uint256[]).
+async function _slipStakedTokenIds(chain, user, gauges, key) {
+  if (!gauges.length) return [];
+  const calls = gauges.map(g => ({ to: g, data: _SEL.stakedValues + _padAddr(user) }));
+  const results = await _rpcBatch(chain, calls, key);
+  const out = [];
+  for (let i = 0; i < gauges.length; i++) {
+    const hex = results[i];
+    if (!hex || hex === '0x') continue;
+    try {
+      const s = hex.replace(/^0x/, '');
+      if (s.length < 128) continue;
+      const len = parseInt(s.slice(64, 128), 16);
+      for (let k = 0; k < len; k++) {
+        const slice = s.slice(128 + k * 64, 128 + (k + 1) * 64);
+        out.push({ tokenId: BigInt('0x' + slice), gauge: gauges[i] });
+      }
+    } catch {}
+  }
+  return out;
+}
+
+// Unstaked tokenIds via NFPM balanceOf + tokenOfOwnerByIndex.
+async function _slipUnstakedTokenIds(chain, user, nfpm, key) {
+  let bal = 0;
+  try {
+    const balHex = await _rpcCall(chain, nfpm, _SEL.balanceOf + _padAddr(user), key);
+    bal = parseInt((balHex || '0x0').replace(/^0x/, ''), 16);
+  } catch { return []; }
+  if (!bal || bal > 100) { if (bal > 100) bal = 100; }
+  if (!bal) return [];
+  const calls = [];
+  for (let i = 0; i < bal; i++) calls.push({ to: nfpm, data: _SEL.tokenOfOwnerByIndex + _padAddr(user) + _padUint(i) });
+  const results = await _rpcBatch(chain, calls, key);
+  const out = [];
+  for (const hex of results) { if (hex && hex !== '0x') { try { out.push({ tokenId: BigInt(hex), gauge: null }); } catch {} } }
+  return out;
+}
+
+// Decode Slipstream positions(tokenId): 12 fields (nonce, operator, token0, token1,
+// tickSpacing, tickLower, tickUpper, liquidity, fg0, fg1, tokensOwed0, tokensOwed1).
+function _slipDecodePosition(hex) {
+  const h = (hex || '').replace(/^0x/, '');
+  if (h.length < 64 * 12) return null;
+  const f = i => h.slice(i * 64, (i + 1) * 64);
+  return {
+    token0: _decodeAddr(f(2)), token1: _decodeAddr(f(3)),
+    tickSpacing: _decodeIntFromHex(f(4), 24),
+    tickLower: _decodeIntFromHex(f(5), 24), tickUpper: _decodeIntFromHex(f(6), 24),
+    liquidity: _decodeUint(f(7)),
+    tokensOwed0: _decodeUint(f(10)), tokensOwed1: _decodeUint(f(11)),
+  };
+}
+
+// Read positions from ONE NFPM version.
+async function _slipPositionsForNfpm(chain, user, nfpm, key) {
+  const gauges = await _slipDiscoverGauges(chain, user, nfpm, key);
+  const staked = await _slipStakedTokenIds(chain, user, gauges, key);
+  const unstaked = await _slipUnstakedTokenIds(chain, user, nfpm, key);
+  const seen = new Set();
+  const all = [];
+  for (const item of [...staked, ...unstaked]) {
+    const k = item.tokenId.toString();
+    if (seen.has(k)) continue;
+    seen.add(k); all.push(item);
+  }
+  if (!all.length) return [];
+  // positions(tokenId)
+  const posCalls = all.map(({ tokenId }) => ({ to: nfpm, data: _SEL.positions + _padUint(tokenId) }));
+  const posResults = await _rpcBatch(chain, posCalls, key);
+  const decoded = [];
+  for (let i = 0; i < posResults.length; i++) {
+    const p = _slipDecodePosition(posResults[i]);
+    if (!p) continue;
+    decoded.push({ tokenId: all[i].tokenId, gauge: all[i].gauge, isStaked: !!all[i].gauge, ...p });
+  }
+  if (!decoded.length) return [];
+  // Resolve pool: staked → gauge.pool(); unstaked → factory.getPool(t0,t1,tickSpacing)
+  const poolCalls = decoded.map(d => {
+    if (d.gauge) return { to: d.gauge, data: _SEL.gaugePool };
+    if (!d.token0 || !d.token1) return { to: _SLIP.FACTORY, data: _SEL.getPool }; // will fail gracefully
+    const a = d.token0.toLowerCase(), b = d.token1.toLowerCase();
+    const [t0, t1] = a < b ? [d.token0, d.token1] : [d.token1, d.token0];
+    const ts = d.tickSpacing >= 0 ? d.tickSpacing : d.tickSpacing + (1 << 24);
+    return { to: _SLIP.FACTORY, data: _SEL.getPool + _padAddr(t0) + _padAddr(t1) + _padUint(ts) };
+  });
+  const poolResults = await _rpcBatch(chain, poolCalls, key);
+  decoded.forEach((d, i) => {
+    const hex = poolResults[i];
+    const addr = (hex && hex !== '0x') ? _decodeAddr(hex.replace(/^0x/, '')) : null;
+    d.pool = (addr && addr !== '0x0000000000000000000000000000000000000000') ? addr : null;
+  });
+  // slot0 per distinct pool
+  const pools = [...new Set(decoded.map(d => d.pool).filter(Boolean))];
+  const metaCalls = pools.map(p => ({ to: p, data: _SEL.slot0 }));
+  const metaResults = await _rpcBatch(chain, metaCalls, key);
+  const poolMeta = {};
+  pools.forEach((p, i) => {
+    const s = (metaResults[i] || '0x').replace(/^0x/, '');
+    poolMeta[p.toLowerCase()] = {
+      sqrtPriceX96: s.length >= 64 ? _decodeUint(s.slice(0, 64)) : 0n,
+      currentTick: s.length >= 128 ? _decodeIntFromHex(s.slice(64, 128), 24) : 0,
+    };
+  });
+  // AERO earned for staked positions: gauge.earned(user, tokenId)
+  const stakedIdx = decoded.map((d, i) => d.gauge ? i : -1).filter(i => i >= 0);
+  const earnedCalls = stakedIdx.map(i => ({ to: decoded[i].gauge, data: _SEL.earned + _padAddr(user) + _padUint(decoded[i].tokenId) }));
+  const earnedResults = earnedCalls.length ? await _rpcBatch(chain, earnedCalls, key) : [];
+  const earnedByIdx = {};
+  stakedIdx.forEach((i, k) => {
+    const hex = earnedResults[k];
+    earnedByIdx[i] = (hex && hex !== '0x') ? (() => { try { return _decodeUint(hex.replace(/^0x/, '')); } catch { return 0n; } })() : 0n;
+  });
+  // token metadata
+  const uniq = [...new Set(decoded.flatMap(d => [d.token0, d.token1]).filter(Boolean))];
+  const tokenInfos = {};
+  await Promise.all(uniq.map(async t => { tokenInfos[t.toLowerCase()] = await _v3TokenInfo(chain, t, key); }));
+  // build
+  return decoded.map((d, i) => {
+    if (!d.token0 || !d.token1) return null;
+    const t0 = tokenInfos[d.token0.toLowerCase()] || { symbol: '???', decimals: 18 };
+    const t1 = tokenInfos[d.token1.toLowerCase()] || { symbol: '???', decimals: 18 };
+    const meta = d.pool ? poolMeta[d.pool.toLowerCase()] : null;
+    const sqrtP = meta ? meta.sqrtPriceX96 : 0n;
+    const curTick = meta ? meta.currentTick : 0;
+    let amt0 = 0, amt1 = 0;
+    if (d.liquidity > 0n && meta) {
+      const { amount0, amount1 } = _getAmountsForPosition(d.liquidity, sqrtP, d.tickLower, d.tickUpper, curTick);
+      amt0 = Number(amount0) / Math.pow(10, t0.decimals);
+      amt1 = Number(amount1) / Math.pow(10, t1.decimals);
+    }
+    const inRange = curTick >= d.tickLower && curTick < d.tickUpper;
+    // Unstaked: fees from tokensOwed. Staked: AERO emissions.
+    const fees0 = d.gauge ? 0 : Number(d.tokensOwed0) / Math.pow(10, t0.decimals);
+    const fees1 = d.gauge ? 0 : Number(d.tokensOwed1) / Math.pow(10, t1.decimals);
+    const aeroEarned = d.gauge ? Number(earnedByIdx[i] || 0n) / 1e18 : 0;
+    return {
+      chain, protocol: 'Aerodrome', tokenId: d.tokenId.toString(), poolAddress: d.pool,
+      token0: { address: d.token0, symbol: t0.symbol, decimals: t0.decimals, amount: amt0, fees: fees0 },
+      token1: { address: d.token1, symbol: t1.symbol, decimals: t1.decimals, amount: amt1, fees: fees1 },
+      feeTier: '—', inRange, staked: d.isStaked, aeroEarned,
+    };
+  }).filter(Boolean);
+}
+
+// Public: probe both NFPM versions, merge. Base only.
+async function _fetchAerodromeOnChain(address, key) {
+  if (!ALCHEMY_RPCS['base'] || !key) return [];
+  try {
+    const [v1, v2] = await Promise.all([
+      _slipPositionsForNfpm('base', address, _SLIP.NFPM_V1, key).catch(() => []),
+      _slipPositionsForNfpm('base', address, _SLIP.NFPM_V2, key).catch(() => []),
+    ]);
+    return [...v1, ...v2];
+  } catch { return []; }
+}
+window._fetchAerodromeOnChain = _fetchAerodromeOnChain;
+
 // ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
 // Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
 // resistant to the fake-liquidity manipulation that plagues DEX-derived prices (USOR, POOL…).
@@ -8781,6 +8982,9 @@ async function fetchRealBalances(w, { force = false } = {}) {
       lpChains.map(ch => _fetchUniV3OnChain(ch, evmAddr, key).catch(() => []))
     );
     for (const arr of lpResults) if (Array.isArray(arr)) lpPositions.push(...arr);
+    // Aerodrome Slipstream (Base only) — staked + unstaked + AERO emissions.
+    const aero = await _fetchAerodromeOnChain(evmAddr, key).catch(() => []);
+    if (Array.isArray(aero)) lpPositions.push(...aero);
   } catch (e) { /* non-fatal */ }
 
   const result = { holdings, vaults, lpPositions };
@@ -9194,19 +9398,29 @@ function renderDefiPositions(w) {
     const fee0 = p0 != null ? lp.token0.fees * p0 : 0;
     const fee1 = p1 != null ? lp.token1.fees * p1 : 0;
     const posValue = (val0 != null && val1 != null) ? val0 + val1 : null;
-    const feesValue = fee0 + fee1;
+    let feesValue = fee0 + fee1;
+    // Aerodrome staked positions earn AERO emissions (not fees). Value them via AERO price.
+    let aeroValue = 0;
+    if (lp.aeroEarned && lp.aeroEarned > 0) {
+      const aeroPrice = _priceLeg('base', _SLIP.AERO, 'AERO');
+      if (aeroPrice != null) { aeroValue = lp.aeroEarned * aeroPrice; feesValue += aeroValue; }
+    }
     if (posValue != null) totalLpEUR += posValue;
     totalLpFeesEUR += feesValue;
     const chainName = (CHAINS[lp.chain]?.name) || lp.chain;
     const rangeBadge = lp.inRange
       ? '<span style="color:var(--green);font-size:0.62rem">● in range</span>'
       : '<span style="color:var(--gold);font-size:0.62rem">○ out of range</span>';
+    const stakedBadge = lp.staked ? ' <span style="color:var(--gold);font-size:0.62rem">⚡ staked</span>' : '';
+    const earnLabel = aeroValue > 0.01
+      ? ` · ${lp.aeroEarned.toFixed(2)} AERO (€${fmt(aeroValue)})`
+      : (feesValue > 0.01 ? ` · fees €${fmt(feesValue)}` : '');
     lpRows.push(`
       <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
         <div style="flex:1;min-width:0">
-          <div style="font-size:0.85rem;font-weight:600">${lp.token0.symbol}/${lp.token1.symbol} <span style="font-size:0.62rem;color:var(--text-muted)">${lp.feeTier}</span></div>
+          <div style="font-size:0.85rem;font-weight:600">${lp.token0.symbol}/${lp.token1.symbol} <span style="font-size:0.62rem;color:var(--text-muted)">${lp.feeTier}</span>${stakedBadge}</div>
           <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">
-            ${lp.protocol} · ${chainName} · ${rangeBadge}${feesValue > 0.01 ? ` · fees €${fmt(feesValue)}` : ''}
+            ${lp.protocol} · ${chainName} · ${rangeBadge}${earnLabel}
           </div>
         </div>
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">${posValue != null ? '€' + fmt(posValue) : '—'}</div>
