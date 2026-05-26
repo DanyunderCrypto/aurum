@@ -6564,7 +6564,19 @@ const fifoEngine = (() => {
 
     // Generic in/out
     if (dir === 'in') return 'acquisition';   // bought, deposited (rare without context)
-    if (dir === 'out') return 'disposal';     // sold to fiat, sent off-chain
+    if (dir === 'out') {
+      // STABLECOIN OUT without proven fiat off-ramp → NOT a taxable disposal.
+      // Per AT binding ruling (Nov 2025), stablecoins don't trigger taxation on FX drift until
+      // a real off-ramp to fiat EUR. An isolated USDC/USDT 'out' is almost always a transfer,
+      // bridge, or exchange deposit — not a sale. Taxing the EUR/USD drift as a gain (e.g.
+      // USDC acquired at €0.70 "sold" at €0.86 → €745 phantom gain) over-declares. We treat it
+      // as a non-taxable movement (the lot is still consumed to keep FIFO consistent, basis
+      // carries). If it WAS a real fiat sale, the user can reclassify. Conservative + correct.
+      const isStable = STABLECOIN_SYMBOLS.has((event.asset || '').toUpperCase());
+      const explicitFiatSale = event.userOverride?.txType === 'sale' || tx === 'sell' || tx === 'sale';
+      if (isStable && !explicitFiatSale) return 'stablecoin_transfer';
+      return 'disposal';     // sold to fiat, sent off-chain
+    }
 
     return 'skip';
   }
@@ -6614,6 +6626,7 @@ const fifoEngine = (() => {
     const warnings = [];            // events that couldn't be processed cleanly
     let lotCounter = 0;
     let disposalCounter = 0;
+    let stablecoinTransferCount = 0;
     const pendingSwapBasis = new Map();  // txHash → carried basis from swap_sell legs (permuta mode)
 
     // Group events by txHash to process swaps atomically
@@ -7020,6 +7033,21 @@ const fifoEngine = (() => {
             });
           }
           _recordDisposal(e, consumeOut.qtyFulfilled || e.amount, proceeds, consumeOut, 'sale');
+        }
+        else if (klass === 'stablecoin_transfer') {
+          // Stablecoin sent out without a proven fiat off-ramp. Per AT (Nov 2025) this is not a
+          // taxable event — the EUR/USD drift only realizes on a real fiat sale. Consume the lot
+          // to keep FIFO consistent (the stablecoin left the wallet), but record NO gain.
+          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          _consumeFifo(e.asset, e.chain, e.amount, ts);
+          stablecoinTransferCount++;
+          warnings.push({
+            type: 'stablecoin_transfer',
+            eventId: e.id || e.txHash,
+            asset: e.asset,
+            chain: e.chain,
+            message: `Saída de ${e.amount} ${e.asset} tratada como transferência (não venda a fiat). Reclassifica se foi off-ramp real.`,
+          });
         }
         else if (klass === 'swap_sell') {
           // Swap OUT leg processed individually (in/out legs landed in different txHashes,
@@ -13082,10 +13110,16 @@ function renderFiscalEngineV2(w, fiscalYear) {
               ? 'swaps where part of the basis was missing (related to native-asset inflows not captured by the indexer)'
               : 'swaps onde faltava parte do basis (relacionado com entradas de ativo nativo não captadas pelo indexer)',
             insufficient_basis: lang === 'en' ? 'disposals with partial basis' : 'alienações com basis parcial',
+            disposal_partial_basis: lang === 'en'
+              ? 'disposals where you sold more than the indexed lots held — proceeds scaled to the matched portion (prevents phantom gains)'
+              : 'alienações onde vendeu mais do que os lots indexados — proceeds escalado à parte com base conhecida (evita ganhos fantasma)',
+            stablecoin_transfer: lang === 'en'
+              ? 'stablecoin outflows treated as transfers, not fiat sales (AT Nov 2025 — no tax on FX drift until a real off-ramp). If any was a real fiat sale, reclassify it.'
+              : 'saídas de stablecoin tratadas como transferências, não vendas a fiat (AT Nov 2025 — sem imposto sobre flutuação cambial até off-ramp real). Se alguma foi venda real a fiat, reclassifica.',
             phantom_disposal_skipped: lang === 'en' ? 'spam/dust outflows ignored' : 'saídas de spam/dust ignoradas',
             price_derived_onchain: lang === 'en' ? 'prices derived on-chain from swaps (automatic)' : 'preços derivados on-chain a partir de swaps (automático)',
           };
-          const order = ['disposal_no_basis_lot', 'swap_shortfall', 'missing_price', 'insufficient_basis', 'phantom_disposal_skipped', 'price_derived_onchain'];
+          const order = ['disposal_no_basis_lot', 'disposal_partial_basis', 'stablecoin_transfer', 'swap_shortfall', 'missing_price', 'insufficient_basis', 'phantom_disposal_skipped', 'price_derived_onchain'];
           const rows = order.filter(t => wByType[t]).map(t =>
             `<li style="margin-bottom:0.3rem"><strong style="font-family:var(--mono)">${wByType[t]}×</strong> ${labels[t] || t}</li>`
           ).join('');

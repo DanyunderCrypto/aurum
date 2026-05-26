@@ -315,6 +315,29 @@ run('S17: Disposal of qty exceeding indexed lots → proceeds scaled to matched 
   assert(totalGain < 50, `partial-basis disposal must not invent a large gain (un-scaled would be ~€1980), got €${totalGain.toFixed(2)}`);
 });
 
+run('S18: Stablecoin out without fiat off-ramp → not taxed (AT Nov 2025), lot consumed', () => {
+  // Acquire 5000 USDC at €0.70/unit, later send it out (transfer/bridge, not a fiat sale).
+  // The EUR/USD drift (0.70→0.86) must NOT be taxed as a gain — it's not an off-ramp.
+  const events = [
+    ev({ direction: 'in',  asset: 'USDC', amount: 5000, priceEUR: 0.70, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'USDC', amount: 5000, priceEUR: 0.86, date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w18' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain === 0, `stablecoin transfer must not be taxed, got €${totalGain.toFixed(2)}`);
+});
+
+run('S18b: Stablecoin out explicitly marked as fiat sale → IS taxed', () => {
+  // Same drift, but user/explicitly marked as a real sale → the gain IS realized.
+  const events = [
+    ev({ direction: 'in',  asset: 'USDC', amount: 5000, priceEUR: 0.70, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'USDC', amount: 5000, priceEUR: 0.86, txType: 'sell', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w18b' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain > 100, `explicit fiat sale should realize the FX gain, got €${totalGain.toFixed(2)}`);
+});
+
 // ── Summary ──────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
