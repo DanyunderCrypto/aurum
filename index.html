@@ -10132,16 +10132,19 @@ function renderDashboard(w) {
     <!-- FISCAL HERO — Aurum's signature, prominent but after the portfolio snapshot -->
     ${renderDashboardFiscalHero(w)}
 
-    <!-- ACTIVE POSITIONS -->
-    <div class="panel" style="margin-top:1.5rem">
-      <div class="panel-head">
-        <span class="panel-title">Posições Activas — Todos os Protocolos</span>
-        <div style="display:flex;gap:0.5rem">
-          
+    <!-- ACTIVE POSITIONS (lend/borrow detail; LPs+vaults already shown in DeFi panel above) -->
+    ${(() => {
+      const up = renderUnifiedPositions();
+      // Hide entirely when there are no lend/borrow positions — the DeFi panel above already
+      // covers LPs, vaults and lending, so an empty "Sem posições activas" box is just noise.
+      if (/empty-icon/.test(up)) return '';
+      return `<div class="panel" style="margin-top:1.5rem">
+        <div class="panel-head">
+          <span class="panel-title">Posições de Lend / Borrow</span>
         </div>
-      </div>
-      <div class="panel-body no-pad">${renderUnifiedPositions()}</div>
-    </div>
+        <div class="panel-body no-pad">${up}</div>
+      </div>`;
+    })()}
 
     ${renderTaxLossHarvest(w)}
 
@@ -10487,9 +10490,19 @@ function renderRecentHistory() {
   const walletEvents = _eventsForWallet(w);
 
   if (walletEvents.length > 0) {
-    // Sort newest first, exclude self-transfers + spam + zero amounts
+    // Sort newest first, exclude self-transfers + spam + zero amounts.
+    // Also exclude engine-detected spam: homoglyph impostors ("UЅDС"), tokens with URLs in
+    // the name ("ARB Visit t.me/..."), and known scam patterns. Seeing "t.me/s/arb_pool" in a
+    // tax history destroys trust — the same spam filter we use for the portfolio applies here.
+    const _eng = window.aurumFifoEngine;
+    const _looksSpammy = (e) => {
+      const n = (e.asset || '') + ' ' + (e.assetName || '');
+      if (/https?:\/\/|t\.me\/|\.com|\.xyz|\.io\b|visit|claim|airdrop|reward|\bwww\./i.test(n)) return true;
+      try { if (_eng?.isSpamToken?.({ asset: e.asset, chain: e.chain, assetContract: e.assetContract, amount: e.amount })) return true; } catch {}
+      return false;
+    };
     const filtered = walletEvents
-      .filter(e => e.direction !== 'self' && e.amount > 0 && !e.userOverride?.spam)
+      .filter(e => e.direction !== 'self' && e.amount > 0 && !e.userOverride?.spam && !_looksSpammy(e))
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
       .slice(0, 15);
 
@@ -10639,7 +10652,9 @@ function renderProtocols(w) {
       </div>
     </div>
 
-    ${activeProtos.length === 0 ? `<div class="alert alert-info"><span>ℹ</span><div>Nenhuma posição activa em nenhum protocolo. Clica Refresh ou aguarda o próximo ciclo automático.</div></div>` : ''}
+    ${renderDefiPositions(w)}
+
+    ${activeProtos.length === 0 ? `<div class="alert alert-info" style="margin-top:1.5rem"><span>ℹ</span><div>Nenhuma posição de lend/borrow activa nos protocolos abaixo. As pools de liquidez e vaults aparecem no painel acima.</div></div>` : ''}
 
     ${activeProtos.map(({key,proto})=>renderProtoFullDetail(key, proto, w)).join('')}
 
