@@ -8351,6 +8351,75 @@ async function _alchemyRpc(chain, method, params, key) {
   return j.result;
 }
 
+// ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
+// Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
+// resistant to the fake-liquidity manipulation that plagues DEX-derived prices (USOR, POOL…).
+// We use these at the TOP of the price cascade. Feeds are official Chainlink aggregators.
+const CHAINLINK_FEEDS = {
+  eth: { // Ethereum mainnet
+    '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { feed: '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419', decimals: 8 }, // WETH
+    '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { feed: '0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6', decimals: 8 }, // USDC
+    '0xdac17f958d2ee523a2206206994597c13d831ec7': { feed: '0x3E7d1eAB13ad0104d2750B8863b489D65364e32D', decimals: 8 }, // USDT
+    '0x6b175474e89094c44da98b954eedeac495271d0f': { feed: '0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9', decimals: 8 }, // DAI
+    '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { feed: '0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c', decimals: 8 }, // WBTC
+    '0x514910771af9ca656af840dff83e8264ecf986ca': { feed: '0x2c1d072e956AFFC0D435Cb7AC38EF18d24d9127c', decimals: 8 }, // LINK
+  },
+  arbitrum: {
+    '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': { feed: '0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612', decimals: 8 }, // WETH
+    '0xaf88d065e77c8cc2239327c5edb3a432268e5831': { feed: '0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3', decimals: 8 }, // USDC
+    '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8': { feed: '0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3', decimals: 8 }, // USDC.e
+    '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9': { feed: '0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7', decimals: 8 }, // USDT
+    '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1': { feed: '0xc5C8E77B397E531B8EC06BFb0048328B30E9eCfB', decimals: 8 }, // DAI
+    '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f': { feed: '0xd0C7101eACbB49F3deCcCc166d238410D6D46d57', decimals: 8 }, // WBTC
+  },
+  optimism: {
+    '0x4200000000000000000000000000000000000006': { feed: '0x13e3Ee699D1909E989722E753853AE30b17e08c5', decimals: 8 }, // WETH
+    '0x0b2c639c533813f4aa9d7837caf62653d097ff85': { feed: '0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3', decimals: 8 }, // USDC
+    '0x7f5c764cbc14f9669b88837ca1490cca17c31607': { feed: '0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3', decimals: 8 }, // USDC.e
+    '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': { feed: '0xECef79E109e997bCA29c1c0897ec9d7b03647F5E', decimals: 8 }, // USDT
+    '0x68f180fcce6836688e9084f035309e29bf0a2095': { feed: '0xD702DD976Fb76Fffc2D3963D037dfDae5b04E593', decimals: 8 }, // WBTC
+  },
+  polygon: {
+    '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': { feed: '0xF9680D99D6C9589e2a93a78A04A279e509205945', decimals: 8 }, // WETH
+    '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': { feed: '0xAB594600376Ec9fD91F8e885dADF0CE036862dE0', decimals: 8 }, // WMATIC
+    '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359': { feed: '0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7', decimals: 8 }, // USDC
+    '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': { feed: '0x0A6513e40db6EB1b165753AD52E80663aeA50545', decimals: 8 }, // USDT
+  },
+  base: {
+    '0x4200000000000000000000000000000000000006': { feed: '0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70', decimals: 8 }, // WETH
+    '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': { feed: '0x7e860098F58bBFC8648a4311b374B1D669a2bc6B', decimals: 8 }, // USDC
+    '0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca': { feed: '0x7e860098F58bBFC8648a4311b374B1D669a2bc6B', decimals: 8 }, // USDbC
+    '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': { feed: '0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D', decimals: 8 }, // cbBTC
+    '0x940181a94a35a4569e4529a3cdfb74e38fd98631': { feed: '0x4EC5970fC728C5f65ba413992CD5fF6FD70fcfF0', decimals: 8 }, // AERO
+  },
+};
+const _chainlinkCache = new Map(); // contract:chain → {priceUSD, at}
+// latestRoundData() → 0xfeaf968c; returns (uint80, int256 answer, ...) — answer is slot[1]
+async function fetchChainlinkPrice(chain, contract, key) {
+  if (!contract) return null;
+  const feeds = CHAINLINK_FEEDS[chain];
+  if (!feeds) return null;
+  const feed = feeds[contract.toLowerCase()];
+  if (!feed) return null;
+  const ck = `${chain}:${contract.toLowerCase()}`;
+  const cached = _chainlinkCache.get(ck);
+  if (cached && (Date.now() - cached.at) < 120000) return cached.priceUSD;
+  try {
+    const res = await _alchemyRpc(chain, 'eth_call', [{ to: feed.feed, data: '0xfeaf968c' }, 'latest'], key);
+    if (!res || res === '0x') return null;
+    const stripped = res.replace(/^0x/, '');
+    const answer = BigInt('0x' + stripped.slice(64, 128)); // slot[1] = answer
+    if (answer <= 0n) return null;
+    const priceUSD = Number(answer) / Math.pow(10, feed.decimals);
+    if (!isFinite(priceUSD) || priceUSD <= 0) return null;
+    _chainlinkCache.set(ck, { priceUSD, at: Date.now() });
+    return priceUSD;
+  } catch (e) {
+    return null;
+  }
+}
+window.fetchChainlinkPrice = fetchChainlinkPrice;
+
 async function fetchRealBalances(w, { force = false } = {}) {
   const cacheKey = '_balCache_' + w.id;
   const now = Date.now();
@@ -9009,8 +9078,17 @@ function renderPortfolioCharts(w) {
     valueSource = 'onchain';
     const eurRate = (window._lastEurUsdRate || 0.92); // USD→EUR approx; refined elsewhere
     const needDexPrice = [];
+    const needChainlink = [];
     for (const h of realBal) {
-      let ppu = _priceFor(h.asset, h.chain, h.contract);
+      let ppu = null;
+      // 1. CHAINLINK ORACLE (top priority) — oracle-grade, immune to fake pairs. Cached read.
+      if (h.contract) {
+        const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
+        if (clk && clk.priceUSD) ppu = clk.priceUSD * eurRate;
+        else if (clk === undefined && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
+      }
+      // 2. Event-derived price by exact contract (never symbol-fallback)
+      if (ppu == null) ppu = _priceFor(h.asset, h.chain, h.contract);
       // Native tokens (ETH, POL — contract null) get their price from the live market feed
       // (CoinGecko), never from derived_onchain. This is essential: we ban derived_onchain
       // from the portfolio (it's garbage for spam), but ETH/POL must still be valued. Without
@@ -9040,6 +9118,13 @@ function renderPortfolioCharts(w) {
       if (h.logoUrl && !m.logoUrl) m.logoUrl = h.logoUrl;
       assetMeta.set(h.asset, m);
       totalPortfolio += value;
+    }
+    // Batch-fetch Chainlink prices (oracle-grade) for tokens with feeds, then re-render.
+    if (needChainlink.length > 0) {
+      const klKey = w.alchemyKey || state.globalAlchemyKey || '';
+      Promise.all(needChainlink.slice(0, 30).map(h => fetchChainlinkPrice(h.chain, h.contract, klKey)))
+        .then(results => { if (results.some(r => r != null) && typeof render === 'function') render(); })
+        .catch(() => {});
     }
     // Batch-fetch DexScreener prices for the still-unpriced tokens, then re-render once.
     if (needDexPrice.length > 0) {
