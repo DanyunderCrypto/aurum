@@ -1,4 +1,4 @@
-<!-- redeploy --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-PT">
 <head>
 <meta charset="UTF-8">
@@ -4247,7 +4247,27 @@ let state = {
   imports:    [],   // [{id,walletId,cardId,date,count,filename}]
   collateral: [],   // [{id,walletId,acqDate,depDate,chain,asset,qty,eur,price,proto,origin,txhash,notes}]
   hfHistory:  {},   // {chainKey:[{ts,hf}]}
+  // DeFi income events (fees claimed, emissions, yield). Stored from the start so history is
+  // never lost, even though fiscal treatment is not wired yet. Each: {id, walletId, date,
+  // chain, asset, qty, valueEUR, source('lp_fees'|'emissions'|'vault_yield'|'lending_interest'),
+  // protocol, txHash}. Tax treatment is governed by settings.defiIncomeTreatment below.
+  defiIncome: [],
+  settings: {
+    // 'deferred' (default, validated by 2 TOCs): DeFi income taxed only on conversion to fiat,
+    // as G/G1 capital gains (like staking). 'cat_e': taxed as Category E passive income at
+    // receipt — available as an opt-in for users whose accountant prefers it, or if the AT
+    // later rules it must be Cat. E. Treatment is NOT applied to the fiscal engine yet — it's
+    // pending TOC validation. For now DeFi income is portfolio-info only.
+    defiIncomeTreatment: 'deferred',
+  },
 };
+
+// Backfill for states loaded from older versions (before these fields existed).
+function _ensureStateShape() {
+  if (!Array.isArray(state.defiIncome)) state.defiIncome = [];
+  if (!state.settings || typeof state.settings !== 'object') state.settings = {};
+  if (!state.settings.defiIncomeTreatment) state.settings.defiIncomeTreatment = 'deferred';
+}
 
 let live = {
   positions: {},
@@ -7565,6 +7585,7 @@ async function loadState() {
         const migrated = applyMigrations(result.state);
         Object.assign(state, migrated);
       }
+      _ensureStateShape();
 
       // Request browser persistence (best effort)
       storageManager.requestPersistence().catch(() => {});
@@ -9606,6 +9627,13 @@ function renderDefiPositions(w) {
         ${lpRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Pools de Liquidez · €${fmt(totalLpEUR)}${totalLpFeesEUR > 0.01 ? ` · fees por reclamar €${fmt(totalLpFeesEUR)}` : ''}</div>${lpRows.join('')}` : ''}
         ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:${lpRows.length ? '0.8rem' : '0'} 0 0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
         ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:0.8rem 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
+        ${(lpRows.length && totalLpFeesEUR > 0.01) ? `
+        <div style="margin-top:0.8rem;padding:0.6rem 0.8rem;background:var(--bg-soft);border-radius:8px;border-left:2px solid var(--gold)">
+          <div style="font-size:0.7rem;color:var(--text);font-weight:600">Rendimentos DeFi a render: €${fmt(totalLpFeesEUR)}</div>
+          <div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.2rem;line-height:1.5">
+            Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>tributado só na conversão a fiat</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.7">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
+          </div>
+        </div>` : ''}
         <div style="margin-top:0.6rem;font-size:0.68rem;color:var(--text-muted);line-height:1.5">
           Loops/lending: valor líquido = colateral − dívida. Vaults (ERC-4626): valor resgatável do subjacente. Pools de liquidez (Uniswap V3): valor dos dois tokens na posição + fees por reclamar. Fiscalmente, depositar/pedir emprestado/entrar em vault/pool não é alienação — só o yield/fees realizado em fiat é tributável (ver parecer OCC).
           <br><br><span style="opacity:0.8">ℹ Nota: capital movido para <strong>agentes automáticos</strong> (ex: Yieldseeker/Autoseek) que detêm os fundos numa smart-account própria não é detetável por leitura da carteira — esse valor não aparece aqui. Suporte para posições manuais virá numa versão futura.</span>
@@ -14443,7 +14471,7 @@ async function restoreBackupFromDiag(index) {
   try {
     const restored = await storageManager.restoreBackup(index);
     if (restored?.state) {
-      Object.assign(state, restored.state);
+      Object.assign(state, restored.state); _ensureStateShape();
       saveState();
       toast(`✓ Backup #${index} restaurado`, 'success');
       render();
@@ -14535,7 +14563,7 @@ async function importFullBackup(event) {
     }
 
     // Apply state
-    Object.assign(state, importedState);
+    Object.assign(state, importedState); _ensureStateShape();
     saveState();
 
     // Apply priceCache if present
@@ -18699,7 +18727,7 @@ function importJSON(e) {
       const parsed=JSON.parse(ev.target.result);
       if (!parsed.wallets) { toast('JSON inválido','warn'); return; }
       if (!confirm('Isto vai substituir todos os dados actuais. Continuar?')) return;
-      Object.assign(state,parsed); saveState(); render();
+      Object.assign(state,parsed); _ensureStateShape(); saveState(); render();
       toast('Dados restaurados ✓','success');
     } catch(e) { toast('Erro ao ler JSON','warn'); }
   };
