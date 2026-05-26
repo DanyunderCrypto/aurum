@@ -8872,6 +8872,109 @@ async function _fetchAerodromeOnChain(address, key) {
 }
 window._fetchAerodromeOnChain = _fetchAerodromeOnChain;
 
+// ── DeFi income history capture (classified by ORIGIN, not guesswork) ──
+// Purpose: record realized DeFi income (claimed fees, emissions) as it happens, so that IF the
+// AT ever rules DeFi income is Category E (taxed at receipt), the historical record already
+// exists instead of needing painful retroactive reconstruction. NOT applied to the current
+// fiscal report (which uses the deferred model: only fiat conversion is taxed).
+//
+// Reliability comes from classifying by the transfer's `from` address — we ONLY record income
+// from unambiguous sources, and ignore everything else (a token `in` could be a purchase, a
+// bridge, a self-transfer... we must not misclassify those as income):
+//   from = a known Aerodrome gauge   → emission (AERO)
+//   from = a Uniswap/Aerodrome NFPM  → fee (collect)
+//   anything else                    → ignored (not provably income)
+const _NFPM_ADDRESSES = new Set([
+  '0xc36442b4a4522e871399cd717abdd847ab11fe88', // Uniswap V3 NFPM (eth/arb/op/polygon)
+  '0x03a520b32c04bf3beef7beb72e919cf822ed34f1', // Uniswap V3 NFPM (base)
+  '0x827922686190790b37229fd06084350e74485b72', // Aerodrome Slipstream NFPM V1
+  '0xe1f8cd9ac4e4a65f54f38a5cdafca44f6dd68b53', // Aerodrome Slipstream NFPM V2
+]);
+
+// Discover Aerodrome gauges the user has interacted with (NFTs transferred user→gauge), so we
+// can recognize emissions arriving FROM those gauges. Reuses the Slipstream discovery logic.
+async function _discoverUserGauges(address, key) {
+  const gauges = new Set();
+  try {
+    for (const nfpm of [_SLIP.NFPM_V1, _SLIP.NFPM_V2]) {
+      const found = await _slipDiscoverGauges('base', address, nfpm, key);
+      for (const g of found) gauges.add(g.toLowerCase());
+    }
+  } catch {}
+  return gauges;
+}
+
+// Fetch incoming transfers for a wallet on a chain and classify provable DeFi income.
+// Returns [{date, chain, asset, qty, source, from, txHash}] (valueEUR added later via pricing).
+async function _fetchDefiIncomeHistory(chain, address, key, gauges) {
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return [];
+  try {
+    const res = await fetch(base + key, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
+        params: [{ toAddress: address, category: ['erc20'], withMetadata: true,
+          excludeZeroValue: true, maxCount: '0x3e8', order: 'desc' }] }),
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    if (j.error || !j.result?.transfers) return [];
+    const out = [];
+    for (const t of j.result.transfers) {
+      const from = (t.from || '').toLowerCase();
+      if (!from) continue;
+      let source = null;
+      if (gauges && gauges.has(from)) source = 'emissions';
+      else if (_NFPM_ADDRESSES.has(from)) source = 'lp_fees';
+      else continue; // not a provable income source — ignore
+      const qty = Number(t.value || 0);
+      if (!(qty > 0)) continue;
+      out.push({
+        date: t.metadata?.blockTimestamp ? t.metadata.blockTimestamp.slice(0, 10) : null,
+        chain, asset: t.asset || '?', qty,
+        source, from, txHash: t.hash,
+        assetContract: t.rawContract?.address || null,
+      });
+    }
+    return out;
+  } catch { return []; }
+}
+
+// Orchestrator: capture income across chains, dedupe against what's already stored, and append
+// new events to state.defiIncome. Dedupe key = txHash+asset (a claim tx is unique). Stored as
+// informational data, NOT wired to the fiscal engine.
+async function captureDefiIncome(w, key) {
+  if (!w || !key) return 0;
+  _ensureStateShape();
+  const evmAddr = w.addr || w.evm || '';
+  if (!evmAddr) return 0;
+  const gauges = await _discoverUserGauges(evmAddr, key);
+  const chains = Object.keys(_V3_CONTRACTS).filter(ch => ALCHEMY_RPCS[ch]);
+  const all = [];
+  const results = await Promise.all(chains.map(ch => _fetchDefiIncomeHistory(ch, evmAddr, key, gauges).catch(() => [])));
+  for (const arr of results) all.push(...arr);
+  // Dedupe vs already stored (by txHash+asset+walletId)
+  const existing = new Set((state.defiIncome || []).filter(e => e.walletId === w.id).map(e => `${e.txHash}|${e.asset}`));
+  let added = 0;
+  for (const inc of all) {
+    const dk = `${inc.txHash}|${inc.asset}`;
+    if (existing.has(dk)) continue;
+    existing.add(dk);
+    state.defiIncome.push({
+      id: 'di_' + Math.random().toString(36).slice(2, 10),
+      walletId: w.id,
+      date: inc.date, chain: inc.chain, asset: inc.asset, qty: inc.qty,
+      valueEUR: null, // priced lazily in the display layer
+      source: inc.source, protocol: inc.source === 'emissions' ? 'Aerodrome' : 'LP',
+      txHash: inc.txHash, assetContract: inc.assetContract,
+    });
+    added++;
+  }
+  if (added > 0) saveState();
+  return added;
+}
+window.captureDefiIncome = captureDefiIncome;
+
 // ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
 // Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
 // resistant to the fake-liquidity manipulation that plagues DEX-derived prices (USOR, POOL…).
@@ -9630,6 +9733,16 @@ function renderDefiPositions(w) {
         ${(lpRows.length && totalLpFeesEUR > 0.01) ? `
         <div style="margin-top:0.8rem;padding:0.6rem 0.8rem;background:var(--bg-soft);border-radius:8px;border-left:2px solid var(--gold)">
           <div style="font-size:0.7rem;color:var(--text);font-weight:600">Rendimentos DeFi a render: €${fmt(totalLpFeesEUR)}</div>
+          ${(() => {
+            const inc = (state.defiIncome || []).filter(e => e.walletId === w.id);
+            if (!inc.length) return '';
+            const emis = inc.filter(e => e.source === 'emissions').length;
+            const fees = inc.filter(e => e.source === 'lp_fees').length;
+            const parts = [];
+            if (fees) parts.push(`${fees} de fees`);
+            if (emis) parts.push(`${emis} de emissões`);
+            return `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem">📋 Histórico registado: <strong>${inc.length}</strong> recebimentos (${parts.join(', ')}) — guardado para eventual tratamento Cat. E.</div>`;
+          })()}
           <div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.2rem;line-height:1.5">
             Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>tributado só na conversão a fiat</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.7">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
           </div>
@@ -14622,6 +14735,33 @@ function renderSettings(w) {
       <div class="section-label">Configurações Aurum</div>
     </div>
 
+    <!-- ── Tratamento Fiscal — Rendimentos DeFi ── -->
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="panel-head"><span class="panel-title">🧾 Tratamento Fiscal — Rendimentos DeFi</span></div>
+      <div class="panel-body">
+        <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
+          <span>ℹ</span>
+          <div>Como tratar fees de LP, emissões e yield de DeFi recebidos em cripto. Esta definição ainda <strong>não é aplicada ao relatório</strong> — está a ser preparada e deve ser confirmada com um TOC certificado.</div>
+        </div>
+        <div class="form-group">
+          <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'var(--gold)':'var(--border-soft)'};cursor:pointer;margin-bottom:0.6rem">
+            <input type="radio" name="defiTreatment" value="deferred" ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'checked':''} onchange="setDefiTreatment('deferred')" style="margin-top:0.2rem">
+            <div>
+              <div style="font-weight:600;font-size:0.85rem">Diferido — tributado só na conversão a fiat <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">O rendimento em cripto não é tributado na receção. Só gera imposto quando convertido a fiat, como mais-valia (G/G1), à semelhança do staking. Interpretação validada por 2 TOCs.</div>
+            </div>
+          </label>
+          <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${state.settings?.defiIncomeTreatment==='cat_e'?'var(--gold)':'var(--border-soft)'};cursor:pointer">
+            <input type="radio" name="defiTreatment" value="cat_e" ${state.settings?.defiIncomeTreatment==='cat_e'?'checked':''} onchange="setDefiTreatment('cat_e')" style="margin-top:0.2rem">
+            <div>
+              <div style="font-weight:600;font-size:0.85rem">Categoria E — tributado na receção</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">Trata o rendimento como rendimento de capital (Cat. E) no momento em que é recebido. Escolhe esta opção se o teu TOC preferir, ou se a AT vier a esclarecer que é este o tratamento.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Conexões ── -->
     <div class="panel" style="margin-bottom:1rem">
       <div class="panel-head"><span class="panel-title">⚙️ Conexões — API Keys</span></div>
@@ -15615,6 +15755,13 @@ async function refreshAll() {
   checkAlerts(w);
   if (btn) { btn.textContent='↻'; btn.disabled=false; }
   render();
+  // Capture realized DeFi income (claimed fees / emissions) in the background — informational
+  // record for a possible future Cat. E treatment. Non-blocking; re-renders if anything new.
+  if (w.alchemyKey || state.globalAlchemyKey) {
+    captureDefiIncome(w, w.alchemyKey || state.globalAlchemyKey)
+      .then(n => { if (n > 0) { console.log(`[DeFi income] +${n} novo(s) evento(s) registado(s)`); render(); } })
+      .catch(() => {});
+  }
   // C1: Save live state to cache for next reload
   try {
     const cache = {
@@ -18179,6 +18326,20 @@ function saveApiKey() {
   saveState(); toast('Keys guardadas ✓ — A actualizar dados...','success');
   setTimeout(refreshAll, 500);
 }
+
+// Set how DeFi income (LP fees, emissions, yield) is treated for tax. This is stored but NOT
+// yet applied to the fiscal engine — it's pending TOC validation. 'deferred' (default) = taxed
+// only on fiat conversion as G/G1 capital gains, like staking. 'cat_e' = taxed as Category E
+// passive income at receipt.
+function setDefiTreatment(mode) {
+  if (mode !== 'deferred' && mode !== 'cat_e') return;
+  _ensureStateShape();
+  state.settings.defiIncomeTreatment = mode;
+  saveState();
+  toast(mode === 'deferred' ? 'Tratamento: diferido (conversão a fiat) ✓' : 'Tratamento: Categoria E ✓', 'success');
+  render();
+}
+window.setDefiTreatment = setDefiTreatment;
 
 function saveAlertSettings() {
   const w=activeWallet(); if(!w)return;
