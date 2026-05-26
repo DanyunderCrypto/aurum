@@ -8351,6 +8351,223 @@ async function _alchemyRpc(chain, method, params, key) {
   return j.result;
 }
 
+// ── EVM RPC + ABI encoding helpers (browser port of MyWalletPulse rpc.js) ──
+// Low-level helpers for reading on-chain contract state. Ported from a Node.js LP tracker;
+// the only change is Buffer→TextDecoder for browser string decoding. These power the Uniswap
+// V3 / Aerodrome LP readers below.
+function _padAddr(a) { return (a || '').toLowerCase().replace(/^0x/, '').padStart(64, '0'); }
+function _padUint(n) { return BigInt(n).toString(16).padStart(64, '0'); }
+function _decodeUint(hex) { if (!hex || typeof hex !== 'string') return 0n; return BigInt('0x' + hex); }
+function _decodeAddr(hex) { if (!hex || typeof hex !== 'string') return null; return '0x' + hex.slice(-40); }
+function _decodeIntFromHex(hex, bits) {
+  if (!hex || typeof hex !== 'string') return 0;
+  const n = BigInt('0x' + hex);
+  const max = 1n << BigInt(bits);
+  const half = max / 2n;
+  const masked = n & (max - 1n);
+  return masked >= half ? Number(masked - max) : Number(masked);
+}
+function _decodeStringResult(hex) {
+  if (!hex || hex.length < 130) return null;
+  try {
+    const stripped = hex.replace(/^0x/, '');
+    const len = parseInt(stripped.slice(64, 128), 16);
+    if (!len || len > 64) return null;
+    const raw = stripped.slice(128, 128 + len * 2);
+    const bytes = new Uint8Array(raw.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+    return new TextDecoder('utf-8').decode(bytes).replace(/\0+$/, '');
+  } catch { return null; }
+}
+// eth_call via Alchemy infra, returns raw hex result
+async function _rpcCall(chain, to, data, key) {
+  return _alchemyRpc(chain, 'eth_call', [{ to, data }, 'latest'], key);
+}
+// Batched eth_call: array of {to, data} → array of hex results (parallel, chunked)
+async function _rpcBatch(chain, calls, key) {
+  if (!calls.length) return [];
+  const base = ALCHEMY_RPCS[chain];
+  if (!base || !key) return calls.map(() => null);
+  const CHUNK = 50;
+  const out = [];
+  for (let i = 0; i < calls.length; i += CHUNK) {
+    const chunk = calls.slice(i, i + CHUNK);
+    const body = chunk.map((c, idx) => ({
+      jsonrpc: '2.0', id: i + idx,
+      method: c.method || 'eth_call',
+      params: c.params || [{ to: c.to, data: c.data }, 'latest'],
+    }));
+    try {
+      const res = await fetch(base + key, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
+      const j = await res.json();
+      if (Array.isArray(j)) {
+        j.sort((a, b) => a.id - b.id);
+        for (const r of j) out.push(r.error ? null : r.result);
+      } else { for (let k = 0; k < chunk.length; k++) out.push(null); }
+    } catch { for (let k = 0; k < chunk.length; k++) out.push(null); }
+  }
+  return out;
+}
+
+// ── Uniswap V3 concentrated-liquidity math (browser port of uniswapV3.js) ──
+function _tickToSqrtPriceX96(tick) {
+  return BigInt(Math.floor(Math.sqrt(Math.pow(1.0001, tick)) * Math.pow(2, 96)));
+}
+function _tickToPrice(tick, dec0, dec1) {
+  return Math.pow(1.0001, tick) * Math.pow(10, dec0 - dec1);
+}
+function _sqrtPriceX96ToPrice(sqrtPriceX96, dec0, dec1) {
+  const sp = Number(sqrtPriceX96) / Math.pow(2, 96);
+  return sp * sp * Math.pow(10, dec0 - dec1);
+}
+// Given liquidity L, current sqrtP, and the position's tick range, compute the
+// underlying token0/token1 amounts. This is the core V3 math: a position's token
+// composition depends on where the current price sits relative to its range.
+function _getAmountsForPosition(L, sqrtP, tickLower, tickUpper, currentTick) {
+  const Q96 = 2n ** 96n;
+  const sqrtA = _tickToSqrtPriceX96(tickLower);
+  const sqrtB = _tickToSqrtPriceX96(tickUpper);
+  let amount0 = 0n, amount1 = 0n;
+  if (sqrtA === 0n || sqrtB === 0n || sqrtP === 0n) return { amount0, amount1 };
+  if (currentTick < tickLower) {
+    amount0 = (L * (sqrtB - sqrtA) * Q96) / (sqrtB * sqrtA);
+  } else if (currentTick < tickUpper) {
+    amount0 = (L * (sqrtB - sqrtP) * Q96) / (sqrtB * sqrtP);
+    amount1 = (L * (sqrtP - sqrtA)) / Q96;
+  } else {
+    amount1 = (L * (sqrtB - sqrtA)) / Q96;
+  }
+  return { amount0, amount1 };
+}
+// Encode collect((tokenId, recipient, MAX, MAX)) for a static call to read uncollected fees.
+const _MAX_UINT128 = 'ffffffffffffffffffffffffffffffff';
+function _encodeCollectStatic(tokenId, owner) {
+  return '0xfc6f7865' + _padUint(tokenId) + _padAddr(owner) +
+    '00000000000000000000000000000000' + _MAX_UINT128 +
+    '00000000000000000000000000000000' + _MAX_UINT128;
+}
+
+// V3 NonfungiblePositionManager + factory per chain (from MyWalletPulse chains.js)
+const _V3_CONTRACTS = {
+  eth:      { nftManager: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984' },
+  arbitrum: { nftManager: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984' },
+  optimism: { nftManager: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984' },
+  polygon:  { nftManager: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984' },
+  base:     { nftManager: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', factory: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD' },
+};
+const _v3TokenInfoCache = new Map(); // chain:addr → {symbol, decimals}
+async function _v3TokenInfo(chain, addr, key) {
+  if (!addr) return { symbol: '???', decimals: 18 };
+  const ck = `${chain}:${addr.toLowerCase()}`;
+  if (_v3TokenInfoCache.has(ck)) return _v3TokenInfoCache.get(ck);
+  try {
+    const [symHex, decHex] = await _rpcBatch(chain, [
+      { to: addr, data: '0x95d89b41' }, // symbol()
+      { to: addr, data: '0x313ce567' }, // decimals()
+    ], key);
+    const symbol = _decodeStringResult(symHex) || '???';
+    const decimals = decHex ? parseInt(decHex, 16) : 18;
+    const info = { symbol, decimals: isNaN(decimals) ? 18 : decimals };
+    if (symbol !== '???' && !isNaN(decimals)) _v3TokenInfoCache.set(ck, info);
+    return info;
+  } catch { return { symbol: '???', decimals: 18 }; }
+}
+
+// Read all Uniswap V3 LP positions for a wallet on one chain.
+// Returns: [{ chain, protocol, tokenId, token0, token1, feeTier, inRange, ... }]
+async function _fetchUniV3OnChain(chain, address, key) {
+  const c = _V3_CONTRACTS[chain];
+  if (!c || !key) return [];
+  // 1) balanceOf → number of position NFTs
+  let balance = 0;
+  try {
+    const balHex = await _rpcCall(chain, c.nftManager, '0x70a08231' + _padAddr(address), key);
+    balance = Number(_decodeUint((balHex || '0x0').slice(2)));
+  } catch { return []; }
+  if (!balance || balance > 200) { if (balance > 200) balance = 200; }
+  if (balance === 0) return [];
+  // 2) tokenOfOwnerByIndex → tokenIds
+  const idxCalls = [];
+  for (let i = 0; i < balance; i++) idxCalls.push({ to: c.nftManager, data: '0x2f745c59' + _padAddr(address) + _padUint(i) });
+  const idxResults = await _rpcBatch(chain, idxCalls, key);
+  const tokenIds = idxResults.filter(Boolean).map(h => _decodeUint(h.slice(2)));
+  if (!tokenIds.length) return [];
+  // 3) positions(tokenId) → struct (token0, token1, fee, ticks, liquidity)
+  const posCalls = tokenIds.map(id => ({ to: c.nftManager, data: '0x99fbab88' + _padUint(id) }));
+  const posResults = await _rpcBatch(chain, posCalls, key);
+  const decoded = [];
+  for (let i = 0; i < posResults.length; i++) {
+    const hex = posResults[i];
+    if (!hex) continue;
+    const p = hex.replace(/^0x/, '');
+    if (p.length < 64 * 12) continue;
+    const liquidity = _decodeUint(p.slice(64 * 7, 64 * 8));
+    if (liquidity === 0n) continue; // closed position
+    decoded.push({
+      tokenId: tokenIds[i].toString(),
+      tokenIdRaw: tokenIds[i],
+      token0: _decodeAddr(p.slice(64 * 2, 64 * 3)),
+      token1: _decodeAddr(p.slice(64 * 3, 64 * 4)),
+      fee: Number(_decodeUint(p.slice(64 * 4, 64 * 5))),
+      tickLower: _decodeIntFromHex(p.slice(64 * 5, 64 * 6), 24),
+      tickUpper: _decodeIntFromHex(p.slice(64 * 6, 64 * 7), 24),
+      liquidity,
+    });
+  }
+  if (!decoded.length) return [];
+  // 4) factory.getPool(token0, token1, fee) → pool address
+  const poolCalls = decoded.map(d => ({ to: c.factory, data: '0x1698ee82' + _padAddr(d.token0) + _padAddr(d.token1) + _padUint(d.fee) }));
+  const poolResults = await _rpcBatch(chain, poolCalls, key);
+  decoded.forEach((d, i) => { d.pool = poolResults[i] ? _decodeAddr(poolResults[i].slice(2)) : null; });
+  // 5) pool.slot0() → current sqrtPrice + tick
+  const slot0Calls = decoded.map(d => ({ to: d.pool, data: '0x3850c7bd' }));
+  const slot0Results = await _rpcBatch(chain, slot0Calls, key);
+  decoded.forEach((d, i) => {
+    const s = slot0Results[i];
+    if (!s) { d.sqrtPriceX96 = 0n; d.currentTick = 0; return; }
+    const st = s.replace(/^0x/, '');
+    d.sqrtPriceX96 = _decodeUint(st.slice(0, 64));
+    d.currentTick = _decodeIntFromHex(st.slice(64, 128), 24);
+  });
+  // 6) uncollected fees via static collect()
+  const feeCalls = decoded.map(d => ({ to: c.nftManager, data: _encodeCollectStatic(d.tokenIdRaw, address) }));
+  const feeResults = await _rpcBatch(chain, feeCalls, key);
+  decoded.forEach((d, i) => {
+    const r = feeResults[i];
+    if (!r || r === '0x') { d.fee0Raw = 0n; d.fee1Raw = 0n; return; }
+    const st = r.replace(/^0x/, '');
+    d.fee0Raw = BigInt('0x' + st.slice(0, 64));
+    d.fee1Raw = BigInt('0x' + st.slice(64, 128));
+  });
+  // 7) token metadata
+  const uniq = [...new Set(decoded.flatMap(d => [d.token0, d.token1]).filter(Boolean))];
+  const tokenInfos = {};
+  await Promise.all(uniq.map(async t => { tokenInfos[t.toLowerCase()] = await _v3TokenInfo(chain, t, key); }));
+  // 8) build positions
+  return decoded.map(d => {
+    if (!d.token0 || !d.token1) return null;
+    const t0 = tokenInfos[d.token0.toLowerCase()] || { symbol: '???', decimals: 18 };
+    const t1 = tokenInfos[d.token1.toLowerCase()] || { symbol: '???', decimals: 18 };
+    const { amount0, amount1 } = _getAmountsForPosition(d.liquidity, d.sqrtPriceX96, d.tickLower, d.tickUpper, d.currentTick);
+    const amt0 = Number(amount0) / Math.pow(10, t0.decimals);
+    const amt1 = Number(amount1) / Math.pow(10, t1.decimals);
+    const fee0 = Number(d.fee0Raw) / Math.pow(10, t0.decimals);
+    const fee1 = Number(d.fee1Raw) / Math.pow(10, t1.decimals);
+    const inRange = d.currentTick >= d.tickLower && d.currentTick < d.tickUpper;
+    return {
+      chain, protocol: 'Uniswap V3', tokenId: d.tokenId, poolAddress: d.pool,
+      token0: { address: d.token0, symbol: t0.symbol, decimals: t0.decimals, amount: amt0, fees: fee0 },
+      token1: { address: d.token1, symbol: t1.symbol, decimals: t1.decimals, amount: amt1, fees: fee1 },
+      feeTier: (d.fee / 10000).toFixed(2) + '%',
+      inRange,
+    };
+  }).filter(Boolean);
+}
+window._fetchUniV3OnChain = _fetchUniV3OnChain;
+
 // ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
 // Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
 // resistant to the fake-liquidity manipulation that plagues DEX-derived prices (USOR, POOL…).
@@ -8555,8 +8772,19 @@ async function fetchRealBalances(w, { force = false } = {}) {
     }
   }
 
-  const result = { holdings, vaults };
-  window[cacheKey] = { at: now, data: holdings, vaults };
+  // ── Uniswap V3 LP positions (across chains) — ported from MyWalletPulse ──
+  // Read in parallel across chains. Non-fatal: a failure here never breaks balances.
+  const lpPositions = [];
+  try {
+    const lpChains = Object.keys(_V3_CONTRACTS).filter(ch => ALCHEMY_RPCS[ch]);
+    const lpResults = await Promise.all(
+      lpChains.map(ch => _fetchUniV3OnChain(ch, evmAddr, key).catch(() => []))
+    );
+    for (const arr of lpResults) if (Array.isArray(arr)) lpPositions.push(...arr);
+  } catch (e) { /* non-fatal */ }
+
+  const result = { holdings, vaults, lpPositions };
+  window[cacheKey] = { at: now, data: holdings, vaults, lpPositions };
   return result;
 }
 window.fetchRealBalances = fetchRealBalances;
@@ -8909,7 +9137,54 @@ function renderDefiPositions(w) {
     `);
   }
 
-  if (rows.length === 0 && !(window['_balCache_' + w.id]?.vaults?.length)) return '';
+  const _lpForGuard = window['_balCache_' + w.id]?.lpPositions || [];
+  if (rows.length === 0 && !(window['_balCache_' + w.id]?.vaults?.length) && _lpForGuard.length === 0) return '';
+
+  // ── Liquidity Pools (Uniswap V3 — ported from MyWalletPulse) ──
+  // Price each leg via Chainlink (cached) → event price → DexScreener. Value = token0+token1.
+  const lpPositions = window['_balCache_' + w.id]?.lpPositions || [];
+  const lpRows = [];
+  let totalLpEUR = 0, totalLpFeesEUR = 0;
+  const _lpEurRate = (window._lastEurUsdRate || 0.86);
+  const _priceLeg = (chain, contract, symbol) => {
+    if (!contract) return null;
+    const clk = _chainlinkCache.get(`${chain}:${contract.toLowerCase()}`);
+    if (clk && clk.priceUSD) return clk.priceUSD * _lpEurRate;
+    for (const e of _eventsForWallet(w)) {
+      if (e.assetContract && e.assetContract.toLowerCase() === contract.toLowerCase() && typeof e.priceEUR === 'number') return e.priceEUR;
+    }
+    const ds = _dexScreenerCache.get(`${chain}:${contract.toLowerCase()}`);
+    if (ds && ds.priceUSD) return ds.priceUSD * _lpEurRate;
+    if (/USDC|USDT|DAI|EUR/i.test(symbol || '')) return _lpEurRate;
+    return null;
+  };
+  for (const lp of lpPositions) {
+    const p0 = _priceLeg(lp.chain, lp.token0.address, lp.token0.symbol);
+    const p1 = _priceLeg(lp.chain, lp.token1.address, lp.token1.symbol);
+    const val0 = p0 != null ? lp.token0.amount * p0 : null;
+    const val1 = p1 != null ? lp.token1.amount * p1 : null;
+    const fee0 = p0 != null ? lp.token0.fees * p0 : 0;
+    const fee1 = p1 != null ? lp.token1.fees * p1 : 0;
+    const posValue = (val0 != null && val1 != null) ? val0 + val1 : null;
+    const feesValue = fee0 + fee1;
+    if (posValue != null) totalLpEUR += posValue;
+    totalLpFeesEUR += feesValue;
+    const chainName = (CHAINS[lp.chain]?.name) || lp.chain;
+    const rangeBadge = lp.inRange
+      ? '<span style="color:var(--green);font-size:0.62rem">● in range</span>'
+      : '<span style="color:var(--gold);font-size:0.62rem">○ out of range</span>';
+    lpRows.push(`
+      <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.85rem;font-weight:600">${lp.token0.symbol}/${lp.token1.symbol} <span style="font-size:0.62rem;color:var(--text-muted)">${lp.feeTier}</span></div>
+          <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">
+            ${lp.protocol} · ${chainName} · ${rangeBadge}${feesValue > 0.01 ? ` · fees €${fmt(feesValue)}` : ''}
+          </div>
+        </div>
+        <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">${posValue != null ? '€' + fmt(posValue) : '—'}</div>
+      </div>
+    `);
+  }
 
   // ── Vaults (ERC-4626): value = redeemable underlying × underlying price ──
   const eurRate = (window._lastEurUsdRate || 0.92);
@@ -8965,8 +9240,8 @@ function renderDefiPositions(w) {
       </div>`);
   }
   const lendNetEUR = totalNetUSD * eurRate;
-  const grandTotalEUR = lendNetEUR + totalVaultEUR;
-  if (rows.length === 0 && vaultRows.length === 0) return '';
+  const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
+  if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0) return '';
 
   return `
     <div class="panel" style="margin-top:1.5rem">
@@ -8975,10 +9250,11 @@ function renderDefiPositions(w) {
         <span style="font-size:0.7rem;color:var(--text-muted)">total <strong style="color:var(--gold)">€${fmt(grandTotalEUR)}</strong></span>
       </div>
       <div class="panel-body">
-        ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
+        ${lpRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Pools de Liquidez · €${fmt(totalLpEUR)}${totalLpFeesEUR > 0.01 ? ` · fees por reclamar €${fmt(totalLpFeesEUR)}` : ''}</div>${lpRows.join('')}` : ''}
+        ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:${lpRows.length ? '0.8rem' : '0'} 0 0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
         ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:0.8rem 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
         <div style="margin-top:0.6rem;font-size:0.68rem;color:var(--text-muted);line-height:1.5">
-          Loops/lending: valor líquido = colateral − dívida. Vaults (ERC-4626): valor resgatável do subjacente. Fiscalmente, depositar/pedir emprestado/entrar em vault não é alienação — só o yield realizado em fiat é tributável (ver parecer OCC).
+          Loops/lending: valor líquido = colateral − dívida. Vaults (ERC-4626): valor resgatável do subjacente. Pools de liquidez (Uniswap V3): valor dos dois tokens na posição + fees por reclamar. Fiscalmente, depositar/pedir emprestado/entrar em vault/pool não é alienação — só o yield/fees realizado em fiat é tributável (ver parecer OCC).
           <br><br><span style="opacity:0.8">ℹ Nota: capital movido para <strong>agentes automáticos</strong> (ex: Yieldseeker/Autoseek) que detêm os fundos numa smart-account própria não é detetável por leitura da carteira — esse valor não aparece aqui. Suporte para posições manuais virá numa versão futura.</span>
         </div>
       </div>
