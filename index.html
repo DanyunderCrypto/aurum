@@ -9162,10 +9162,16 @@ function renderDefiPositions(w) {
         }
       }
     }
-    if (need.length) {
+    if (need.length && !window._lpPriceRefetching) {
+      window._lpPriceRefetching = true;
       Promise.all(need.map(n => fetchChainlinkPrice(n.chain, n.contract, klKey)))
-        .then(rs => { if (rs.some(r => r != null) && typeof render === 'function') render(); })
-        .catch(() => {});
+        .then(rs => {
+          window._lpPriceRefetching = false;
+          // setTimeout escapes the current render cycle so the re-render isn't swallowed by
+          // the in-progress one (the bug that left WETH/USDC showing "—" until a manual render).
+          if (rs.some(r => r != null) && typeof render === 'function') setTimeout(() => render(), 50);
+        })
+        .catch(() => { window._lpPriceRefetching = false; });
     }
   })();
   const _priceLeg = (chain, contract, symbol) => {
