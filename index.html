@@ -4304,6 +4304,10 @@ let state = {
     // later rules it must be Cat. E. Treatment is NOT applied to the fiscal engine yet — it's
     // pending TOC validation. For now DeFi income is portfolio-info only.
     defiIncomeTreatment: 'deferred',
+    // Basis bridge: tratar transferências entre as carteiras do utilizador como
+    // internas (custo de aquisição viaja, não é venda/compra). Quando ligado,
+    // o relatório fiscal processa todas as carteiras do utilizador em conjunto.
+    consolidateOwner: true,
   },
 };
 
@@ -4312,10 +4316,14 @@ function _ensureStateShape() {
   if (!Array.isArray(state.defiIncome)) state.defiIncome = [];
   if (!state.settings || typeof state.settings !== 'object') state.settings = {};
   if (!state.settings.defiIncomeTreatment) state.settings.defiIncomeTreatment = 'deferred';
+  if (typeof state.settings.consolidateOwner !== 'boolean') state.settings.consolidateOwner = true;
   // CEX import: wallets sintéticas têm kind:'cex'; as on-chain ficam 'evm' por defeito.
   if (Array.isArray(state.wallets)) {
     state.wallets.forEach(w => { if (w && !w.kind) w.kind = (typeof w.addr === 'string' && w.addr.startsWith('cex:')) ? 'cex' : 'evm'; });
   }
+  // Limpeza de versão anterior: remover state.ownerGroups (já não é usado — todas
+  // as carteiras do utilizador são tratadas como mesmo dono automaticamente).
+  if (state.ownerGroups) delete state.ownerGroups;
 }
 
 let live = {
@@ -7510,14 +7518,125 @@ async function importCexCsv(exchange, label, csvText, opts) {
   state.imports.push({ id: genId(), walletId: w.id, date: new Date().toISOString(),
     count: fresh.length, filename: opts.filename || `${exchange}.csv`, kind:'cex', exchange,
     adapter: parsed.adapter && parsed.adapter.id, provisional: !!parsed.provisional });
-  // invalidar cache FIFO desta wallet
-  try { delete window['_fifoCache_'+w.id]; } catch(_){}
+  // invalidar cache FIFO desta wallet (e caches consolidados, podem ter mudado)
+  try { Object.keys(window).filter(k => k.startsWith('_fifoCache_'+w.id) || k.startsWith('_ownerFifoCache_')).forEach(k => delete window[k]); } catch(_){}
   saveState();
   return { ok:true, wallet:w, imported: fresh.length, total: events.length,
     txs: parsed.transactions.length, errors: parsed.errors, adapter: parsed.adapter,
     provisional: !!parsed.provisional, source: parsed.source };
 }
 window.importCexCsv = importCexCsv;
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  BASIS BRIDGE — transferências entre carteiras do mesmo dono               ║
+// ║  Liga saídas↔entradas (mesmo ativo, qty próxima, janela de tempo) entre    ║
+// ║  carteiras do mesmo dono. O custo de aquisição viaja: nem venda nem        ║
+// ║  compra nova. Sem isto, mover cripto entre carteiras inflava o imposto.    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const aurumBasisBridge = (() => {
+  'use strict';
+  const DEFAULTS = { qtyTolerancePct: 2, timeWindowSec: 72 * 3600 };
+  function buildAddressToGroup(ownerGroups) {
+    const map = new Map();
+    (ownerGroups || []).forEach((group, gi) => { group.forEach(addr => map.set(String(addr).toLowerCase(), gi)); });
+    return map;
+  }
+  function linkInternalTransfers(events, ownerGroups, opts) {
+    const cfg = Object.assign({}, DEFAULTS, opts || {});
+    const addrToGroup = buildAddressToGroup(ownerGroups);
+    const links = []; const stats = { candidatesOut: 0, candidatesIn: 0, linked: 0 };
+    const tsOf = (e) => e.timestamp || Math.floor(new Date(e.date).getTime() / 1000) || 0;
+    const grp = (e) => addrToGroup.get(String(e.walletAddress || '').toLowerCase());
+    const inGroup = events.filter(e => grp(e) !== undefined);
+    const isMovable = (e) => {
+      const tx = e.txType || e.type || '';
+      return ['self_transfer','send','receive','withdraw','deposit','cex_deposit','cex_withdrawal','unknown'].includes(tx) || e._cexTransfer === true;
+    };
+    const outs = inGroup.filter(e => e.direction === 'out' && e.amount > 0 && isMovable(e));
+    const ins = inGroup.filter(e => e.direction === 'in' && e.amount > 0 && isMovable(e));
+    stats.candidatesOut = outs.length; stats.candidatesIn = ins.length;
+    const insByAsset = new Map();
+    for (const e of ins) { const k = (e.asset || '').toUpperCase(); if (!insByAsset.has(k)) insByAsset.set(k, []); insByAsset.get(k).push(e); }
+    for (const arr of insByAsset.values()) arr.sort((a, b) => tsOf(a) - tsOf(b));
+    const usedIn = new Set();
+    outs.sort((a, b) => tsOf(a) - tsOf(b));
+    for (const out of outs) {
+      const asset = (out.asset || '').toUpperCase();
+      const candidates = insByAsset.get(asset) || [];
+      const outTs = tsOf(out); const outGrp = grp(out);
+      let best = null;
+      for (const cand of candidates) {
+        if (usedIn.has(cand.id)) continue;
+        if (grp(cand) !== outGrp) continue;
+        if ((out.walletAddress || '').toLowerCase() === (cand.walletAddress || '').toLowerCase()) continue;
+        const inTs = tsOf(cand); const dt = inTs - outTs;
+        if (dt < 0 || dt > cfg.timeWindowSec) continue;
+        const diffPct = Math.abs(cand.amount - out.amount) / out.amount * 100;
+        if (diffPct > cfg.qtyTolerancePct) continue;
+        if (!best || dt < best.dt) best = { cand, dt, diffPct };
+      }
+      if (best) {
+        usedIn.add(best.cand.id);
+        out.txType = 'self_transfer'; out._internalTransfer = true; out._transferTo = best.cand.walletAddress; out._transferLinkId = best.cand.id;
+        best.cand.txType = 'self_transfer'; best.cand._internalTransfer = true; best.cand._transferFrom = out.walletAddress; best.cand._transferLinkId = out.id; best.cand._basisCarriedFrom = out.id;
+        links.push({ outId: out.id, inId: best.cand.id, asset, outAmount: out.amount, inAmount: best.cand.amount, outWallet: out.walletAddress, inWallet: best.cand.walletAddress, gapHours: Math.round(best.dt / 3600), feePct: +best.diffPct.toFixed(3) });
+        stats.linked++;
+      }
+    }
+    return { events, links, stats };
+  }
+  return { linkInternalTransfers, buildAddressToGroup, DEFAULTS };
+})();
+window.aurumBasisBridge = aurumBasisBridge;
+
+// Devolve TODOS os endereços das carteiras do utilizador (para o basis-bridge
+// saber que pertencem ao mesmo dono).
+function _allOwnerAddresses() {
+  const addrs = [];
+  (state.wallets || []).forEach(w => {
+    if (w.addr) addrs.push(String(w.addr).toLowerCase());
+    if (w.evm) addrs.push(String(w.evm).toLowerCase());
+    if (w.sol) addrs.push(String(w.sol).toLowerCase());
+    if (w.bitcoinXpub) addrs.push(String(w.bitcoinXpub).toLowerCase());
+    if (w.bitcoinAddress) addrs.push(String(w.bitcoinAddress).toLowerCase());
+  });
+  return addrs.filter(Boolean);
+}
+
+// Devolve TODOS os eventos de TODAS as carteiras do utilizador (consolidado).
+function _eventsForOwnerOf(w) {
+  const ownerAddrs = new Set(_allOwnerAddresses());
+  if (!ownerAddrs.size) return _eventsForWallet(w);
+  return (state.events || []).filter(e => ownerAddrs.has((e.walletAddress || '').toLowerCase()));
+}
+
+// Processa o FIFO para o utilizador (todas as carteiras juntas), aplicando o
+// basis-bridge primeiro. Devolve o resultado consolidado + os links encontrados.
+function _getOwnerFifoStateFor(w) {
+  if (!w || !window.aurumFifoEngine) return null;
+  const consolidate = state.settings && state.settings.consolidateOwner;
+  if (!consolidate) return _getFifoStateFor(w); // modo por-carteira (utilizador desligou)
+  const cacheKey = '_ownerFifoCache_';
+  let events = _eventsForOwnerOf(w);
+  if (!events.length) return null;
+  // clonar leve para não mutar os eventos guardados no state
+  events = events.map(e => Object.assign({}, e));
+  const ownerAddrs = _allOwnerAddresses();
+  const bridge = window.aurumBasisBridge.linkInternalTransfers(events, [ownerAddrs]);
+  const sigKey = events.length + '_' + (events[events.length - 1]?.timestamp || 0) + '_' + (state.swapMode || 'permuta') + '_' + bridge.stats.linked;
+  if (window[cacheKey] && window[cacheKey]._sig === sigKey) return window[cacheKey];
+  try {
+    const result = window.aurumFifoEngine.process(events, { walletId: 'owner', swapMode: state.swapMode || 'permuta' });
+    result._sig = sigKey;
+    result._bridgeLinks = bridge.links;
+    result._bridgeStats = bridge.stats;
+    result._consolidated = true;
+    window[cacheKey] = result;
+    return result;
+  } catch (e) { console.warn('[basis-bridge] FIFO consolidado falhou:', e); return _getFifoStateFor(w); }
+}
+window._getOwnerFifoStateFor = _getOwnerFifoStateFor;
+
 
 // ── UI do import CEX ────────────────────────────────────────────────────────
 let _cexPending = null; // { csvText, parsed, filename }
@@ -14345,10 +14464,11 @@ function getTxUrl(chain, txHash) {
 // Sprint 8.2: Render Fiscal Engine v2 panel — consumes fifoEngine
 // ════════════════════════════════════════════════════════
 function renderFiscalEngineV2(w, fiscalYear) {
-  // Collect ALL events for this wallet — the FIFO engine needs the full chronological
-  // sequence (it handles unpriced events internally). Filtering to priced-only here was a
-  // bug: it created gaps and produced different totals than the audit report.
-  const events = _eventsForWallet(w);
+  // Recolhe os eventos. Se a consolidação por dono estiver ligada, junta TODAS
+  // as carteiras do mesmo dono (para o basis-bridge ligar transferências entre
+  // elas). Caso contrário, só esta carteira (modo antigo).
+  const consolidated = state.settings && state.settings.consolidateOwner;
+  const events = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
 
   if (events.length === 0) {
     return `
@@ -14372,8 +14492,16 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
   // Process via FIFO engine
   let result;
+  let _bridgeLinks = [];
   try {
-    result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+    if (consolidated) {
+      // Aplica o basis-bridge (liga transferências internas) e processa o dono inteiro.
+      const owned = _getOwnerFifoStateFor(w);
+      if (owned) { result = owned; _bridgeLinks = owned._bridgeLinks || []; }
+      else result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+    } else {
+      result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+    }
   } catch (err) {
     errorLogger.error('fifoEngine.process: ' + err.message, { wallet: w.id });
     return `
@@ -14417,6 +14545,14 @@ function renderFiscalEngineV2(w, fiscalYear) {
       </div>
       <div class="panel-body">
 
+        ${(consolidated && _bridgeLinks.length) ? `<div class="alert alert-info" style="font-size:0.78rem;margin-bottom:1rem">
+          <span>🔗</span>
+          <div><strong>${_bridgeLinks.length} transferência${_bridgeLinks.length>1?'s':''} entre as tuas carteiras</strong> detetada${_bridgeLinks.length>1?'s':''} e tratada${_bridgeLinks.length>1?'s':''} como movimento interno (sem imposto — o custo de aquisição viaja com a cripto).
+          ${_bridgeLinks.slice(0,4).map(l=>`<div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);margin-top:0.3rem">${fmt(l.outAmount,4)} ${l.asset} · ${(''+l.outWallet).replace(/^cex:/,'').slice(0,16)} → ${(''+l.inWallet).replace(/^cex:/,'').slice(0,16)}${l.gapHours?` (${l.gapHours}h)`:''}</div>`).join('')}
+          ${_bridgeLinks.length>4?`<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">… e mais ${_bridgeLinks.length-4}</div>`:''}
+          </div>
+        </div>` : ''}
+        ${consolidated ? `<div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.8rem">⬡ Relatório <strong>consolidado</strong>: junta todas as carteiras do mesmo dono (regra FIFO por dono). Podes desligar nas Definições.</div>` : ''}
         <!-- KPIs fiscais ano ${fiscalYear} -->
         <div class="stats-grid" style="margin-bottom:1.3rem">
           <div class="stat">
@@ -15250,9 +15386,27 @@ function renderSettings(w) {
       </div>
     </div>
 
-    <!-- ── Conexões ── -->
+    <!-- ── Transferências entre as Tuas Carteiras (basis bridge) ── -->
     <div class="panel" style="margin-bottom:1rem">
-      <div class="panel-head"><span class="panel-title">⚙️ Conexões — API Keys</span></div>
+      <div class="panel-head"><span class="panel-title">🔗 Transferências entre as Tuas Carteiras</span></div>
+      <div class="panel-body">
+        <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
+          <span>ℹ</span>
+          <div>Quando moves cripto entre as tuas carteiras (ex: sacar da Binance para a tua carteira on-chain), isso não é venda. Com esta opção ligada, o custo de aquisição viaja com a cripto e o relatório fiscal junta as tuas carteiras num só cálculo (regra FIFO sobre o conjunto).</div>
+        </div>
+        <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${state.settings?.consolidateOwner?'var(--gold)':'var(--border-soft)'};cursor:pointer;margin-bottom:1rem">
+          <input type="checkbox" ${state.settings?.consolidateOwner?'checked':''} onchange="toggleConsolidateOwner(this.checked)" style="margin-top:0.2rem">
+          <div>
+            <div style="font-weight:600;font-size:0.85rem">Consolidar todas as minhas carteiras <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">Liga transferências internas automaticamente e calcula o relatório fiscal sobre o conjunto. Desliga só se quiseres um relatório separado por carteira.</div>
+          </div>
+        </label>
+        ${state.wallets && state.wallets.length ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--gold);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.5rem">Carteiras a consolidar · ${state.wallets.length}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem">
+          ${state.wallets.map(ww=>`<span class="badge ${ww.kind==='cex'?'badge-cyan':'badge-muted'}">${ww.name}</span>`).join('')}
+        </div>` : '<div style="font-size:0.72rem;color:var(--text-muted)">Ainda sem carteiras adicionadas.</div>'}
+      </div>
+    </div>
       <div class="panel-body">
         <div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>⭐</span>
@@ -18836,6 +18990,17 @@ function setDefiTreatment(mode) {
   render();
 }
 window.setDefiTreatment = setDefiTreatment;
+
+function toggleConsolidateOwner(on) {
+  _ensureStateShape();
+  state.settings.consolidateOwner = !!on;
+  // invalidar caches FIFO (mudou o modo de cálculo)
+  try { Object.keys(window).filter(k => k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_')).forEach(k => delete window[k]); } catch(_){}
+  saveState();
+  toast(on ? 'Carteiras do mesmo dono consolidadas ✓' : 'Relatório por carteira (consolidação desligada)', 'success');
+  render();
+}
+window.toggleConsolidateOwner = toggleConsolidateOwner;
 
 function saveAlertSettings() {
   const w=activeWallet(); if(!w)return;
