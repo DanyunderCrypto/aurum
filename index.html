@@ -7206,6 +7206,271 @@ const fifoEngine = (() => {
 
 window.aurumFifoEngine = fifoEngine;
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CEX IMPORT — importador genérico de extratos de exchange                  ║
+// ║  Parser genérico (mapa de colunas + auto-deteção + fallback manual) +      ║
+// ║  mapeamento para UniversalEvents (compra→acquisition, venda→disposal,      ║
+// ║  swap→permuta, fee→consome sem tributar, deposit→abre lote).               ║
+// ║  CEX = wallet sintética (kind:'cex', addr:'cex:<exchange>:<label>').       ║
+// ║  Validado contra CSV real Binance (Transaction History ledger).            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const aurumCexImport = (() => {
+  'use strict';
+  const QUOTE_ASSETS = ['FDUSD','USDT','USDC','TUSD','BUSD','EURI','DAI','EUR','USD','GBP','CHF','TRY','BRL','AUD','JPY','BTC','ETH','BNB','SOL','XRP','DOGE','TRX'].sort((a,b)=>b.length-a.length);
+  const FIAT = new Set(['EUR','USD','GBP','CHF','TRY','BRL','AUD','JPY']);
+  const USD_STABLE = new Set(['USDT','USDC','FDUSD','TUSD','BUSD','DAI','USD']);
+
+  // ── CSV ──
+  function detectDelimiter(text){
+    const fl=(text.split(/\r?\n/).find(l=>l.trim().length)||'');
+    const counts={',':0,';':0,'\t':0,'|':0}; let inQ=false;
+    for(const ch of fl){ if(ch==='"')inQ=!inQ; else if(!inQ&&counts.hasOwnProperty(ch))counts[ch]++; }
+    let best=',',max=-1; for(const d of Object.keys(counts))if(counts[d]>max){max=counts[d];best=d;} return max>0?best:',';
+  }
+  function parseCSV(text,delimiter){
+    if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
+    const delim=delimiter||detectDelimiter(text); const rows=[]; let field='',row=[],inQ=false;
+    for(let i=0;i<text.length;i++){ const ch=text[i];
+      if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){field+='"';i++;}else inQ=false; } else field+=ch; }
+      else { if(ch==='"')inQ=true; else if(ch===delim){row.push(field);field='';}
+        else if(ch==='\n'){row.push(field);rows.push(row);row=[];field='';}
+        else if(ch==='\r'){} else field+=ch; } }
+    if(field.length||row.length){row.push(field);rows.push(row);}
+    return rows.filter(r=>r.some(c=>String(c).trim().length));
+  }
+  // ── normalizadores ──
+  function normalizeDate(input,fmt){
+    if(input==null||input==='')return null; const s=String(input).trim();
+    if(fmt==='YY-MM-DD'){const m=s.match(/^(\d{2})-(\d{2})-(\d{2})/);if(m)return `20${m[1]}-${m[2]}-${m[3]}`;}
+    if(/^\d{13}$/.test(s))return new Date(Number(s)).toISOString().slice(0,10);
+    if(/^\d{10}$/.test(s))return new Date(Number(s)*1000).toISOString().slice(0,10);
+    if(/^\d{4,5}(\.\d+)?$/.test(s)){const sr=Number(s);if(sr>1&&sr<90000){const d=new Date(Date.UTC(1899,11,30)+sr*86400000);if(!isNaN(d))return d.toISOString().slice(0,10);}}
+    let m=s.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})/);if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+    m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})(?:\D|$)/);if(m)return `20${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10);
+  }
+  function toUnix(input,fmt){
+    if(input==null||input==='')return null; const s=String(input).trim();
+    if(fmt==='YY-MM-DD'){const m=s.match(/^(\d{2})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);if(m){const d=new Date(`20${m[1]}-${m[2]}-${m[3]}T${m[4]}Z`);if(!isNaN(d))return Math.floor(d.getTime()/1000);}}
+    if(/^\d{13}$/.test(s))return Math.floor(Number(s)/1000); if(/^\d{10}$/.test(s))return Number(s);
+    let iso=s; const m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+    if(m)iso=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}T${m[4]}Z`;
+    const d=new Date(iso); if(!isNaN(d))return Math.floor(d.getTime()/1000);
+    const dOnly=normalizeDate(s,fmt); return dOnly?Math.floor(new Date(dOnly+'T00:00:00Z').getTime()/1000):null;
+  }
+  function normalizeNumber(input){
+    if(input==null||input==='')return NaN; if(typeof input==='number')return input;
+    let s=String(input).trim().replace(/[^\d.,\-+eE]/g,''); if(!s)return NaN;
+    const lc=s.lastIndexOf(','),ld=s.lastIndexOf('.');
+    if(lc>-1&&ld>-1){ if(lc>ld)s=s.replace(/\./g,'').replace(',','.'); else s=s.replace(/,/g,''); }
+    else if(lc>-1){ const p=s.split(','); if(p.length===2&&p[1].length!==3)s=s.replace(',','.'); else s=s.replace(/,/g,''); }
+    const n=parseFloat(s); return isNaN(n)?NaN:n;
+  }
+  function splitTradingPair(pair){
+    if(!pair)return null; const p=String(pair).trim().toUpperCase();
+    const m=p.match(/^([A-Z0-9]+)[\/\-_]([A-Z0-9]+)$/); if(m)return {base:m[1],quote:m[2]};
+    for(const q of QUOTE_ASSETS)if(p.length>q.length&&p.endsWith(q))return {base:p.slice(0,-q.length),quote:q};
+    return null;
+  }
+  // ── adaptadores ──
+  const ADAPTERS={
+    binance_ledger:{ id:'binance_ledger',label:'Binance — Transaction History',shape:'ledger',dateFormat:'YY-MM-DD',
+      signature:['User ID','Time','Account','Operation','Coin','Change'],
+      mapping:{ts:'Time',op:'Operation',asset:'Coin',change:'Change',remark:'Remark',account:'Account'},
+      opMap:{'deposit':'deposit','fiat deposit':'deposit','withdraw':'withdraw','fiat withdraw':'withdraw_fiat','fiat withdrawal':'withdraw_fiat','transaction buy':'trade_in','transaction revenue':'trade_in','buy':'trade_in','transaction spend':'trade_out','transaction sold':'trade_out','sell':'trade_out','transaction fee':'fee','fee':'fee','binance convert':'convert','small assets exchange bnb':'convert'} },
+    binance_trade_legacy:{ id:'binance_trade_legacy',label:'Binance — Trade History (pares)',shape:'pair_trade',_provisional:true,
+      signature:['Date(UTC)','Pair','Side','Executed','Amount'],
+      mapping:{ts:'Date(UTC)',pair:'Pair',side:'Side',baseAmount:'Executed',quoteAmount:'Amount',price:'Price',fee:'Fee'} },
+    kraken_ledger:{ id:'kraken_ledger',label:'Kraken — Ledger',shape:'ledger',_provisional:true,
+      signature:['txid','refid','time','type','asset','amount','fee'],
+      mapping:{ts:'time',op:'type',asset:'asset',change:'amount',fee:'fee',group:'refid'},
+      opMap:{'deposit':'deposit','withdrawal':'withdraw','trade':'trade_in','spend':'trade_out','receive':'trade_in'} },
+  };
+  function _normCol(c){return String(c).toLowerCase().replace(/[^a-z0-9]/g,'');}
+  function detectAdapter(headers,adapters){
+    const reg=adapters||ADAPTERS; const have=new Set(headers.map(_normCol));
+    let best=null,bestScore=0;
+    for(const key of Object.keys(reg)){ const a=reg[key]; const sig=a.signature.map(_normCol);
+      const score=sig.filter(s=>have.has(s)).length/sig.length; if(score>bestScore){bestScore=score;best=a;} }
+    return (best&&bestScore>=0.7)?{adapter:best,score:bestScore}:{adapter:null,score:bestScore};
+  }
+  function _colIndex(headers,name){ if(name==null)return -1; const t=_normCol(name); return headers.findIndex(h=>_normCol(h)===t); }
+  // ── ledger → movimentos ──
+  function _ledgerRows(rows,headers,adapter){
+    const errors=[],moves=[],idx={};
+    for(const k of Object.keys(adapter.mapping))idx[k]=_colIndex(headers,adapter.mapping[k]);
+    const get=(row,k)=>(idx[k]>=0?row[idx[k]]:undefined); const fmt=adapter.dateFormat;
+    rows.forEach((row,i)=>{ const rowNo=i+2;
+      const ts=toUnix(get(row,'ts'),fmt); const date=normalizeDate(get(row,'ts'),fmt);
+      if(!date){errors.push({row:rowNo,reason:'data inválida',value:get(row,'ts')});return;}
+      const opRaw=String(get(row,'op')||'').trim().toLowerCase(); const sem=adapter.opMap[opRaw];
+      if(!sem){errors.push({row:rowNo,reason:'operação desconhecida',value:get(row,'op')});return;}
+      const change=normalizeNumber(get(row,'change')); if(isNaN(change)){errors.push({row:rowNo,reason:'change inválido'});return;}
+      moves.push({ts,date,sem,asset:String(get(row,'asset')||'').toUpperCase(),change,remark:get(row,'remark')||'',raw:Object.fromEntries(headers.map((h,j)=>[h,row[j]])),_row:rowNo});
+    });
+    return {moves,errors};
+  }
+  const COALESCE_WINDOW=5;
+  function _reconstructLedger(moves){
+    const out=[]; const byTs=new Map(); const convertBuckets=[];
+    for(const m of moves){ let key=m.ts;
+      if(m.sem==='convert'){ const acct=(m.raw&&(m.raw.Account||m.raw.account))||'';
+        const near=convertBuckets.find(b=>b.account===acct&&Math.abs(b.ts-m.ts)<=COALESCE_WINDOW);
+        if(near)key=near.key; else convertBuckets.push({key,ts:m.ts,account:acct}); }
+      if(!byTs.has(key))byTs.set(key,[]); byTs.get(key).push(m); }
+    for(const [groupKey,group] of byTs.entries()){
+      const ts=group[0].ts; const date=group[0].date;
+      const fee=group.find(m=>m.sem==='fee');
+      const feePart=fee?{feeAsset:fee.asset,feeAmount:Math.abs(fee.change)}:{feeAsset:null,feeAmount:null};
+      const ins=group.filter(m=>(m.sem==='trade_in')||(m.sem==='convert'&&m.change>0));
+      const outs=group.filter(m=>(m.sem==='trade_out')||(m.sem==='convert'&&m.change<0));
+      if(ins.length&&outs.length){
+        const n=Math.max(ins.length,outs.length);
+        for(let i=0;i<n;i++){
+          const inL=ins[Math.min(i,ins.length-1)]; const outL=outs[Math.min(i,outs.length-1)];
+          const fiatIn=FIAT.has(inL.asset),fiatOut=FIAT.has(outL.asset);
+          let side,baseAsset,baseAmount,quoteAsset,quoteAmount;
+          if(fiatOut&&!fiatIn){side='buy';baseAsset=inL.asset;baseAmount=Math.abs(inL.change);quoteAsset=outL.asset;quoteAmount=Math.abs(outL.change);}
+          else if(fiatIn&&!fiatOut){side='sell';baseAsset=outL.asset;baseAmount=Math.abs(outL.change);quoteAsset=inL.asset;quoteAmount=Math.abs(inL.change);}
+          else if(!fiatIn&&!fiatOut){side='swap';baseAsset=inL.asset;baseAmount=Math.abs(inL.change);quoteAsset=outL.asset;quoteAmount=Math.abs(outL.change);}
+          else continue;
+          out.push(Object.assign({ts,date,kind:'trade',side,baseAsset,baseAmount,quoteAsset,quoteAmount,raw:inL.raw,_row:inL._row,_group:groupKey},i===0?feePart:{feeAsset:null,feeAmount:null}));
+        }
+      } else {
+        for(const m of group){ if(m.sem==='fee')continue;
+          let kind=m.sem==='deposit'?'deposit':m.sem==='withdraw'?'withdraw':m.sem==='withdraw_fiat'?'withdraw_fiat':'unknown';
+          out.push({ts,date,kind,side:null,baseAsset:m.asset,baseAmount:Math.abs(m.change),quoteAsset:null,quoteAmount:null,feeAsset:null,feeAmount:null,raw:m.raw,_row:m._row,_group:groupKey}); }
+      }
+    }
+    out.sort((a,b)=>a.ts-b.ts||a._row-b._row); return out;
+  }
+  function _pairTrade(rows,headers,adapter){
+    const out=[],errors=[],idx={};
+    for(const k of Object.keys(adapter.mapping))idx[k]=_colIndex(headers,adapter.mapping[k]);
+    const get=(row,k)=>(idx[k]>=0?row[idx[k]]:undefined);
+    rows.forEach((row,i)=>{ const rowNo=i+2;
+      const ts=toUnix(get(row,'ts'),adapter.dateFormat); const date=normalizeDate(get(row,'ts'),adapter.dateFormat);
+      if(!date){errors.push({row:rowNo,reason:'data inválida'});return;}
+      const sp=splitTradingPair(get(row,'pair')); if(!sp){errors.push({row:rowNo,reason:'par não reconhecido',value:get(row,'pair')});return;}
+      const baseAmount=normalizeNumber(get(row,'baseAmount')); let quoteAmount=normalizeNumber(get(row,'quoteAmount'));
+      if(isNaN(quoteAmount)){const p=normalizeNumber(get(row,'price'));if(!isNaN(p)&&!isNaN(baseAmount))quoteAmount=p*baseAmount;}
+      if(isNaN(baseAmount)||baseAmount<=0){errors.push({row:rowNo,reason:'quantidade inválida'});return;}
+      const sr=String(get(row,'side')||'').toLowerCase(); const isSell=/sell|venda/.test(sr); const fiatQuote=FIAT.has(sp.quote);
+      const side=fiatQuote?(isSell?'sell':'buy'):'swap';
+      out.push({ts,date,kind:'trade',side,baseAsset:sp.base,baseAmount,quoteAsset:sp.quote,quoteAmount:isNaN(quoteAmount)?null:quoteAmount,feeAmount:normalizeNumber(get(row,'fee'))||null,feeAsset:null,raw:Object.fromEntries(headers.map((h,j)=>[h,row[j]])),_row:rowNo});
+    });
+    return {transactions:out,errors};
+  }
+  function applyMapping(rows,headers,adapter){
+    if(adapter.shape==='ledger'){const {moves,errors}=_ledgerRows(rows,headers,adapter);return {transactions:_reconstructLedger(moves),errors};}
+    return _pairTrade(rows,headers,adapter);
+  }
+  function parseExchangeCSV(text,opts){
+    opts=opts||{}; const grid=parseCSV(text,opts.delimiter);
+    if(grid.length<2)return {ok:false,reason:'ficheiro vazio ou sem dados'};
+    const headers=grid[0].map(h=>String(h).trim()); const rows=grid.slice(1);
+    if(opts.manualAdapter){const res=applyMapping(rows,headers,opts.manualAdapter);return {ok:true,source:'manual',adapter:opts.manualAdapter,headers,...res};}
+    const det=detectAdapter(headers,opts.adapters);
+    if(!det.adapter)return {ok:false,needsManualMapping:true,headers,sampleRows:rows.slice(0,5),bestScore:det.score,reason:'formato não reconhecido — mapeamento manual necessário'};
+    const res=applyMapping(rows,headers,det.adapter);
+    return {ok:true,source:'auto',adapter:det.adapter,score:det.score,provisional:!!det.adapter._provisional,headers,...res};
+  }
+  // ── mapeamento → UniversalEvents ──
+  let _seq=0;
+  function _synthTxHash(prefix,ts,salt){ _seq=(_seq+1)%1e6; return `cex:${prefix}:${ts}:${salt}:${_seq}`; }
+  function _basePriceFromQuote(t){
+    const q=(t.quoteAsset||'').toUpperCase(); if(!t.quoteAmount||!t.baseAmount)return {priceEUR:null};
+    if(q==='EUR')return {priceEUR:t.quoteAmount/t.baseAmount};
+    return {_needsFx:true,quoteAsset:q,quoteIsUsdLike:USD_STABLE.has(q),quoteAmount:t.quoteAmount,baseAmount:t.baseAmount};
+  }
+  function txToEvents(t,walletAddress,opts){
+    opts=opts||{}; const chain=opts.chain||'cex'; const evs=[]; const base=(t.baseAsset||'').toUpperCase();
+    const ts=t.ts,date=t.date;
+    function mk(o){return Object.assign({chain,walletAddress,timestamp:ts,date,category:'cex',source:'cex_import',priceEUR:null,priceNote:null},o);}
+    function pushFee(txHash){
+      if(t.feeAsset&&t.feeAmount&&t.feeAmount>0&&!FIAT.has((t.feeAsset||'').toUpperCase())){
+        evs.push(mk({direction:'out',asset:(t.feeAsset||'').toUpperCase(),amount:t.feeAmount,type:'fee',txType:'fee_spend',txHash,_cexFee:true,_feeForTxHash:txHash}));
+      }
+    }
+    if(t.kind==='trade'){
+      if(t.side==='buy'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('buy',ts,base);
+        evs.push(mk(Object.assign({direction:'in',asset:base,amount:t.baseAmount,type:'buy',txType:'buy',txHash},p.priceEUR!=null?{priceEUR:p.priceEUR,priceNote:'cex_fiat'}:{_needsFx:true,_fx:p}))); pushFee(txHash);
+      } else if(t.side==='sell'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('sell',ts,base);
+        evs.push(mk(Object.assign({direction:'out',asset:base,amount:t.baseAmount,type:'sell',txType:'sell',txHash},p.priceEUR!=null?{priceEUR:p.priceEUR,priceNote:'cex_fiat'}:{_needsFx:true,_fx:p}))); pushFee(txHash);
+      } else if(t.side==='swap'){ const txHash=_synthTxHash('swap',ts,base+'_'+(t.quoteAsset||''));
+        evs.push(mk({direction:'out',asset:(t.quoteAsset||'').toUpperCase(),amount:t.quoteAmount,type:'swap',txType:'swap',txHash}));
+        evs.push(mk({direction:'in',asset:base,amount:t.baseAmount,type:'swap',txType:'swap',txHash})); pushFee(txHash);
+      }
+    } else if(t.kind==='deposit'){
+      if(!FIAT.has(base))evs.push(mk({direction:'in',asset:base,amount:t.baseAmount,type:'deposit',txType:'acquisition',txHash:_synthTxHash('dep',ts,base),_cexTransfer:true,_needsBasis:true,priceNote:'cex_deposit_basis_pending'}));
+    } else if(t.kind==='withdraw'){
+      if(!FIAT.has(base))evs.push(mk({direction:'out',asset:base,amount:t.baseAmount,type:'withdraw',txType:'self_transfer',txHash:_synthTxHash('wd',ts,base),_cexTransfer:true}));
+    } else if(t.kind==='withdraw_fiat'){ /* informativo — sem evento */ }
+    return evs;
+  }
+  function txsToEvents(transactions,walletAddress,opts){
+    const all=[]; for(const t of (transactions||[]))for(const e of txToEvents(t,walletAddress,opts))all.push(e); return all;
+  }
+  // ── enriquecimento FX (USD→EUR) p/ pernas com quote não-EUR ──
+  // Usa getEurRate do FIFO engine quando disponível; senão live.eurRate.
+  async function enrichFx(events){
+    for(const e of events){
+      if(!e._needsFx||!e._fx)continue; const fx=e._fx; let rate=null;
+      try{ if(window.aurumPriceOracle&&window.aurumPriceOracle.getEurRate)rate=await window.aurumPriceOracle.getEurRate(e.date); }catch(_){}
+      if(rate==null)rate=(typeof live!=='undefined'&&live.eurRate)?live.eurRate:0.92;
+      // quote não-EUR (ex: USDC/USDT/USD) → converte a EUR pela taxa do dia
+      const quoteEUR=fx.quoteAmount*rate;
+      e.priceEUR=quoteEUR/fx.baseAmount; e.priceNote='cex_fx'; delete e._needsFx; delete e._fx;
+    }
+    return events;
+  }
+  return { parseExchangeCSV, txsToEvents, txToEvents, enrichFx, detectAdapter, ADAPTERS, FIAT, USD_STABLE, _internal:{normalizeDate,normalizeNumber,splitTradingPair,parseCSV} };
+})();
+window.aurumCexImport = aurumCexImport;
+
+// ── Wallet sintética CEX: criação + import ──────────────────────────────────
+// Cria (ou reutiliza) uma wallet kind:'cex' e importa o CSV para state.events.
+async function importCexCsv(exchange, label, csvText, opts) {
+  opts = opts || {};
+  const parsed = aurumCexImport.parseExchangeCSV(csvText, opts);
+  if (!parsed.ok) {
+    if (parsed.needsManualMapping) return { ok:false, needsManualMapping:true, headers:parsed.headers, sampleRows:parsed.sampleRows };
+    return { ok:false, reason: parsed.reason || 'falha a processar CSV' };
+  }
+  // wallet sintética
+  const addr = `cex:${exchange}:${(label||'main').toLowerCase().replace(/\s+/g,'_')}`;
+  let w = state.wallets.find(x => x.addr === addr);
+  if (!w) {
+    w = { id: genId(), name: label || (exchange.charAt(0).toUpperCase()+exchange.slice(1)), addr, kind:'cex', exchange, sol:'', alchemyKey:'' };
+    state.wallets.push(w);
+  }
+  // mapear → eventos (com walletAddress = addr sintético)
+  const events = aurumCexImport.txsToEvents(parsed.transactions, addr, { chain: 'cex' });
+  events.forEach(e => { e.id = `cex:${exchange}:${e.txHash}:${e.asset}:${e.direction}`; });
+  // enriquecer FX (quote não-EUR)
+  await aurumCexImport.enrichFx(events);
+  // dedup contra eventos já existentes desta wallet (re-import idempotente)
+  state.events = state.events || [];
+  const existing = new Set(state.events.filter(e=> (e.walletAddress||'')===addr).map(e=>e.id));
+  const fresh = events.filter(e => !existing.has(e.id));
+  state.events.push(...fresh);
+  // registar o import no histórico
+  state.imports = state.imports || [];
+  state.imports.push({ id: genId(), walletId: w.id, date: new Date().toISOString(),
+    count: fresh.length, filename: opts.filename || `${exchange}.csv`, kind:'cex', exchange,
+    adapter: parsed.adapter && parsed.adapter.id, provisional: !!parsed.provisional });
+  // invalidar cache FIFO desta wallet
+  try { delete window['_fifoCache_'+w.id]; } catch(_){}
+  saveState();
+  return { ok:true, wallet:w, imported: fresh.length, total: events.length,
+    txs: parsed.transactions.length, errors: parsed.errors, adapter: parsed.adapter,
+    provisional: !!parsed.provisional, source: parsed.source };
+}
+window.importCexCsv = importCexCsv;
+
+
+
 
 // ─────────────────────────────────────────────────
 // UniversalIndexer — orchestrates indexing per wallet
@@ -15703,6 +15968,14 @@ function reapplyPricesToHistory() {
 async function refreshAll() {
   const w = activeWallet();
   if (!w) return;
+  // Wallets CEX (kind:'cex') não têm dados on-chain — os eventos vêm do import
+  // de CSV. Saltar o fetch evita chamadas Alchemy inúteis e erros de consola.
+  if (w.kind === 'cex') {
+    await fetchEurRate().catch(()=>{});
+    live.lastRefresh = new Date().toLocaleTimeString('pt-PT');
+    render();
+    return;
+  }
   const btn = document.getElementById('refreshBtn');
   if (btn) { btn.textContent='...'; btn.disabled=true; }
   const chainKeys = Object.keys(CHAINS);
