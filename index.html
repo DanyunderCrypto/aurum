@@ -2872,6 +2872,51 @@ body.stealth-mode .stealth-badge {
 </div>
 </div>
 
+<!-- IMPORT CEX (exchange CSV) -->
+<div class="modal-overlay hidden" id="modalCexImport">
+<div class="modal" style="max-width:820px;max-height:90vh;display:flex;flex-direction:column">
+  <div class="modal-head"><span class="modal-title">Importar Exchange (CSV)</span><button class="btn-ghost" onclick="closeModal('modalCexImport')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Exchange</label>
+        <select class="form-select" id="cex_exchange" onchange="updateCexHint()">
+          <option value="binance">Binance</option>
+          <option value="kraken">Kraken</option>
+          <option value="okx">OKX</option>
+          <option value="bybit">Bybit</option>
+          <option value="kucoin">KuCoin</option>
+          <option value="gate">Gate.io</option>
+          <option value="bingx">BingX</option>
+          <option value="mexc">MEXC</option>
+          <option value="mercadobitcoin">Mercado Bitcoin</option>
+          <option value="other">Outra</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Nome da conta</label><input class="form-input" id="cex_label" placeholder="ex: Binance principal" value="main"></div>
+    </div>
+    <div class="alert alert-info" id="cexHint" style="margin-bottom:1rem;font-size:0.8rem">
+      <span>ℹ</span><div>Exporta o teu <strong>Transaction History</strong> da Binance em CSV e arrasta-o aqui. O formato é auto-detetado.</div>
+    </div>
+    <div class="drop-zone" id="cexDropZone"
+       onclick="document.getElementById('cexFileInput').click()"
+       ondragover="event.preventDefault();this.classList.add('drag-active')"
+       ondragleave="this.classList.remove('drag-active')"
+       ondragend="this.classList.remove('drag-active')"
+       ondrop="event.preventDefault();this.classList.remove('drag-active');if(event.dataTransfer.files.length){handleCexFile(event.dataTransfer.files[0]);}">
+      <span class="drop-zone-icon">⇄</span>
+      <p style="color:var(--muted);font-size:0.88rem"><strong style="color:var(--gold)">Clica ou arrasta o CSV da exchange aqui</strong><br>O ficheiro fica no teu browser — nada é enviado para servidores</p>
+      <input type="file" id="cexFileInput" accept=".csv,.txt" style="display:none" onchange="if(event.target.files.length)handleCexFile(event.target.files[0])">
+    </div>
+    <div id="cexManualMap" class="hidden" style="margin-top:1rem"></div>
+    <div id="cexPreview" style="margin-top:1rem"></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-gold" id="cexConfirmBtn" onclick="confirmCexImport()" style="display:none">✓ Importar</button>
+    <button class="btn btn-ghost" onclick="closeModal('modalCexImport')">Cancelar</button>
+  </div>
+</div>
+</div>
+
 <!-- ADD COLLATERAL -->
 <div class="modal-overlay hidden" id="modalCollateral">
 <div class="modal">
@@ -4267,6 +4312,10 @@ function _ensureStateShape() {
   if (!Array.isArray(state.defiIncome)) state.defiIncome = [];
   if (!state.settings || typeof state.settings !== 'object') state.settings = {};
   if (!state.settings.defiIncomeTreatment) state.settings.defiIncomeTreatment = 'deferred';
+  // CEX import: wallets sintéticas têm kind:'cex'; as on-chain ficam 'evm' por defeito.
+  if (Array.isArray(state.wallets)) {
+    state.wallets.forEach(w => { if (w && !w.kind) w.kind = (typeof w.addr === 'string' && w.addr.startsWith('cex:')) ? 'cex' : 'evm'; });
+  }
 }
 
 let live = {
@@ -7377,8 +7426,9 @@ const aurumCexImport = (() => {
     return {ok:true,source:'auto',adapter:det.adapter,score:det.score,provisional:!!det.adapter._provisional,headers,...res};
   }
   // ── mapeamento → UniversalEvents ──
-  let _seq=0;
-  function _synthTxHash(prefix,ts,salt){ _seq=(_seq+1)%1e6; return `cex:${prefix}:${ts}:${salt}:${_seq}`; }
+  // txHash sintético DETERMINÍSTICO: baseado em ts + _group + _row da transação
+  // (estáveis entre parses) → garante dedup idempotente no re-import.
+  function _synthTxHash(prefix,t,salt){ return `cex:${prefix}:${t.ts}:${t._group!=null?t._group:t.ts}:${t._row!=null?t._row:'x'}:${salt}`; }
   function _basePriceFromQuote(t){
     const q=(t.quoteAsset||'').toUpperCase(); if(!t.quoteAmount||!t.baseAmount)return {priceEUR:null};
     if(q==='EUR')return {priceEUR:t.quoteAmount/t.baseAmount};
@@ -7394,18 +7444,18 @@ const aurumCexImport = (() => {
       }
     }
     if(t.kind==='trade'){
-      if(t.side==='buy'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('buy',ts,base);
+      if(t.side==='buy'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('buy',t,base);
         evs.push(mk(Object.assign({direction:'in',asset:base,amount:t.baseAmount,type:'buy',txType:'buy',txHash},p.priceEUR!=null?{priceEUR:p.priceEUR,priceNote:'cex_fiat'}:{_needsFx:true,_fx:p}))); pushFee(txHash);
-      } else if(t.side==='sell'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('sell',ts,base);
+      } else if(t.side==='sell'){ const p=_basePriceFromQuote(t); const txHash=_synthTxHash('sell',t,base);
         evs.push(mk(Object.assign({direction:'out',asset:base,amount:t.baseAmount,type:'sell',txType:'sell',txHash},p.priceEUR!=null?{priceEUR:p.priceEUR,priceNote:'cex_fiat'}:{_needsFx:true,_fx:p}))); pushFee(txHash);
-      } else if(t.side==='swap'){ const txHash=_synthTxHash('swap',ts,base+'_'+(t.quoteAsset||''));
+      } else if(t.side==='swap'){ const txHash=_synthTxHash('swap',t,base+'_'+(t.quoteAsset||''));
         evs.push(mk({direction:'out',asset:(t.quoteAsset||'').toUpperCase(),amount:t.quoteAmount,type:'swap',txType:'swap',txHash}));
         evs.push(mk({direction:'in',asset:base,amount:t.baseAmount,type:'swap',txType:'swap',txHash})); pushFee(txHash);
       }
     } else if(t.kind==='deposit'){
-      if(!FIAT.has(base))evs.push(mk({direction:'in',asset:base,amount:t.baseAmount,type:'deposit',txType:'acquisition',txHash:_synthTxHash('dep',ts,base),_cexTransfer:true,_needsBasis:true,priceNote:'cex_deposit_basis_pending'}));
+      if(!FIAT.has(base))evs.push(mk({direction:'in',asset:base,amount:t.baseAmount,type:'deposit',txType:'acquisition',txHash:_synthTxHash('dep',t,base),_cexTransfer:true,_needsBasis:true,priceNote:'cex_deposit_basis_pending'}));
     } else if(t.kind==='withdraw'){
-      if(!FIAT.has(base))evs.push(mk({direction:'out',asset:base,amount:t.baseAmount,type:'withdraw',txType:'self_transfer',txHash:_synthTxHash('wd',ts,base),_cexTransfer:true}));
+      if(!FIAT.has(base))evs.push(mk({direction:'out',asset:base,amount:t.baseAmount,type:'withdraw',txType:'self_transfer',txHash:_synthTxHash('wd',t,base),_cexTransfer:true}));
     } else if(t.kind==='withdraw_fiat'){ /* informativo — sem evento */ }
     return evs;
   }
@@ -7468,6 +7518,179 @@ async function importCexCsv(exchange, label, csvText, opts) {
     provisional: !!parsed.provisional, source: parsed.source };
 }
 window.importCexCsv = importCexCsv;
+
+// ── UI do import CEX ────────────────────────────────────────────────────────
+let _cexPending = null; // { csvText, parsed, filename }
+
+function openCexImportModal() {
+  _cexPending = null;
+  const mm = document.getElementById('cexManualMap'); if (mm) { mm.classList.add('hidden'); mm.innerHTML=''; }
+  const pv = document.getElementById('cexPreview'); if (pv) pv.innerHTML='';
+  const btn = document.getElementById('cexConfirmBtn'); if (btn) btn.style.display='none';
+  const fi = document.getElementById('cexFileInput'); if (fi) fi.value='';
+  updateCexHint();
+  openModal('modalCexImport');
+}
+window.openCexImportModal = openCexImportModal;
+
+function updateCexHint() {
+  const ex = document.getElementById('cex_exchange')?.value || 'binance';
+  const hints = {
+    binance: 'Exporta o teu <strong>Transaction History</strong> (CSV) em Wallet → Transaction History → Export. O formato ledger é auto-detetado.',
+    kraken: 'Exporta o <strong>Ledgers</strong> CSV em History → Export → Ledgers. (Adaptador provisório — confirma o preview.)',
+    other: 'Se o formato não for reconhecido, vais poder mapear as colunas manualmente a seguir.',
+  };
+  const el = document.getElementById('cexHint');
+  if (el) el.querySelector('div').innerHTML = hints[ex] || hints.other;
+}
+window.updateCexHint = updateCexHint;
+
+function handleCexFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = String(e.target.result || '');
+    const parsed = window.aurumCexImport.parseExchangeCSV(text);
+    _cexPending = { csvText: text, parsed, filename: file.name };
+    if (!parsed.ok && parsed.needsManualMapping) {
+      _renderCexManualMap(parsed);
+    } else if (!parsed.ok) {
+      document.getElementById('cexPreview').innerHTML = `<div class="alert alert-warn"><span>⚠</span><div>${parsed.reason||'Não foi possível ler o ficheiro.'}</div></div>`;
+      document.getElementById('cexConfirmBtn').style.display='none';
+    } else {
+      _renderCexPreview(parsed);
+    }
+  };
+  reader.readAsText(file);
+}
+window.handleCexFile = handleCexFile;
+
+function _summarizeTxs(txs) {
+  const s = { buy:0, sell:0, swap:0, deposit:0, withdraw:0, withdraw_fiat:0, unknown:0 };
+  for (const t of txs) {
+    if (t.kind === 'trade') s[t.side]++;
+    else if (s[t.kind] != null) s[t.kind]++;
+    else s.unknown++;
+  }
+  return s;
+}
+
+function _renderCexPreview(parsed) {
+  const txs = parsed.transactions || [];
+  const s = _summarizeTxs(txs);
+  const errs = parsed.errors || [];
+  const prov = parsed.provisional ? `<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span><div>Adaptador <strong>provisório</strong> para este formato. Confere os valores no preview antes de importar.</div></div>` : '';
+  const sample = txs.slice(0, 8).map(t => {
+    const d = t.kind==='trade'
+      ? `${t.side==='buy'?'Compra':t.side==='sell'?'Venda':'Swap'} · ${fmt(t.baseAmount,4)} ${t.baseAsset}${t.quoteAsset?` ↔ ${fmt(t.quoteAmount,4)} ${t.quoteAsset}`:''}`
+      : `${t.kind} · ${fmt(t.baseAmount,4)} ${t.baseAsset}`;
+    const fee = t.feeAmount ? ` <span style="color:var(--muted)">(fee ${fmt(t.feeAmount,6)} ${t.feeAsset||''})</span>` : '';
+    return `<tr><td style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">${t.date}</td><td style="font-size:0.78rem">${d}${fee}</td></tr>`;
+  }).join('');
+  const chips = [
+    s.buy?`<span class="badge badge-green">${s.buy} compras</span>`:'',
+    s.sell?`<span class="badge badge-gold">${s.sell} vendas→fiat (alienações)</span>`:'',
+    s.swap?`<span class="badge badge-cyan">${s.swap} swaps (permuta)</span>`:'',
+    s.deposit?`<span class="badge badge-muted">${s.deposit} depósitos</span>`:'',
+    s.withdraw?`<span class="badge badge-muted">${s.withdraw} levantamentos</span>`:'',
+    s.withdraw_fiat?`<span class="badge badge-muted">${s.withdraw_fiat} off-ramp fiat</span>`:'',
+  ].filter(Boolean).join(' ');
+  document.getElementById('cexManualMap').classList.add('hidden');
+  document.getElementById('cexPreview').innerHTML = `
+    ${prov}
+    <div class="alert alert-info" style="font-size:0.8rem"><span>✓</span><div>Detetado: <strong>${parsed.adapter.label}</strong> · ${txs.length} transações${errs.length?` · <span style="color:var(--amber)">${errs.length} linhas ignoradas</span>`:''}</div></div>
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.75rem 0">${chips}</div>
+    <div style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse"><tbody>${sample}</tbody></table>
+    </div>
+    ${txs.length>8?`<div style="text-align:center;color:var(--muted);font-size:0.72rem;margin-top:0.4rem">… e mais ${txs.length-8} transações</div>`:''}
+    <div class="alert alert-info" style="font-size:0.74rem;margin-top:0.75rem"><span>⬡</span><div>As vendas a fiat entram como <strong>alienações</strong> no motor fiscal. Swaps cripto↔cripto são permuta (basis carrega). Fees em cripto consomem inventário sem gerar imposto. Tratamento conservador, alinhado com a lei PT.</div></div>`;
+  document.getElementById('cexConfirmBtn').style.display = txs.length ? 'inline-flex' : 'none';
+}
+
+function _renderCexManualMap(parsed) {
+  const headers = parsed.headers || [];
+  // campos mínimos que o utilizador mapeia (formato ledger genérico)
+  const fields = [
+    { k:'ts', label:'Data/Hora' },
+    { k:'op', label:'Operação (tipo)' },
+    { k:'asset', label:'Moeda/Ativo' },
+    { k:'change', label:'Quantidade (+/-)' },
+  ];
+  const opt = (sel) => headers.map(h=>`<option value="${h.replace(/"/g,'&quot;')}" ${_normColLabel(h)===_normColLabel(sel)?'selected':''}>${h}</option>`).join('');
+  const guess = { ts:'time', op:'operation', asset:'coin', change:'change' };
+  const rows = fields.map(f=>`
+    <div class="form-group">
+      <label class="form-label">${f.label}</label>
+      <select class="form-select" data-cexmap="${f.k}">
+        <option value="">— ignorar —</option>
+        ${headers.map(h=>`<option value="${h.replace(/"/g,'&quot;')}" ${_normColLabel(h)===guess[f.k]?'selected':''}>${h}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  const sample = (parsed.sampleRows||[]).slice(0,3).map(r=>`<tr>${r.map(c=>`<td style="font-size:0.68rem;padding:2px 6px;border:1px solid var(--border)">${String(c).slice(0,18)}</td>`).join('')}</tr>`).join('');
+  document.getElementById('cexPreview').innerHTML='';
+  const mm = document.getElementById('cexManualMap');
+  mm.classList.remove('hidden');
+  mm.innerHTML = `
+    <div class="alert alert-warn" style="font-size:0.8rem"><span>⚠</span><div>Formato não reconhecido automaticamente. Mapeia as colunas abaixo (formato tipo ledger: uma linha por movimento).</div></div>
+    <div style="overflow:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:0.75rem"><table style="border-collapse:collapse"><thead><tr>${headers.map(h=>`<th style="font-size:0.66rem;padding:2px 6px;border:1px solid var(--border);color:var(--gold)">${h}</th>`).join('')}</tr></thead><tbody>${sample}</tbody></table></div>
+    <div class="form-row">${rows}</div>
+    <button class="btn btn-outline btn-sm" onclick="applyCexManualMap()">Aplicar mapeamento →</button>`;
+  document.getElementById('cexConfirmBtn').style.display='none';
+}
+
+function _normColLabel(c){ return String(c||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function applyCexManualMap() {
+  const sels = document.querySelectorAll('#cexManualMap [data-cexmap]');
+  const mapping = {};
+  sels.forEach(s => { const k = s.getAttribute('data-cexmap'); if (s.value) mapping[k] = s.value; });
+  if (!mapping.ts || !mapping.op || !mapping.asset || !mapping.change) {
+    toast('Mapeia pelo menos Data, Operação, Ativo e Quantidade', 'warn'); return;
+  }
+  // adaptador manual genérico tipo ledger com opMap permissivo
+  const manualAdapter = {
+    id:'manual_ledger', label:'Mapeamento manual', shape:'ledger', dateFormat: null,
+    signature: [], mapping,
+    opMap: { 'deposit':'deposit','fiat deposit':'deposit','withdraw':'withdraw','withdrawal':'withdraw',
+      'fiat withdraw':'withdraw_fiat','fiat withdrawal':'withdraw_fiat',
+      'buy':'trade_in','transaction buy':'trade_in','transaction revenue':'trade_in','revenue':'trade_in',
+      'sell':'trade_out','transaction spend':'trade_out','transaction sold':'trade_out','sold':'trade_out','spend':'trade_out',
+      'fee':'fee','transaction fee':'fee','convert':'convert','binance convert':'convert' },
+  };
+  const parsed = window.aurumCexImport.parseExchangeCSV(_cexPending.csvText, { manualAdapter });
+  _cexPending.parsed = parsed;
+  if (parsed.ok && parsed.transactions.length) _renderCexPreview(parsed);
+  else toast('Mapeamento não produziu transações — verifica as colunas', 'warn');
+}
+window.applyCexManualMap = applyCexManualMap;
+
+async function confirmCexImport() {
+  if (!_cexPending || !_cexPending.parsed || !_cexPending.parsed.ok) { toast('Nada para importar', 'warn'); return; }
+  const exchange = document.getElementById('cex_exchange')?.value || 'binance';
+  const label = document.getElementById('cex_label')?.value?.trim() || 'main';
+  const btn = document.getElementById('cexConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'A importar…'; }
+  try {
+    const opts = {};
+    if (_cexPending.parsed.adapter && _cexPending.parsed.adapter.id === 'manual_ledger') opts.manualAdapter = _cexPending.parsed.adapter;
+    opts.filename = _cexPending.filename;
+    const res = await importCexCsv(exchange, label, _cexPending.csvText, opts);
+    if (!res.ok) { toast(res.reason || 'Falha no import', 'warn', 6000); return; }
+    state.activeWId = res.wallet.id;
+    closeModal('modalCexImport');
+    toast(`✓ ${res.imported} eventos importados de ${res.txs} transações (${exchange})${res.provisional?' · adaptador provisório':''}`, 'success', 7000);
+    try { delete window['_fifoCache_'+res.wallet.id]; } catch(_){}
+    boot();
+  } catch (e) {
+    console.error('[CEX import]', e);
+    toast('Erro no import: ' + e.message, 'warn', 6000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Importar'; }
+  }
+}
+window.confirmCexImport = confirmCexImport;
+
 
 
 
@@ -12681,7 +12904,7 @@ function stopInterestTicker() { cancelAnimationFrame(interestAnimId); }
 // ══════════════════════════════════════════════════════════
 function renderWallets() {
   return `
-    <div class="section-row"><div class="section-label">Gestão de Wallets</div><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">+ Adicionar Wallet</button></div>
+    <div class="section-row"><div class="section-label">Gestão de Wallets</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="openCexImportModal()">↑ Importar Exchange (CSV)</button><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">+ Adicionar Wallet</button></div></div>
     <div style="display:flex;flex-direction:column;gap:0.75rem">
       ${state.wallets.map(w=>{
         const isActive = w.id===state.activeWId;
@@ -12689,8 +12912,8 @@ function renderWallets() {
         return `<div class="panel" style="border-color:${isActive?'var(--gold)':'var(--border)'}">
           <div class="panel-body" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
             <div>
-              <div style="font-weight:700;font-size:1rem;margin-bottom:0.3rem">${w.name} ${isActive?'<span class="badge badge-gold" style="vertical-align:middle">Activa</span>':''}</div>
-              <div style="font-family:var(--mono);font-size:0.72rem;color:var(--gold);margin-bottom:0.3rem">${w.addr||'—'}</div>
+              <div style="font-weight:700;font-size:1rem;margin-bottom:0.3rem">${w.name} ${isActive?'<span class="badge badge-gold" style="vertical-align:middle">Activa</span>':''} ${w.kind==='cex'?`<span class="badge badge-cyan" style="vertical-align:middle">⇄ ${(w.exchange||'CEX').toUpperCase()}</span>`:''}</div>
+              <div style="font-family:var(--mono);font-size:0.72rem;color:var(--gold);margin-bottom:0.3rem">${w.kind==='cex'?('Exchange · '+(w.addr||'').replace(/^cex:/,'')):(w.addr||'—')}</div>
               ${w.bitcoinXpub ? `<div style="font-family:var(--mono);font-size:0.7rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinXpub.slice(0,10)}…${w.bitcoinXpub.slice(-6)} <span style="opacity:0.6">(xpub)</span></div>` : ''}
               ${w.bitcoinAddress ? `<div style="font-family:var(--mono);font-size:0.7rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinAddress.slice(0,10)}…${w.bitcoinAddress.slice(-6)}</div>` : ''}
               ${w.sol?`<div style="font-family:var(--mono);font-size:0.7rem;color:var(--blue)">SOL: ${w.sol.slice(0,8)}...${w.sol.slice(-4)}</div>`:''}
