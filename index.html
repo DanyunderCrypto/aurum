@@ -3690,6 +3690,35 @@ const CHAINS = {
   gnosis:   { name:'Gnosis',    id:100,    color:'#04795B', rpcs:['https://gnosis.drpc.org','https://gnosis.publicnode.com','https://rpc.gnosischain.com','https://1rpc.io/gnosis'], explorer:'https://gnosisscan.io', explorerApi:'https://api.gnosisscan.io/api', aavePool:'0xb50201558B00496A145fE76f7424749556E326D8' },
   linea:    { name:'Linea',     id:59144,  color:'#61DFFF', rpcs:['https://linea.drpc.org','https://linea.publicnode.com','https://rpc.linea.build','https://linea-mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'], explorer:'https://lineascan.build', explorerApi:'https://api.lineascan.build/api', aavePool:'0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9', },
   katana:   { name:'Katana',    id:747474, color:'#FF5C5C', rpcs:['https://rpc.katana.network','https://katana.drpc.org'], explorer:'https://katanascan.com', explorerApi:null, aavePool:null, info:'L2 DeFi by Polygon — money legos' },
+  avalanche: { name:'Avalanche', id:43114, color:'#E84142', rpcs:['https://api.avax.network/ext/bc/C/rpc'], explorer:'https://snowtrace.io', explorerApi:null, aavePool:null },
+  bsc:       { name:'BNB Smart Chain', id:56, color:'#F0B90B', rpcs:['https://bsc-dataseed.bnbchain.org'], explorer:'https://bscscan.com', explorerApi:null, aavePool:null },
+  mantle:    { name:'Mantle', id:5000, color:'#65B3AE', rpcs:['https://rpc.mantle.xyz'], explorer:'https://mantlescan.xyz', explorerApi:null, aavePool:null },
+  blast:     { name:'Blast', id:81457, color:'#FCFC03', rpcs:['https://rpc.blast.io'], explorer:'https://blastscan.io', explorerApi:null, aavePool:null },
+  celo:      { name:'Celo', id:42220, color:'#FCFF52', rpcs:['https://forno.celo.org'], explorer:'https://celoscan.io', explorerApi:null, aavePool:null },
+  sonic:     { name:'Sonic', id:146, color:'#FE9A4D', rpcs:['https://rpc.soniclabs.com'], explorer:'https://sonicscan.org', explorerApi:null, aavePool:null },
+  zksync:    { name:'zkSync Era', id:324, color:'#8C8DFC', rpcs:['https://mainnet.era.zksync.io'], explorer:'https://era.zksync.network', explorerApi:null, aavePool:null },
+  zkevm:     { name:'Polygon zkEVM', id:1101, color:'#7B3FE4', rpcs:['https://zkevm-rpc.com'], explorer:'https://zkevm.polygonscan.com', explorerApi:null, aavePool:null },
+  metis:     { name:'Metis', id:1088, color:'#00DACC', rpcs:['https://andromeda.metis.io/?owner=1088'], explorer:'https://explorer.metis.io', explorerApi:null, aavePool:null },
+  zora:      { name:'Zora', id:7777777, color:'#000000', rpcs:['https://rpc.zora.energy'], explorer:'https://explorer.zora.energy', explorerApi:null, aavePool:null },
+  berachain: { name:'Berachain', id:80094, color:'#814625', rpcs:['https://rpc.berachain.com'], explorer:'https://berascan.com', explorerApi:null, aavePool:null },
+  unichain:  { name:'Unichain', id:130, color:'#FF007A', rpcs:['https://mainnet.unichain.org'], explorer:'https://uniscan.xyz', explorerApi:null, aavePool:null },
+  mode:      { name:'Mode', id:34443, color:'#DFFE00', rpcs:['https://mainnet.mode.network'], explorer:'https://explorer.mode.network', explorerApi:null, aavePool:null },
+  ink:       { name:'Ink', id:57073, color:'#7132F5', rpcs:['https://rpc-gel.inkonchain.com'], explorer:'https://explorer.inkonchain.com', explorerApi:null, aavePool:null },
+  soneium:   { name:'Soneium', id:1868, color:'#000000', rpcs:['https://rpc.soneium.org'], explorer:'https://soneium.blockscout.com', explorerApi:null, aavePool:null },
+  worldchain:{ name:'World Chain', id:480, color:'#000000', rpcs:['https://worldchain-mainnet.g.alchemy.com/public'], explorer:'https://worldscan.org', explorerApi:null, aavePool:null },
+  apechain:  { name:'ApeChain', id:33139, color:'#0054FA', rpcs:['https://rpc.apechain.com'], explorer:'https://apescan.io', explorerApi:null, aavePool:null },
+  ronin:     { name:'Ronin', id:2020, color:'#1273EA', rpcs:['https://api.roninchain.com/rpc'], explorer:'https://app.roninchain.com', explorerApi:null, aavePool:null },
+  frax:      { name:'Fraxtal', id:252, color:'#000000', rpcs:['https://rpc.frax.com'], explorer:'https://fraxscan.com', explorerApi:null, aavePool:null },
+  moonbeam:  { name:'Moonbeam', id:1284, color:'#53CBC8', rpcs:['https://rpc.api.moonbeam.network'], explorer:'https://moonscan.io', explorerApi:null, aavePool:null },
+  opbnb:     { name:'opBNB', id:204, color:'#F0B90B', rpcs:['https://opbnb-mainnet-rpc.bnbchain.org'], explorer:'https://opbnb.bscscan.com', explorerApi:null, aavePool:null },
+  bob:       { name:'BOB', id:60808, color:'#F25D00', rpcs:['https://rpc.gobob.xyz'], explorer:'https://explorer.gobob.xyz', explorerApi:null, aavePool:null },
+  superseed: { name:'Superseed', id:5330, color:'#C2F04C', rpcs:['https://mainnet.superseed.xyz'], explorer:'https://explorer.superseed.xyz', explorerApi:null, aavePool:null },
+  astar:     { name:'Astar', id:592, color:'#1B6DFF', rpcs:['https://evm.astar.network'], explorer:'https://astar.blockscout.com', explorerApi:null, aavePool:null },
+  sei:       { name:'Sei', id:1329, color:'#9E1F19', rpcs:['https://evm-rpc.sei-apis.com'], explorer:'https://seitrace.com', explorerApi:null, aavePool:null },
+  abstract:  { name:'Abstract', id:2741, color:'#00D54B', rpcs:['https://api.mainnet.abs.xyz'], explorer:'https://abscan.org', explorerApi:null, aavePool:null },
+  lens:      { name:'Lens', id:232, color:'#00501E', rpcs:['https://rpc.lens.xyz'], explorer:'https://explorer.lens.xyz', explorerApi:null, aavePool:null },
+  flow:      { name:'Flow EVM', id:747, color:'#00EF8B', rpcs:['https://mainnet.evm.nodes.onflow.org'], explorer:'https://evm.flowscan.io', explorerApi:null, aavePool:null },
+  rootstock: { name:'Rootstock', id:30, color:'#FF9100', rpcs:['https://public-node.rsk.co'], explorer:'https://explorer.rsk.co', explorerApi:null, aavePool:null },
 };
 
 // Morpho Blue main contract (same address on Ethereum + Base via deterministic deploy)
@@ -3743,6 +3772,35 @@ const ALCHEMY_RPCS = {
   gnosis:   null,
   linea:    'https://linea-mainnet.g.alchemy.com/v2/',
   katana:   null, // Alchemy doesn't support Katana yet — uses public RPC
+  avalanche: 'https://avax-mainnet.g.alchemy.com/v2/',
+  bsc:       'https://bnb-mainnet.g.alchemy.com/v2/',
+  mantle:    'https://mantle-mainnet.g.alchemy.com/v2/',
+  blast:     'https://blast-mainnet.g.alchemy.com/v2/',
+  celo:      'https://celo-mainnet.g.alchemy.com/v2/',
+  sonic:     'https://sonic-mainnet.g.alchemy.com/v2/',
+  zksync:    'https://zksync-mainnet.g.alchemy.com/v2/',
+  zkevm:     'https://polygonzkevm-mainnet.g.alchemy.com/v2/',
+  metis:     'https://metis-mainnet.g.alchemy.com/v2/',
+  zora:      'https://zora-mainnet.g.alchemy.com/v2/',
+  berachain: 'https://berachain-mainnet.g.alchemy.com/v2/',
+  unichain:  'https://unichain-mainnet.g.alchemy.com/v2/',
+  mode:      'https://mode-mainnet.g.alchemy.com/v2/',
+  ink:       'https://ink-mainnet.g.alchemy.com/v2/',
+  soneium:   'https://soneium-mainnet.g.alchemy.com/v2/',
+  worldchain:'https://worldchain-mainnet.g.alchemy.com/v2/',
+  apechain:  'https://apechain-mainnet.g.alchemy.com/v2/',
+  ronin:     'https://ronin-mainnet.g.alchemy.com/v2/',
+  frax:      'https://frax-mainnet.g.alchemy.com/v2/',
+  moonbeam:  'https://moonbeam-mainnet.g.alchemy.com/v2/',
+  opbnb:     'https://opbnb-mainnet.g.alchemy.com/v2/',
+  bob:       'https://bob-mainnet.g.alchemy.com/v2/',
+  superseed: 'https://superseed-mainnet.g.alchemy.com/v2/',
+  astar:     'https://astar-mainnet.g.alchemy.com/v2/',
+  sei:       'https://sei-mainnet.g.alchemy.com/v2/',
+  abstract:  'https://abstract-mainnet.g.alchemy.com/v2/',
+  lens:      'https://lens-mainnet.g.alchemy.com/v2/',
+  flow:      'https://flow-mainnet.g.alchemy.com/v2/',
+  rootstock: 'https://rootstock-mainnet.g.alchemy.com/v2/',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5023,7 +5081,7 @@ const ALCHEMY_SUBDOMAINS = {
 const TRANSFER_CATEGORIES = ['external', 'internal', 'erc20', 'erc721', 'erc1155'];
 
 // Chains supported in Sprint 4 (will expand)
-const INDEXER_SUPPORTED_CHAINS = ['eth', 'base', 'arbitrum', 'optimism'];
+const INDEXER_SUPPORTED_CHAINS = ['eth', 'base', 'arbitrum', 'optimism', 'polygon', 'scroll', 'linea', 'avalanche', 'bsc', 'mantle', 'blast', 'celo', 'sonic', 'zksync', 'zkevm', 'metis', 'zora', 'berachain', 'unichain', 'mode', 'ink', 'soneium', 'worldchain', 'apechain', 'ronin', 'frax', 'moonbeam', 'opbnb', 'bob', 'superseed', 'astar', 'sei', 'abstract', 'lens', 'flow', 'rootstock'];
 
 // ─────────────────────────────────────────────────
 // AlchemyAdapter — getAssetTransfers wrapper
