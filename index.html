@@ -3745,6 +3745,33 @@ const ALCHEMY_RPCS = {
   katana:   null, // Alchemy doesn't support Katana yet — uses public RPC
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAVE ALCHEMY DA EMPRESA (Zatami) — valor por defeito para o utilizador não
+// ter de criar a sua própria chave. Substitui o marcador abaixo pela chave real
+// ANTES de fazer upload. Deixa como está (vazio) para forçar chave por utilizador.
+//
+// ⚠ TEMPORÁRIO / BETA: enquanto a app corre só no browser, esta chave fica
+// visível no código publicado. Aceitável em beta privado com limites de gasto
+// baixos + allowlist de domínios na Alchemy. Para lançamento PÚBLICO, esta
+// chave deve sair daqui e passar para um proxy (servidor) — ver roadmap.
+// ─────────────────────────────────────────────────────────────────────────────
+const COMPANY_ALCHEMY_KEY = 'COLA_AQUI_A_CHAVE_DA_EMPRESA';
+function _companyKeyActive() {
+  return COMPANY_ALCHEMY_KEY && COMPANY_ALCHEMY_KEY !== 'COLA_AQUI_A_CHAVE_DA_EMPRESA';
+}
+// Resolve a chave a usar, por ordem de prioridade:
+//   1. chave própria da wallet (power user que pôs a dele)
+//   2. chave global guardada nas definições
+//   3. chave da empresa (default — utilizador normal nunca cria nada)
+function resolveAlchemyKey(w) {
+  if (w && w.alchemyKey) return w.alchemyKey;
+  if (typeof state !== 'undefined' && state.globalAlchemyKey) return state.globalAlchemyKey;
+  if (_companyKeyActive()) return COMPANY_ALCHEMY_KEY;
+  return '';
+}
+window.resolveAlchemyKey = resolveAlchemyKey;
+
+
 // Official AAVE V3 aToken + variableDebtToken contracts
 // Source: @bgd-labs/aave-address-book v4.44.22 (canonical)
 // All addresses validated 0x + 40 hex chars
@@ -8371,12 +8398,13 @@ async function testAlchemyAPI(chainKey) {
   const w = activeWallet();
   const el = document.getElementById('histDiagResult');
   if (!el) return;
-  if (!w?.alchemyKey) { el.innerHTML = '<span style="color:var(--gold)">⚠ Sem Alchemy API Key. Adiciona em Config.</span>'; return; }
+  if (!resolveAlchemyKey(w)) { el.innerHTML = '<span style="color:var(--gold)">⚠ Sem Alchemy API Key. Adiciona em Config.</span>'; return; }
   if (!ALCHEMY_RPCS[chainKey]) { el.innerHTML = '<span style="color:var(--muted)">Alchemy não suporta '+chainKey+'</span>'; return; }
+  const _k = resolveAlchemyKey(w);
 
   el.innerHTML = '<span style="color:var(--muted)">A testar Alchemy '+chainKey+'...</span>';
-  const rpc = ALCHEMY_RPCS[chainKey] + w.alchemyKey;
-  const lines = ['<span style="color:var(--muted)">RPC: '+rpc.replace(w.alchemyKey,'***KEY***')+'</span>'];
+  const rpc = ALCHEMY_RPCS[chainKey] + _k;
+  const lines = ['<span style="color:var(--muted)">RPC: '+rpc.replace(_k,'***KEY***')+'</span>'];
 
   // Build contract filter (validate addresses)
   const supplyContracts = AAVE_ATOKEN_CONTRACTS[chainKey+'_supply'] || [];
@@ -9631,7 +9659,7 @@ async function fetchRealBalances(w, { force = false } = {}) {
   if (!force && window[cacheKey] && (now - window[cacheKey].at) < 120000) {
     return window[cacheKey].data; // 2-min cache
   }
-  const key = w.alchemyKey || state.globalAlchemyKey || '';
+  const key = resolveAlchemyKey(w);
   const evmAddr = w.evm || w.addr;
   if (!key || !evmAddr) return null;
 
@@ -10142,7 +10170,7 @@ function renderDefiPositions(w) {
   // Without this, a token with a valid feed but cold cache reads as "no price" → position
   // shows "—" despite being worth thousands. Fire async, re-render when prices land.
   (() => {
-    const klKey = w.alchemyKey || state.globalAlchemyKey || '';
+    const klKey = resolveAlchemyKey(w);
     const need = [];
     for (const lp of lpPositions) {
       for (const leg of [lp.token0, lp.token1]) {
@@ -10472,7 +10500,7 @@ function renderPortfolioCharts(w) {
     }
     // Batch-fetch Chainlink prices (oracle-grade) for tokens with feeds, then re-render.
     if (needChainlink.length > 0) {
-      const klKey = w.alchemyKey || state.globalAlchemyKey || '';
+      const klKey = resolveAlchemyKey(w);
       Promise.all(needChainlink.slice(0, 30).map(h => fetchChainlinkPrice(h.chain, h.contract, klKey)))
         .then(results => { if (results.some(r => r != null) && typeof render === 'function') render(); })
         .catch(() => {});
@@ -10501,7 +10529,7 @@ function renderPortfolioCharts(w) {
       assetMeta.set(lot.asset, m);
       totalPortfolio += value;
     }
-    if (w.alchemyKey || state.globalAlchemyKey) {
+    if (resolveAlchemyKey(w)) {
       fetchRealBalances(w).then(b => {
         const h = b && (b.holdings || b);
         if (h && h.length > 0 && typeof render === 'function') render();
@@ -13928,7 +13956,7 @@ async function startIndexerForActiveWallet() {
     toast('Wallet sem endereço EVM nem Bitcoin configurado', 'warn');
     return;
   }
-  if (hasEVM && !w.alchemyKey) {
+  if (hasEVM && !resolveAlchemyKey(w)) {
     toast('Configura Alchemy API Key para indexar EVM', 'warn');
     return;
   }
@@ -13942,8 +13970,8 @@ async function startIndexerForActiveWallet() {
 
   try {
     // ── EVM indexing (if applicable) ──
-    if (hasEVM && w.alchemyKey) {
-      evmSummary = await universalIndexer.indexWallet(walletAddr, w.alchemyKey, {
+    if (hasEVM && resolveAlchemyKey(w)) {
+      evmSummary = await universalIndexer.indexWallet(walletAddr, resolveAlchemyKey(w), {
         signal: window._indexerController.signal,
         onProgress: (p) => {
           const phaseEl = document.getElementById('indexerPhase');
@@ -14199,7 +14227,7 @@ function renderHistory(w) {
       </div>
       <div class="panel-body">
         ${(() => {
-          const hasEVMConf = (w.addr || w.evm) && w.alchemyKey;
+          const hasEVMConf = (w.addr || w.evm) && resolveAlchemyKey(w);
           const hasBTCConf = w.bitcoinAddress || w.bitcoinXpub;
           if (!hasEVMConf && !hasBTCConf) {
             return `<div class="alert alert-warn" style="margin-bottom:1rem">
@@ -14208,7 +14236,7 @@ function renderHistory(w) {
               Adiciona <strong>endereço EVM + Alchemy Key</strong> e/ou <strong>endereço/xpub Bitcoin</strong> em <em>Wallets → Editar</em>.</div>
             </div>`;
           }
-          if (!hasEVMConf && (w.addr || w.evm) && !w.alchemyKey) {
+          if (!hasEVMConf && (w.addr || w.evm) && !resolveAlchemyKey(w)) {
             return `<div class="alert alert-warn" style="margin-bottom:1rem">
               <span>⚠</span>
               <div>EVM detectado mas <strong>sem Alchemy API Key</strong>. ${hasBTCConf ? 'Bitcoin será indexado, mas EVM não.' : 'Configura Alchemy para activar o indexer.'}</div>
@@ -14228,7 +14256,7 @@ function renderHistory(w) {
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
-          <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()" ${(() => { const hasEVM = (w.addr||w.evm) && w.alchemyKey; const hasBTC = w.bitcoinAddress||w.bitcoinXpub; return (!hasEVM && !hasBTC) || isIndexing ? 'disabled' : ''; })()}>
+          <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()" ${(() => { const hasEVM = (w.addr||w.evm) && resolveAlchemyKey(w); const hasBTC = w.bitcoinAddress||w.bitcoinXpub; return (!hasEVM && !hasBTC) || isIndexing ? 'disabled' : ''; })()}>
             ${isIndexing ? ((state.lang||'pt')==='en'?'⏳ Indexing…':'⏳ A indexar…') : (totalEvents > 0 ? t('history.reIndex') : ((state.lang||'pt')==='en'?'⚡ Index Now':'⚡ Indexar Agora'))}
           </button>
           ${isIndexing ? `<button class="btn btn-outline btn-sm" onclick="cancelIndexer()">${t('history.cancel')}</button>` : ''}
@@ -15382,13 +15410,17 @@ function renderSettings(w) {
       </div>
     </div>
       <div class="panel-body">
-        <div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
+        ${_companyKeyActive() ? `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
+          <span>✓</span>
+          <div><strong>Já está tudo a funcionar</strong> — a app usa a chave da Aurum por defeito, não precisas de criar nada.<br>
+          <span style="color:var(--text-muted)">Opcional: se quiseres usar a tua própria chave Alchemy (para não partilhares a quota partilhada), cola-a abaixo.</span></div>
+        </div>` : `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>⭐</span>
           <div><strong>Alchemy</strong> é a opção recomendada e funciona para todas as chains.<br>
           1. <strong>alchemy.com</strong> → Sign Up grátis<br>
           2. Create App → selecciona a chain (ex: Base)<br>
           3. Copia a API Key e cola abaixo</div>
-        </div>
+        </div>`}
         <div class="form-group">
           <label class="form-label">Alchemy API Key ${w.alchemyKey?'<span style="color:var(--green)">✓ Configurada</span>':''}</label>
           <input class="form-input" id="set_alchemy_key" value="${w.alchemyKey||''}" placeholder="Cola aqui a tua Alchemy API Key">
@@ -15629,8 +15661,8 @@ async function fetchHF(chainKey, walletAddr) {
   // Use Alchemy RPC as PRIMARY when available (more reliable)
   const w = activeWallet();
   let rpcs = chain.rpcs || [chain.rpc].filter(Boolean);
-  if (w?.alchemyKey && ALCHEMY_RPCS[chainKey]) {
-    rpcs = [ALCHEMY_RPCS[chainKey] + w.alchemyKey, ...rpcs];
+  if (resolveAlchemyKey(w) && ALCHEMY_RPCS[chainKey]) {
+    rpcs = [ALCHEMY_RPCS[chainKey] + resolveAlchemyKey(w), ...rpcs];
   }
   const sig = '0xbf92857c';
   const padded = walletAddr.slice(2).toLowerCase().padStart(64,'0');
@@ -15664,7 +15696,7 @@ async function fetchHistory(chainKey, walletAddr, apiKey) {
   const userAddr = walletAddr.toLowerCase();
   const aavePool = (chain.aavePool||'').toLowerCase();
   const w = activeWallet();
-  const alchemyKey = w?.alchemyKey;
+  const alchemyKey = resolveAlchemyKey(w);
 
   // PRIMARY: Alchemy alchemy_getAssetTransfers (free, all chains, best coverage)
   if (alchemyKey && ALCHEMY_RPCS[chainKey]) {
@@ -16014,8 +16046,8 @@ async function fetchHistory(chainKey, walletAddr, apiKey) {
 // Used for chains where the Morpho API doesn't index (e.g. Base for some wallets)
 async function fetchMorphoOnChain(chainKey, walletAddr, marketId) {
   const w = activeWallet();
-  if (!w?.alchemyKey || !ALCHEMY_RPCS[chainKey]) return null;
-  const rpc = ALCHEMY_RPCS[chainKey] + w.alchemyKey;
+  if (!resolveAlchemyKey(w) || !ALCHEMY_RPCS[chainKey]) return null;
+  const rpc = ALCHEMY_RPCS[chainKey] + resolveAlchemyKey(w);
   const morphoAddr = MORPHO_BLUE_CONTRACTS[chainKey];
   if (!morphoAddr) return null;
 
@@ -16179,7 +16211,7 @@ async function fetchMorphoPositions(walletAddr) {
   if (!walletAddr) return;
 
   const w = activeWallet();
-  if (!w?.alchemyKey) {
+  if (!resolveAlchemyKey(w)) {
     console.warn('[Morpho] No Alchemy key — cannot fetch on-chain');
     return;
   }
@@ -16371,7 +16403,7 @@ async function refreshAll() {
   saveState();
   // STEP 4: Fetch history (uses prices loaded in step 1)
   // Now that prices are ready, fetch history for active chains
-  if (w.apiKey || w.alchemyKey) {
+  if (w.apiKey || resolveAlchemyKey(w)) {
     const chainsToFetch = chainKeys.filter(k=> live.positions[k]?.totalCollateral > 0 || live.positions[k]?.totalDebt > 0 || k==='eth' || k==='base');
     if (chainsToFetch.length === 0) chainsToFetch.push('eth','base');
     const histResults = await Promise.allSettled(chainsToFetch.map(k=>fetchHistory(k,w.addr,w.apiKey).then(h=>({k,h}))));
@@ -16387,8 +16419,8 @@ async function refreshAll() {
   render();
   // Capture realized DeFi income (claimed fees / emissions) in the background — informational
   // record for a possible future Cat. E treatment. Non-blocking; re-renders if anything new.
-  if (w.alchemyKey || state.globalAlchemyKey) {
-    captureDefiIncome(w, w.alchemyKey || state.globalAlchemyKey)
+  if (resolveAlchemyKey(w)) {
+    captureDefiIncome(w, resolveAlchemyKey(w))
       .then(n => { if (n > 0) { console.log(`[DeFi income] +${n} novo(s) evento(s) registado(s)`); render(); } })
       .catch(() => {});
   }
@@ -16512,7 +16544,7 @@ async function autoFillTxHash() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ A buscar...'; }
 
   const w = activeWallet();
-  const alchemyKey = w?.alchemyKey;
+  const alchemyKey = resolveAlchemyKey(w);
   if (!alchemyKey) {
     if (status) status.innerHTML = '<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span> Sem Alchemy API Key. Vai a Config → adiciona a key para ativar a pesquisa multi-rede.</div>';
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-fill'; }
