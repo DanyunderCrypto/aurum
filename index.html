@@ -9775,6 +9775,98 @@ async function fetchChainlinkPrice(chain, contract, key) {
 }
 window.fetchChainlinkPrice = fetchChainlinkPrice;
 
+// ── Portfolio API: nomes de rede (derivados dos subdomínios Alchemy) ──────────
+// O Portfolio API usa os mesmos nomes que os subdomínios RPC (eth-mainnet, etc.).
+// Extraímo-los automaticamente de ALCHEMY_RPCS para não duplicar a manutenção.
+function _portfolioNetworkName(chain) {
+  const url = ALCHEMY_RPCS[chain];
+  if (!url) return null;
+  const m = url.match(/https:\/\/([^.]+)\.g\.alchemy\.com/);
+  return m ? m[1] : null; // ex: 'eth-mainnet', 'avax-mainnet'
+}
+
+// Busca TODOS os saldos de tokens (nativos + ERC-20) de uma carteira em TODAS as
+// redes numa ÚNICA chamada (Portfolio API). Substitui o loop de milhares de
+// pedidos. Devolve saldo + metadata + preço de uma vez. Retorna {holdings, prices}
+// ou null se falhar (a fetchRealBalances faz fallback ao método antigo).
+async function fetchPortfolioBalances(evmAddr, key) {
+  if (!evmAddr || !key) return null;
+  const networks = Object.keys(ALCHEMY_RPCS)
+    .filter(c => ALCHEMY_RPCS[c])
+    .map(_portfolioNetworkName)
+    .filter(Boolean);
+  if (!networks.length) return null;
+
+  const url = `https://api.g.alchemy.com/data/v1/${key}/assets/tokens/by-address`;
+  const holdings = [];
+  const priceMap = new Map(); // 'chain:contract' → priceUSD
+  let pageKey = undefined;
+  let pages = 0;
+  const MAX_PAGES = 8; // segurança
+
+  // mapa inverso: network name → chain key interno
+  const netToChain = {};
+  Object.keys(ALCHEMY_RPCS).forEach(c => { const n = _portfolioNetworkName(c); if (n) netToChain[n] = c; });
+
+  try {
+    do {
+      const body = {
+        addresses: [{ address: evmAddr, networks }],
+        withMetadata: true,
+        withPrices: true,
+        includeNativeTokens: true,
+        includeErc20Tokens: true,
+      };
+      if (pageKey) body.pageKey = pageKey;
+
+      await _alchemyThrottle();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        // 400/429/etc → desiste do Portfolio API, deixa o fallback tratar
+        return null;
+      }
+      const j = await res.json();
+      const tokens = j?.data?.tokens || [];
+      for (const t of tokens) {
+        const chain = netToChain[t.network];
+        if (!chain) continue;
+        const meta = t.tokenMetadata || {};
+        const decimals = meta.decimals;
+        if (decimals == null) continue;
+        const rawHex = t.tokenBalance;
+        if (!rawHex || rawHex === '0x' || rawHex === '0x0') continue;
+        let qty;
+        try { qty = Number(BigInt(rawHex)) / Math.pow(10, decimals); }
+        catch { qty = parseInt(rawHex, 16) / Math.pow(10, decimals); }
+        if (!(qty > 0)) continue;
+        const sym = meta.symbol || '?';
+        const isNative = !t.tokenAddress || t.tokenAddress === 'native';
+        const contract = isNative ? null : t.tokenAddress;
+        // preço (se a Alchemy o trouxe)
+        const px = Array.isArray(t.tokenPrices) ? t.tokenPrices.find(p => p.currency === 'usd') : null;
+        if (px && contract) priceMap.set(chain + ':' + contract.toLowerCase(), Number(px.value));
+        holdings.push({
+          asset: sym, chain, contract, qty,
+          decimals, native: isNative,
+          logoUrl: meta.logo || null,
+          _portfolioPriceUSD: px ? Number(px.value) : null,
+        });
+      }
+      pageKey = j?.data?.pageKey;
+      pages++;
+    } while (pageKey && pages < MAX_PAGES);
+
+    return { holdings, priceMap };
+  } catch (e) {
+    return null; // qualquer falha → fallback
+  }
+}
+window.fetchPortfolioBalances = fetchPortfolioBalances;
+
 async function fetchRealBalances(w, { force = false } = {}) {
   const cacheKey = '_balCache_' + w.id;
   const now = Date.now();
@@ -9788,7 +9880,53 @@ async function fetchRealBalances(w, { force = false } = {}) {
   const eng = window.aurumFifoEngine;
   const holdings = []; // { asset, chain, contract, qty, decimals }
   const vaults = [];   // ERC-4626 vault positions { asset, chain, vaultContract, shares, underlyingContract, assetsRaw }
-  // Ordem inteligente: processar PRIMEIRO as redes onde o utilizador tem
+
+  // ── CAMINHO RÁPIDO: Portfolio API (1 chamada multi-chain) ──────────────────
+  // Substitui o loop de milhares de pedidos. Traz saldos + metadata + preços de
+  // todas as redes de uma vez. Se falhar, recai no método antigo (loop por rede).
+  let _portfolioPrices = null;
+  const _portfolio = await fetchPortfolioBalances(evmAddr, key);
+  if (_portfolio && _portfolio.holdings) {
+    _portfolioPrices = _portfolio.priceMap;
+    // Separar vaults (ERC-4626) dos holdings normais. O Portfolio API dá saldo
+    // em bruto, por isso para tokens SEM preço conhecido sondamos se são vault.
+    for (const h of _portfolio.holdings) {
+      const probe = { asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty };
+      if (eng?.isSpamToken?.(probe)) continue;
+      if (h.native) { holdings.push(h); continue; }
+      const hasKnownPrice = !!_priceForContractStatic(h.contract, h.chain) || (h._portfolioPriceUSD != null);
+      if (!hasKnownPrice) {
+        // só sondamos vault em redes principais (onde os protocolos existem) para poupar pedidos
+        const rawHex = '0x' + Math.floor(h.qty * Math.pow(10, h.decimals)).toString(16);
+        let vault = null;
+        try { vault = await readErc4626Vault(h.chain, h.contract, rawHex, key); } catch {}
+        if (vault) {
+          vaults.push({ asset: h.asset, chain: h.chain, vaultContract: h.contract, shares: h.qty, decimals: h.decimals, underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw, logoUrl: h.logoUrl });
+          continue;
+        }
+      }
+      if (eng?.isProtocolReceiptToken?.(h.asset)) continue;
+      holdings.push(h);
+    }
+
+    // Posições DeFi (LP) — o Portfolio API não as dá, por isso lemo-las à parte
+    // (só nas redes onde os protocolos existem; são poucas chamadas).
+    const lpPositions = [];
+    try {
+      const lpChains = Object.keys(_V3_CONTRACTS).filter(ch => ALCHEMY_RPCS[ch] && !_alchemyChainUnavailable.has(ch));
+      const lpResults = await Promise.all(lpChains.map(ch => _fetchUniV3OnChain(ch, evmAddr, key).catch(() => [])));
+      for (const arr of lpResults) if (Array.isArray(arr)) lpPositions.push(...arr);
+      const aero = await _fetchAerodromeOnChain(evmAddr, key).catch(() => []);
+      if (Array.isArray(aero)) lpPositions.push(...aero);
+    } catch (e) { /* non-fatal */ }
+
+    const result = { holdings, vaults, lpPositions, prices: _portfolioPrices };
+    window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices };
+    return result;
+  }
+  // ── FIM CAMINHO RÁPIDO — se chegou aqui, o Portfolio API falhou: método antigo ──
+
+
   // atividade conhecida (aparecem no histórico de eventos) ou as principais,
   // e deixar as redes exóticas para o fim. Assim a carteira principal (eth/base)
   // aparece cedo em vez de esperar pelas 44 redes.
@@ -10616,6 +10754,11 @@ function renderPortfolioCharts(w) {
         const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (clk && clk.priceUSD) ppu = clk.priceUSD * eurRate;
         else if (clk === undefined && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
+      }
+      // 1b. PREÇO DO PORTFOLIO API — a Alchemy já devolveu o preço USD do token
+      // na mesma chamada dos saldos. Fonte fiável e gratuita (sem pedido extra).
+      if (ppu == null && h._portfolioPriceUSD != null && h._portfolioPriceUSD > 0) {
+        ppu = h._portfolioPriceUSD * eurRate;
       }
       // 2. Event-derived price by exact contract (never symbol-fallback)
       if (ppu == null) ppu = _priceFor(h.asset, h.chain, h.contract);
