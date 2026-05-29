@@ -9983,7 +9983,8 @@ async function fetchSolanaBalances(solAddr, key) {
         try { qty = Number(BigInt(rawHex)) / Math.pow(10, decimals); }
         catch { qty = parseInt(rawHex, 16) / Math.pow(10, decimals); }
         if (!(qty > 0)) continue;
-        const sym = isNative ? 'SOL' : (meta.symbol || '?');
+        const mintForSym = isNative ? null : t.tokenAddress;
+        const sym = isNative ? 'SOL' : (meta.symbol || (mintForSym ? mintForSym.slice(0, 4) + '…' + mintForSym.slice(-4) : '?'));
         const mint = isNative ? null : t.tokenAddress; // na Solana o "contrato" é o mint
         const px = Array.isArray(t.tokenPrices) ? t.tokenPrices.find(p => p.currency === 'usd') : null;
         if (px && mint) priceMap.set('solana:' + mint.toLowerCase(), Number(px.value));
