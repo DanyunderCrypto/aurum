@@ -10893,7 +10893,7 @@ function renderPortfolioCharts(w) {
       // DexScreener fallback (cached): covers DEX/protocol tokens DefiLlama misses (jrUSDat…)
       // Só para tokens NÃO-spam — não vale a pena gastar pedidos (e arriscar 429) a
       // tentar preço de airdrops/lixo que vão ser filtrados de qualquer forma.
-      if (ppu == null && h.contract && !eng?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
+      if (ppu == null && h.contract && !window.aurumFifoEngine?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
         else if (ds === undefined) needDexPrice.push(h); // not yet fetched
