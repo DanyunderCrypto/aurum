@@ -3762,6 +3762,32 @@ const MORPHO_FN_MARKET = '0x5c60e39a';
 // idToMarketParams(bytes32) function selector - keccak256('idToMarketParams(bytes32)')[0:4]
 const MORPHO_FN_ID_TO_PARAMS = '0x861c0fb1';
 
+// ── PROXY (Cloudflare Worker) ────────────────────────────────────────────────
+// Quando PROXY_BASE está definido, a app fala com o proxy em vez de ir direto à
+// Alchemy — assim a chave fica escondida no servidor, não no browser. O proxy
+// também resolve o CORS. Deixa PROXY_BASE = '' para voltar ao método direto.
+const PROXY_BASE = 'https://aurum-proxy.cryptounderground4.workers.dev';
+function _proxyActive() { return !!PROXY_BASE; }
+
+// Constrói o URL de RPC por rede. Com proxy: <proxy>/rpc/<subdominio>. Sem proxy:
+// <subdominio>.g.alchemy.com/v2/<key> (método direto, fallback).
+function _rpcUrl(chain, key) {
+  const direct = ALCHEMY_RPCS[chain];
+  if (!direct) return null;
+  if (_proxyActive()) {
+    const m = direct.match(/https:\/\/([^.]+)\.g\.alchemy\.com/);
+    if (m) return `${PROXY_BASE}/rpc/${m[1]}`;
+  }
+  return direct + (key || '');
+}
+
+// Constrói o URL do Portfolio/Data API. Com proxy: <proxy>/data/<path>. Sem proxy:
+// api.g.alchemy.com/data/v1/<key>/<path>.
+function _dataUrl(path, key) {
+  if (_proxyActive()) return `${PROXY_BASE}/data/${path}`;
+  return `https://api.g.alchemy.com/data/v1/${key}/${path}`;
+}
+
 // Alchemy RPC base URLs per chain (requires API key)
 const ALCHEMY_RPCS = {
   eth:      'https://eth-mainnet.g.alchemy.com/v2/',
@@ -5102,6 +5128,11 @@ const alchemyAdapter = (() => {
   }
 
   function _alchemyUrl(chain, apiKey) {
+    // Com proxy ativo, vai pelo proxy (chave escondida no servidor).
+    if (typeof _proxyActive === 'function' && _proxyActive() && typeof _rpcUrl === 'function') {
+      const u = _rpcUrl(chain, '');
+      if (u) return u;
+    }
     const subdomain = ALCHEMY_SUBDOMAINS[chain];
     if (!subdomain || !apiKey) return null;
     return `https://${subdomain}.g.alchemy.com/v2/${apiKey}`;
@@ -5157,7 +5188,8 @@ const alchemyAdapter = (() => {
 
   // Get all transfers for an address on a chain (paginated)
   async function getTransfersForAddress(address, chain, apiKey, opts = {}) {
-    if (!apiKey) {
+    const _px = (typeof _proxyActive === 'function' && _proxyActive());
+    if (!apiKey && !_px) {
       return { transfers: [], skipped: true, reason: 'No Alchemy API key' };
     }
     if (!ALCHEMY_SUBDOMAINS[chain]) {
@@ -8033,7 +8065,8 @@ const universalIndexer = (() => {
   // Index a single wallet across all supported chains
   // opts: { onProgress, signal (AbortSignal), fromBlock }
   async function indexWallet(walletAddress, apiKey, opts = {}) {
-    if (!walletAddress || !apiKey) {
+    const _px = (typeof _proxyActive === 'function' && _proxyActive());
+    if (!walletAddress || (!apiKey && !_px)) {
       throw new Error('walletAddress and apiKey required');
     }
     const startTime = Date.now();
@@ -9065,12 +9098,15 @@ async function _alchemyThrottle() {
 
 async function _alchemyRpc(chain, method, params, key) {
   const base = ALCHEMY_RPCS[chain];
-  if (!base || !key) return null;
+  if (!base) return null;
+  if (!_proxyActive() && !key) return null; // sem proxy, precisa de key
+  const reqUrl = _rpcUrl(chain, key);
+  if (!reqUrl) return null;
   if (_alchemyChainUnavailable.has(chain)) return null; // já sabemos que esta chave não tem esta rede
   await _alchemyThrottle();
   let res;
   try {
-    res = await fetch(base + key, {
+    res = await fetch(reqUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -9088,7 +9124,7 @@ async function _alchemyRpc(chain, method, params, key) {
     _retry++;
     await new Promise(r => setTimeout(r, 800 * _retry)); // 0.8s, 1.6s, 2.4s
     try {
-      res = await fetch(base + key, {
+      res = await fetch(reqUrl, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
       });
@@ -9156,14 +9192,14 @@ async function _rpcBatch(chain, calls, key) {
     }));
     await _alchemyThrottle();
     try {
-      let res = await fetch(base + key, {
+      let res = await fetch(_rpcUrl(chain, key), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (res.status === 403) { _alchemyChainUnavailable.add(chain); for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
       if (res.status === 429) { // espera e tenta uma vez mais
         await new Promise(r => setTimeout(r, 1200));
-        res = await fetch(base + key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        res = await fetch(_rpcUrl(chain, key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       if (!res.ok) { for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
       const j = await res.json();
@@ -9248,7 +9284,7 @@ async function _findMintBlock(chain, nftManager, tokenId, owner, key) {
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return null;
   try {
-    const res = await fetch(base + key, {
+    const res = await fetch(_rpcUrl(chain, key), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
         params: [{ fromAddress: '0x0000000000000000000000000000000000000000', toAddress: owner,
@@ -9272,7 +9308,7 @@ async function _getDepositAmounts(chain, txHash, nftManager, tokenId, key) {
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return null;
   try {
-    const res = await fetch(base + key, {
+    const res = await fetch(_rpcUrl(chain, key), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getTransactionReceipt', params: [txHash] }),
     });
@@ -9437,7 +9473,7 @@ async function _slipDiscoverGauges(chain, user, nfpm, key) {
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return [];
   try {
-    const res = await fetch(base + key, {
+    const res = await fetch(_rpcUrl(chain, key), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
         params: [{ fromAddress: user, contractAddresses: [nfpm], category: ['erc721'],
@@ -9653,7 +9689,7 @@ async function _fetchDefiIncomeHistory(chain, address, key, gauges) {
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return [];
   try {
-    const res = await fetch(base + key, {
+    const res = await fetch(_rpcUrl(chain, key), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
         params: [{ toAddress: address, category: ['erc20'], withMetadata: true,
@@ -9827,7 +9863,8 @@ function _portfolioNetworkName(chain) {
 // pedidos. Devolve saldo + metadata + preço de uma vez. Retorna {holdings, prices}
 // ou null se falhar (a fetchRealBalances faz fallback ao método antigo).
 async function fetchPortfolioBalances(evmAddr, key) {
-  if (!evmAddr || !key) return null;
+  if (!evmAddr) return null;
+  if (!_proxyActive() && !key) return null; // sem proxy, precisa de key
   const allNetworks = Object.keys(ALCHEMY_RPCS)
     .filter(c => ALCHEMY_RPCS[c] && PORTFOLIO_API_CHAINS.has(c))
     .map(_portfolioNetworkName)
@@ -9843,7 +9880,7 @@ async function fetchPortfolioBalances(evmAddr, key) {
     netBatches.push(allNetworks.slice(i, i + NET_BATCH));
   }
 
-  const url = `https://api.g.alchemy.com/data/v1/${key}/assets/tokens/by-address`;
+  const url = _dataUrl('assets/tokens/by-address', key);
   const holdings = [];
   const priceMap = new Map(); // 'chain:contract' → priceUSD
 
@@ -9949,8 +9986,9 @@ window.fetchPortfolioBalances = fetchPortfolioBalances;
 // Solana é base58 e SENSÍVEL a maiúsculas/minúsculas — NUNCA fazer lowercase ao
 // enviar para a API. O SOL nativo tem 9 decimais (não 18 como o ETH).
 async function fetchSolanaBalances(solAddr, key) {
-  if (!solAddr || !key) return null;
-  const url = `https://api.g.alchemy.com/data/v1/${key}/assets/tokens/by-address`;
+  if (!solAddr) return null;
+  if (!_proxyActive() && !key) return null; // sem proxy, precisa de key
+  const url = _dataUrl('assets/tokens/by-address', key);
   const holdings = [];
   const priceMap = new Map();
   try {
@@ -10012,7 +10050,8 @@ async function fetchRealBalances(w, { force = false } = {}) {
   const key = resolveAlchemyKey(w);
   const evmAddr = w.evm || w.addr;
   const solAddr = w.sol || null; // base58 — NÃO fazer lowercase
-  if (!key || (!evmAddr && !solAddr)) return null;
+  if (!_proxyActive() && !key) return null; // sem proxy, precisa de key
+  if (!evmAddr && !solAddr) return null;
 
   const eng = window.aurumFifoEngine;
   const holdings = []; // { asset, chain, contract, qty, decimals }
@@ -11045,7 +11084,7 @@ function renderPortfolioCharts(w) {
       assetMeta.set(lot.asset, m);
       totalPortfolio += value;
     }
-    if (resolveAlchemyKey(w)) {
+    if (_proxyActive() || resolveAlchemyKey(w)) {
       fetchRealBalances(w).then(b => {
         const h = b && (b.holdings || b);
         if (h && h.length > 0 && typeof render === 'function') render();
@@ -14743,7 +14782,7 @@ function renderHistory(w) {
       </div>
       <div class="panel-body">
         ${(() => {
-          const hasEVMConf = (w.addr || w.evm) && resolveAlchemyKey(w);
+          const hasEVMConf = (w.addr || w.evm) && (_proxyActive() || resolveAlchemyKey(w));
           const hasBTCConf = w.bitcoinAddress || w.bitcoinXpub;
           const hasSolConf = !!w.sol;
           if (!hasEVMConf && !hasBTCConf && !hasSolConf) {
@@ -16186,7 +16225,10 @@ async function fetchHF(chainKey, walletAddr) {
   // Use Alchemy RPC as PRIMARY when available (more reliable)
   const w = activeWallet();
   let rpcs = chain.rpcs || [chain.rpc].filter(Boolean);
-  if (resolveAlchemyKey(w) && ALCHEMY_RPCS[chainKey]) {
+  if (_proxyActive() && ALCHEMY_RPCS[chainKey]) {
+    const proxied = _rpcUrl(chainKey, '');
+    if (proxied) rpcs = [proxied, ...rpcs];
+  } else if (resolveAlchemyKey(w) && ALCHEMY_RPCS[chainKey]) {
     rpcs = [ALCHEMY_RPCS[chainKey] + resolveAlchemyKey(w), ...rpcs];
   }
   const sig = '0xbf92857c';
@@ -16944,7 +16986,7 @@ async function refreshAll() {
   render();
   // Capture realized DeFi income (claimed fees / emissions) in the background — informational
   // record for a possible future Cat. E treatment. Non-blocking; re-renders if anything new.
-  if (resolveAlchemyKey(w)) {
+  if (_proxyActive() || resolveAlchemyKey(w)) {
     captureDefiIncome(w, resolveAlchemyKey(w))
       .then(n => { if (n > 0) { console.log(`[DeFi income] +${n} novo(s) evento(s) registado(s)`); render(); } })
       .catch(() => {});
