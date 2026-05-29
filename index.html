@@ -10868,8 +10868,14 @@ function renderDefiPositions(w) {
 }
 
 function renderPortfolioCharts(w) {
-  const fifoState = _getFifoStateFor(w);
-  if (!fifoState) return '';
+  // O estado FIFO pode ser null para carteiras sem eventos fiscais (ex: carteira
+  // só-Solana, que tem saldos mas ainda não tem indexador de histórico). Nesse
+  // caso usamos um estado vazio para os saldos on-chain continuarem a aparecer —
+  // a parte fiscal mostra zeros (correto: não há eventos), mas o portfólio é visível.
+  const fifoState = _getFifoStateFor(w) || {
+    lots: [],
+    summary: { byYear: {}, totalGainEUR: 0, totalProceedsEUR: 0, totalBasisEUR: 0 },
+  };
 
   // Build current-price lookup (by contract, then symbol) from priced events — used to value
   // whatever the wallet holds. (DefiLlama "current" price = most recent priced event we have.)
@@ -14738,11 +14744,20 @@ function renderHistory(w) {
         ${(() => {
           const hasEVMConf = (w.addr || w.evm) && resolveAlchemyKey(w);
           const hasBTCConf = w.bitcoinAddress || w.bitcoinXpub;
-          if (!hasEVMConf && !hasBTCConf) {
+          const hasSolConf = !!w.sol;
+          if (!hasEVMConf && !hasBTCConf && !hasSolConf) {
             return `<div class="alert alert-warn" style="margin-bottom:1rem">
               <span>⚠</span>
               <div>Esta wallet não tem nada configurado para indexar.
               Adiciona <strong>endereço EVM + Alchemy Key</strong> e/ou <strong>endereço/xpub Bitcoin</strong> em <em>Wallets → Editar</em>.</div>
+            </div>`;
+          }
+          if (!hasEVMConf && !hasBTCConf && hasSolConf) {
+            // Só Solana: aparece no tracker de saldos, mas o histórico de
+            // transações (que alimenta o cálculo fiscal) ainda não é suportado.
+            return `<div class="alert alert-warn" style="margin-bottom:1rem">
+              <span>ℹ</span>
+              <div>Os saldos de <strong>Solana</strong> aparecem no teu portfólio, mas o <strong>histórico de transações de Solana para fins fiscais ainda não é suportado</strong>. Para o cálculo fiscal (mais-valias), adiciona uma carteira EVM ou Bitcoin. O suporte fiscal de Solana virá numa versão futura.</div>
             </div>`;
           }
           if (!hasEVMConf && (w.addr || w.evm) && !resolveAlchemyKey(w)) {
