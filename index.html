@@ -5126,6 +5126,10 @@ const alchemyAdapter = (() => {
       }, `alchemy.${chain}`);
 
       if (!res.ok) {
+        // 403 = chave sem acesso a esta rede → salta a cadeia sem registar erro
+        if (res.status === 403) {
+          return { transfers: [], _chainUnavailable: true };
+        }
         // Retry on 429 (rate limit) and 5xx
         if ((res.status === 429 || res.status >= 500) && attempt < 3) {
           const backoff = Math.pow(2, attempt) * 1000;
@@ -9025,17 +9029,66 @@ function _getFifoStateFor(w) {
 // (alchemy_getTokenBalances + getTokenMetadata) and price them at current market.
 // Cached in-memory per wallet for the session; refreshed on demand.
 // ══════════════════════════════════════════════════════════════
+// Cadeias que a chave atual NÃO tem acesso (403) — saltadas nesta sessão para
+// não repetir pedidos nem encher a consola de erros.
+const _alchemyChainUnavailable = new Set();
+
+// ── Rate limiter global para a Alchemy ──────────────────────────────────────
+// O free tier da Alchemy tem um limite de pedidos por segundo (CUPS). Com 44
+// redes, disparar tudo ao mesmo tempo dá 429 (Too Many Requests). Este limitador
+// garante um intervalo mínimo entre pedidos, espaçando-os no tempo. Quem usa a
+// sua própria chave paga não nota (o atraso é mínimo); quem usa a chave partilhada
+// fica protegido de rebentar o limite.
+let _alchemyLastCall = 0;
+const _ALCHEMY_MIN_GAP_MS = 60; // ~16 pedidos/seg — folgado para free tier (25 CUPS)
+async function _alchemyThrottle() {
+  const now = Date.now();
+  const wait = _alchemyLastCall + _ALCHEMY_MIN_GAP_MS - now;
+  _alchemyLastCall = Math.max(now, _alchemyLastCall + _ALCHEMY_MIN_GAP_MS);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+}
+
 async function _alchemyRpc(chain, method, params, key) {
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return null;
-  const res = await fetch(base + key, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`RPC ${method} ${res.status}`);
+  if (_alchemyChainUnavailable.has(chain)) return null; // já sabemos que esta chave não tem esta rede
+  await _alchemyThrottle();
+  let res;
+  try {
+    res = await fetch(base + key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    });
+  } catch (netErr) {
+    // CORS / rede em baixo (ex: RPC que não autoriza o browser) — silencioso
+    _alchemyChainUnavailable.add(chain);
+    return null;
+  }
+  // 403 = a chave não tem esta rede ligada no painel Alchemy → saltar a rede toda
+  if (res.status === 403) { _alchemyChainUnavailable.add(chain); return null; }
+  // 429 = rate limit → espera e tenta UMA vez mais; se persistir, devolve null
+  if (res.status === 429) {
+    await new Promise(r => setTimeout(r, 1200));
+    try {
+      res = await fetch(base + key, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      });
+    } catch { return null; }
+    if (!res.ok) return null;
+  } else if (!res.ok) {
+    return null; // qualquer outro erro HTTP: silencioso, não estoira o fluxo
+  }
   const j = await res.json();
-  if (j.error) throw new Error(j.error.message || 'RPC error');
+  if (j.error) {
+    const msg = (j.error.message || '').toLowerCase();
+    // alguns RPCs devolvem 200 mas com erro de método não suportado nessa rede
+    if (msg.includes('not available') || msg.includes('unsupported') || msg.includes('not found')) {
+      _alchemyChainUnavailable.add(chain);
+    }
+    return null;
+  }
   return j.result;
 }
 
@@ -9075,6 +9128,7 @@ async function _rpcBatch(chain, calls, key) {
   if (!calls.length) return [];
   const base = ALCHEMY_RPCS[chain];
   if (!base || !key) return calls.map(() => null);
+  if (_alchemyChainUnavailable.has(chain)) return calls.map(() => null);
   const CHUNK = 50;
   const out = [];
   for (let i = 0; i < calls.length; i += CHUNK) {
@@ -9084,11 +9138,17 @@ async function _rpcBatch(chain, calls, key) {
       method: c.method || 'eth_call',
       params: c.params || [{ to: c.to, data: c.data }, 'latest'],
     }));
+    await _alchemyThrottle();
     try {
-      const res = await fetch(base + key, {
+      let res = await fetch(base + key, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (res.status === 403) { _alchemyChainUnavailable.add(chain); for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
+      if (res.status === 429) { // espera e tenta uma vez mais
+        await new Promise(r => setTimeout(r, 1200));
+        res = await fetch(base + key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
       if (!res.ok) { for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
       const j = await res.json();
       if (Array.isArray(j)) {
@@ -9724,12 +9784,17 @@ async function fetchRealBalances(w, { force = false } = {}) {
   const eng = window.aurumFifoEngine;
   const holdings = []; // { asset, chain, contract, qty, decimals }
   const vaults = [];   // ERC-4626 vault positions { asset, chain, vaultContract, shares, underlyingContract, assetsRaw }
-  const chains = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c]);
+  // Saltar cadeias que já sabemos estarem indisponíveis nesta chave (403/CORS).
+  const chains = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c] && !_alchemyChainUnavailable.has(c));
 
   for (const chain of chains) {
+    if (_alchemyChainUnavailable.has(chain)) continue; // pode ter sido marcada durante o loop
     try {
       // 1. Native balance (ETH/etc.)
       const nativeHex = await _alchemyRpc(chain, 'eth_getBalance', [evmAddr, 'latest'], key);
+      // Se a cadeia ficou marcada indisponível (403/CORS) nesta primeira chamada,
+      // não vale a pena tentar os outros pedidos — saltar já.
+      if (_alchemyChainUnavailable.has(chain)) continue;
       if (nativeHex) {
         const nativeQty = parseInt(nativeHex, 16) / 1e18;
         if (nativeQty > 1e-9) {
