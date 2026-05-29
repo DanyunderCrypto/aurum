@@ -10198,13 +10198,26 @@ window.fetchRealBalances = fetchRealBalances;
 // reference price. Cached per contract for the session. Fails gracefully → null.
 const _dexScreenerCache = new Map();
 const DEX_MIN_LIQUIDITY_USD = 50000; // pairs below this are unreliable (scam/fake liquidity)
+// Rate limiter para o DexScreener (limite ~300/min; espaçamos para não dar 429).
+let _dsLastCall = 0;
+const _DS_MIN_GAP_MS = 250; // ~4 pedidos/seg
+let _dsDisabled = false; // se o DexScreener bloquear por CORS, desligamos a sessão
+async function _dsThrottle() {
+  const now = Date.now();
+  const wait = _dsLastCall + _DS_MIN_GAP_MS - now;
+  _dsLastCall = Math.max(now, _dsLastCall + _DS_MIN_GAP_MS);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+}
 async function fetchDexScreenerPrice(chain, contract) {
   if (!contract) return null;
+  if (_dsDisabled) return null; // já sabemos que o DexScreener está bloqueado nesta sessão
   const ck = `${chain}:${contract.toLowerCase()}`;
   if (_dexScreenerCache.has(ck)) return _dexScreenerCache.get(ck);
   try {
+    await _dsThrottle();
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${contract}`);
-    if (!res.ok) throw new Error('ds ' + res.status);
+    if (res.status === 429) { _dexScreenerCache.set(ck, null); return null; } // rate limit: salta, não rebenta
+    if (!res.ok) { _dexScreenerCache.set(ck, null); return null; }
     const j = await res.json();
     const pairs = (j && j.pairs) || [];
     if (!pairs.length) { _dexScreenerCache.set(ck, null); return null; }
@@ -10227,6 +10240,8 @@ async function fetchDexScreenerPrice(chain, contract) {
     _dexScreenerCache.set(ck, out);
     return out;
   } catch (e) {
+    // Erro de rede / CORS — desliga o DexScreener nesta sessão para não repetir.
+    _dsDisabled = true;
     _dexScreenerCache.set(ck, null);
     return null;
   }
@@ -10876,7 +10891,9 @@ function renderPortfolioCharts(w) {
         if (typeof mkt === 'number' && mkt > 0) ppu = mkt * eurRate;
       }
       // DexScreener fallback (cached): covers DEX/protocol tokens DefiLlama misses (jrUSDat…)
-      if (ppu == null && h.contract) {
+      // Só para tokens NÃO-spam — não vale a pena gastar pedidos (e arriscar 429) a
+      // tentar preço de airdrops/lixo que vão ser filtrados de qualquer forma.
+      if (ppu == null && h.contract && !eng?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
         else if (ds === undefined) needDexPrice.push(h); // not yet fetched
@@ -10906,7 +10923,7 @@ function renderPortfolioCharts(w) {
     }
     // Batch-fetch DexScreener prices for the still-unpriced tokens, then re-render once.
     if (needDexPrice.length > 0) {
-      Promise.all(needDexPrice.slice(0, 20).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
+      Promise.all(needDexPrice.slice(0, 12).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
         .then(results => { if (results.some(Boolean) && typeof render === 'function') render(); })
         .catch(() => {});
     }
