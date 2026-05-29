@@ -9040,7 +9040,7 @@ const _alchemyChainUnavailable = new Set();
 // sua própria chave paga não nota (o atraso é mínimo); quem usa a chave partilhada
 // fica protegido de rebentar o limite.
 let _alchemyLastCall = 0;
-const _ALCHEMY_MIN_GAP_MS = 60; // ~16 pedidos/seg — folgado para free tier (25 CUPS)
+const _ALCHEMY_MIN_GAP_MS = 22; // ~45 pedidos/seg — o free tier (300 RPS no eth) aguenta bem isto
 async function _alchemyThrottle() {
   const now = Date.now();
   const wait = _alchemyLastCall + _ALCHEMY_MIN_GAP_MS - now;
@@ -9784,8 +9784,21 @@ async function fetchRealBalances(w, { force = false } = {}) {
   const eng = window.aurumFifoEngine;
   const holdings = []; // { asset, chain, contract, qty, decimals }
   const vaults = [];   // ERC-4626 vault positions { asset, chain, vaultContract, shares, underlyingContract, assetsRaw }
-  // Saltar cadeias que já sabemos estarem indisponíveis nesta chave (403/CORS).
-  const chains = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c] && !_alchemyChainUnavailable.has(c));
+  // Ordem inteligente: processar PRIMEIRO as redes onde o utilizador tem
+  // atividade conhecida (aparecem no histórico de eventos) ou as principais,
+  // e deixar as redes exóticas para o fim. Assim a carteira principal (eth/base)
+  // aparece cedo em vez de esperar pelas 44 redes.
+  const _knownChains = new Set(
+    (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : [])
+      .map(e => e.chain).filter(Boolean)
+  );
+  const _priorityChains = ['eth', 'base', 'arbitrum', 'optimism', 'polygon'];
+  const chains = Object.keys(ALCHEMY_RPCS)
+    .filter(c => ALCHEMY_RPCS[c] && !_alchemyChainUnavailable.has(c))
+    .sort((a, b) => {
+      const score = (c) => (_knownChains.has(c) ? -2 : 0) + (_priorityChains.includes(c) ? -1 : 0);
+      return score(a) - score(b);
+    });
 
   for (const chain of chains) {
     if (_alchemyChainUnavailable.has(chain)) continue; // pode ter sido marcada durante o loop
@@ -9822,10 +9835,21 @@ async function fetchRealBalances(w, { force = false } = {}) {
           return ak - bk;
         });
       } catch (e) { /* sorting is best-effort */ }
-      // Cap raised to 150 (with prioritization, real assets are now always within range).
-      for (const t of nonZero.slice(0, 150)) {
+      // METADATA EM LOTE: em vez de 150 pedidos sequenciais (lentos com o rate
+      // limiter), buscamos a metadata de todos os tokens de uma só vez via batch.
+      // Reduzimos também o cap para 60 — com a priorização, os ativos reais estão
+      // sempre no topo, e 60 cobre qualquer carteira normal sem buscar 90 spams.
+      const candidates = nonZero.slice(0, 60);
+      let metas = [];
+      if (candidates.length) {
+        metas = await _rpcBatch(chain, candidates.map(t => ({
+          method: 'alchemy_getTokenMetadata', params: [t.contractAddress],
+        })), key);
+      }
+      for (let ti = 0; ti < candidates.length; ti++) {
         try {
-          const meta = await _alchemyRpc(chain, 'alchemy_getTokenMetadata', [t.contractAddress], key);
+          const t = candidates[ti];
+          const meta = metas[ti];
           if (!meta || meta.decimals == null) continue;
           const qty = parseInt(t.tokenBalance, 16) / Math.pow(10, meta.decimals);
           if (qty <= 0) continue;
