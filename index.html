@@ -8893,6 +8893,20 @@ function afterRender() {
   if (typeof applyStaticI18n === 'function') applyStaticI18n();
 }
 
+// Render "amortecido": quando os dados chegam aos poucos (preços, saldos de
+// várias redes), em vez de redesenhar a cada chegada — o que faz o ecrã "piscar" —
+// agrupamos os pedidos próximos e redesenhamos UMA vez, 400ms depois da última
+// atualização. Usado só nos callbacks de fetch de dados, não em ações do utilizador.
+let _renderDebounceTimer = null;
+function renderDebounced(delay = 400) {
+  if (_renderDebounceTimer) clearTimeout(_renderDebounceTimer);
+  _renderDebounceTimer = setTimeout(() => {
+    _renderDebounceTimer = null;
+    if (typeof render === 'function') render();
+  }, delay);
+}
+window.renderDebounced = renderDebounced;
+
 // ══════════════════════════════════════════════════════════
 // SETUP SCREEN
 // ══════════════════════════════════════════════════════════
@@ -10106,15 +10120,18 @@ async function fetchRealBalances(w, { force = false } = {}) {
     // (Só se a carteira tiver endereço EVM — uma carteira só-Solana salta isto.)
     const _onchainOnly = evmAddr ? Object.keys(ALCHEMY_RPCS)
       .filter(c => ALCHEMY_RPCS[c] && !PORTFOLIO_API_CHAINS.has(c) && !_alchemyChainUnavailable.has(c)) : [];
-    for (const chain of _onchainOnly) {
+    // Lê cada rede on-chain. Corremos TODAS em paralelo (Promise.all) — o throttle
+    // global (_alchemyThrottle) espaça os pedidos para não rebentar o rate limit,
+    // mas não esperamos uma rede acabar para começar a próxima. Corta muito a demora.
+    async function _readOnchainChain(chain) {
+      const out = [];
       try {
         const nativeHex = await _alchemyRpc(chain, 'eth_getBalance', [evmAddr, 'latest'], key);
-        if (_alchemyChainUnavailable.has(chain)) continue;
+        if (_alchemyChainUnavailable.has(chain)) return out;
         if (nativeHex) {
           const nativeQty = parseInt(nativeHex, 16) / 1e18;
           if (nativeQty > 1e-9) {
-            const sym = _nativeSymbol(chain);
-            holdings.push({ asset: sym, chain, contract: null, qty: nativeQty, decimals: 18, native: true });
+            out.push({ asset: _nativeSymbol(chain), chain, contract: null, qty: nativeQty, decimals: 18, native: true });
           }
         }
         const bal = await _alchemyRpc(chain, 'alchemy_getTokenBalances', [evmAddr, 'erc20'], key);
@@ -10130,11 +10147,14 @@ async function fetchRealBalances(w, { force = false } = {}) {
             const sym = meta.symbol || '?';
             if (eng?.isSpamToken?.({ asset: sym, chain, assetContract: t.contractAddress, amount: qty })) continue;
             if (eng?.isProtocolReceiptToken?.(sym)) continue;
-            holdings.push({ asset: sym, chain, contract: t.contractAddress, qty, decimals: meta.decimals, logoUrl: meta.logo || null });
+            out.push({ asset: sym, chain, contract: t.contractAddress, qty, decimals: meta.decimals, logoUrl: meta.logo || null });
           }
         }
       } catch (e) { /* rede on-chain falhou — não-fatal */ }
+      return out;
     }
+    const _onchainResults = await Promise.all(_onchainOnly.map(c => _readOnchainChain(c)));
+    for (const arr of _onchainResults) holdings.push(...arr);
 
     // Posições DeFi (LP) — o Portfolio API não as dá, por isso lemo-las à parte
     // (só nas redes onde os protocolos existem; são poucas chamadas).
@@ -11057,13 +11077,13 @@ function renderPortfolioCharts(w) {
     if (needChainlink.length > 0) {
       const klKey = resolveAlchemyKey(w);
       Promise.all(needChainlink.slice(0, 30).map(h => fetchChainlinkPrice(h.chain, h.contract, klKey)))
-        .then(results => { if (results.some(r => r != null) && typeof render === 'function') render(); })
+        .then(results => { if (results.some(r => r != null)) renderDebounced(); })
         .catch(() => {});
     }
     // Batch-fetch DexScreener prices for the still-unpriced tokens, then re-render once.
     if (needDexPrice.length > 0) {
       Promise.all(needDexPrice.slice(0, 12).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
-        .then(results => { if (results.some(Boolean) && typeof render === 'function') render(); })
+        .then(results => { if (results.some(Boolean)) renderDebounced(); })
         .catch(() => {});
     }
   } else {
@@ -11087,7 +11107,7 @@ function renderPortfolioCharts(w) {
     if (_proxyActive() || resolveAlchemyKey(w)) {
       fetchRealBalances(w).then(b => {
         const h = b && (b.holdings || b);
-        if (h && h.length > 0 && typeof render === 'function') render();
+        if (h && h.length > 0) renderDebounced();
       }).catch(() => {});
     }
   }
