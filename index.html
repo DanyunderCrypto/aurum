@@ -8872,7 +8872,14 @@ function render() {
     const w = activeWallet();
     if (!state.wallets.length || !w) { mc.innerHTML = renderSetup(); return; }
     const renders = { dashboard: renderDashboard, protocols: renderProtocols, cards: renderCards, history: renderHistory, strategy: renderStrategy, simulator: renderSimulator, wallets: renderWallets, fiscal: renderFiscal, settings: renderSettings };
-    mc.innerHTML = `<div class="tab-content">${(renders[currentTab]||renderDashboard)(w)}</div>`;
+    const html = `<div class="tab-content">${(renders[currentTab]||renderDashboard)(w)}</div>`;
+    // Se o HTML novo é idêntico ao que já está no ecrã, NÃO reescrever o DOM —
+    // reescrever apaga e reconstrói tudo, causando um "flash" visível mesmo quando
+    // nada mudou. Esta guarda elimina os flashes de redesenhos redundantes (ex: o
+    // refresh de 60s quando os dados não mudaram).
+    if (mc._lastHtml === html) return;
+    mc._lastHtml = html;
+    mc.innerHTML = html;
     afterRender();
   } catch(e) {
     console.error('Render error:', e);
@@ -17017,12 +17024,12 @@ async function refreshAll() {
   live.lastRefresh = new Date().toLocaleTimeString('pt-PT');
   checkAlerts(w);
   if (btn) { btn.textContent='↻'; btn.disabled=false; }
-  render();
+  renderDebounced();
   // Capture realized DeFi income (claimed fees / emissions) in the background — informational
   // record for a possible future Cat. E treatment. Non-blocking; re-renders if anything new.
   if (_proxyActive() || resolveAlchemyKey(w)) {
     captureDefiIncome(w, resolveAlchemyKey(w))
-      .then(n => { if (n > 0) { console.log(`[DeFi income] +${n} novo(s) evento(s) registado(s)`); render(); } })
+      .then(n => { if (n > 0) { console.log(`[DeFi income] +${n} novo(s) evento(s) registado(s)`); renderDebounced(); } })
       .catch(() => {});
   }
   // C1: Save live state to cache for next reload
