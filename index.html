@@ -9775,6 +9775,17 @@ async function fetchChainlinkPrice(chain, contract, key) {
 }
 window.fetchChainlinkPrice = fetchChainlinkPrice;
 
+// Redes suportadas pelo Portfolio API da Alchemy (descoberto empiricamente em
+// Mai/2026 — a lista do Portfolio API é menor que a do RPC normal). As que ficam
+// de fora (mantle, sonic, zkevm, metis, mode, frax, moonbeam, opbnb, bob,
+// superseed, astar, sei, flow) são lidas pelo método on-chain como antes.
+const PORTFOLIO_API_CHAINS = new Set([
+  'eth', 'base', 'arbitrum', 'optimism', 'polygon', 'scroll', 'linea',
+  'avalanche', 'bsc', 'blast', 'celo', 'zksync', 'zora', 'berachain',
+  'unichain', 'ink', 'soneium', 'worldchain', 'apechain', 'ronin',
+  'abstract', 'lens', 'rootstock',
+]);
+
 // ── Portfolio API: nomes de rede (derivados dos subdomínios Alchemy) ──────────
 // O Portfolio API usa os mesmos nomes que os subdomínios RPC (eth-mainnet, etc.).
 // Extraímo-los automaticamente de ALCHEMY_RPCS para não duplicar a manutenção.
@@ -9791,79 +9802,116 @@ function _portfolioNetworkName(chain) {
 // ou null se falhar (a fetchRealBalances faz fallback ao método antigo).
 async function fetchPortfolioBalances(evmAddr, key) {
   if (!evmAddr || !key) return null;
-  const networks = Object.keys(ALCHEMY_RPCS)
-    .filter(c => ALCHEMY_RPCS[c])
+  const allNetworks = Object.keys(ALCHEMY_RPCS)
+    .filter(c => ALCHEMY_RPCS[c] && PORTFOLIO_API_CHAINS.has(c))
     .map(_portfolioNetworkName)
     .filter(Boolean);
-  if (!networks.length) return null;
+  if (!allNetworks.length) return null;
+
+  // O Portfolio API limita o nº de redes por pedido (~15). Enviar as 36 de uma
+  // vez dá 400 Bad Request. Dividimos em lotes de 12 (folga de segurança) — são
+  // 3 pedidos em vez de milhares, na mesma um salto enorme.
+  const NET_BATCH = 12;
+  const netBatches = [];
+  for (let i = 0; i < allNetworks.length; i += NET_BATCH) {
+    netBatches.push(allNetworks.slice(i, i + NET_BATCH));
+  }
 
   const url = `https://api.g.alchemy.com/data/v1/${key}/assets/tokens/by-address`;
   const holdings = [];
   const priceMap = new Map(); // 'chain:contract' → priceUSD
-  let pageKey = undefined;
-  let pages = 0;
-  const MAX_PAGES = 8; // segurança
 
   // mapa inverso: network name → chain key interno
   const netToChain = {};
   Object.keys(ALCHEMY_RPCS).forEach(c => { const n = _portfolioNetworkName(c); if (n) netToChain[n] = c; });
 
-  try {
-    do {
-      const body = {
-        addresses: [{ address: evmAddr, networks }],
-        withMetadata: true,
-        withPrices: true,
-        includeNativeTokens: true,
-        includeErc20Tokens: true,
-      };
-      if (pageKey) body.pageKey = pageKey;
+  let anySuccess = false;
+  // Conjunto de redes que o Portfolio API rejeita (descoberto dinamicamente).
+  // Persiste na sessão para não repetir o erro em refreshes seguintes.
+  window._portfolioUnsupported = window._portfolioUnsupported || new Set();
 
-      await _alchemyThrottle();
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        // 400/429/etc → desiste do Portfolio API, deixa o fallback tratar
-        return null;
-      }
-      const j = await res.json();
-      const tokens = j?.data?.tokens || [];
-      for (const t of tokens) {
-        const chain = netToChain[t.network];
-        if (!chain) continue;
-        const meta = t.tokenMetadata || {};
-        const decimals = meta.decimals;
-        if (decimals == null) continue;
-        const rawHex = t.tokenBalance;
-        if (!rawHex || rawHex === '0x' || rawHex === '0x0') continue;
-        let qty;
-        try { qty = Number(BigInt(rawHex)) / Math.pow(10, decimals); }
-        catch { qty = parseInt(rawHex, 16) / Math.pow(10, decimals); }
-        if (!(qty > 0)) continue;
-        const sym = meta.symbol || '?';
-        const isNative = !t.tokenAddress || t.tokenAddress === 'native';
-        const contract = isNative ? null : t.tokenAddress;
-        // preço (se a Alchemy o trouxe)
-        const px = Array.isArray(t.tokenPrices) ? t.tokenPrices.find(p => p.currency === 'usd') : null;
-        if (px && contract) priceMap.set(chain + ':' + contract.toLowerCase(), Number(px.value));
-        holdings.push({
-          asset: sym, chain, contract, qty,
-          decimals, native: isNative,
-          logoUrl: meta.logo || null,
-          _portfolioPriceUSD: px ? Number(px.value) : null,
+  for (let bi = 0; bi < netBatches.length; bi++) {
+    let networks = netBatches[bi].filter(n => !window._portfolioUnsupported.has(n));
+    if (!networks.length) continue;
+    let pageKey = undefined;
+    let pages = 0;
+    const MAX_PAGES = 5;
+    let batchRetries = 0;
+    try {
+      do {
+        const body = {
+          addresses: [{ address: evmAddr, networks }],
+          withMetadata: true,
+          withPrices: true,
+          includeNativeTokens: true,
+          includeErc20Tokens: true,
+        };
+        if (pageKey) body.pageKey = pageKey;
+
+        await _alchemyThrottle();
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
         });
-      }
-      pageKey = j?.data?.pageKey;
-      pages++;
-    } while (pageKey && pages < MAX_PAGES);
-
-    return { holdings, priceMap };
-  } catch (e) {
-    return null; // qualquer falha → fallback
+        if (res.status === 429) { // rate limit — espera e repete este lote
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        if (res.status === 400) {
+          // Provável rede não suportada: lê a mensagem, remove a rede e repete.
+          let unsupported = null;
+          try {
+            const err = await res.json();
+            const m = (err?.error?.message || '').match(/Unsupported network:\s*([a-z0-9-]+)/i);
+            if (m) unsupported = m[1];
+          } catch {}
+          if (unsupported && batchRetries < 12) {
+            window._portfolioUnsupported.add(unsupported);
+            networks = networks.filter(n => n !== unsupported);
+            batchRetries++;
+            if (!networks.length) break;
+            pageKey = undefined; pages = 0;
+            continue; // tenta o lote de novo sem a rede problemática
+          }
+          break; // 400 por outra razão — salta o lote
+        }
+        if (!res.ok) break; // outro erro → salta o lote
+        const j = await res.json();
+        const tokens = j?.data?.tokens || [];
+        anySuccess = true;
+        for (const t of tokens) {
+          const chain = netToChain[t.network];
+          if (!chain) continue;
+          const meta = t.tokenMetadata || {};
+          const decimals = meta.decimals;
+          if (decimals == null) continue;
+          const rawHex = t.tokenBalance;
+          if (!rawHex || rawHex === '0x' || rawHex === '0x0') continue;
+          let qty;
+          try { qty = Number(BigInt(rawHex)) / Math.pow(10, decimals); }
+          catch { qty = parseInt(rawHex, 16) / Math.pow(10, decimals); }
+          if (!(qty > 0)) continue;
+          const sym = meta.symbol || '?';
+          const isNative = !t.tokenAddress || t.tokenAddress === 'native';
+          const contract = isNative ? null : t.tokenAddress;
+          const px = Array.isArray(t.tokenPrices) ? t.tokenPrices.find(p => p.currency === 'usd') : null;
+          if (px && contract) priceMap.set(chain + ':' + contract.toLowerCase(), Number(px.value));
+          holdings.push({
+            asset: sym, chain, contract, qty,
+            decimals, native: isNative,
+            logoUrl: meta.logo || null,
+            _portfolioPriceUSD: px ? Number(px.value) : null,
+          });
+        }
+        pageKey = j?.data?.pageKey;
+        pages++;
+      } while (pageKey && pages < MAX_PAGES);
+    } catch (e) { /* lote falhou — continua para os outros */ }
   }
+
+  if (!anySuccess) return null; // nenhum lote funcionou → fallback ao método antigo
+  return { holdings, priceMap };
 }
 window.fetchPortfolioBalances = fetchPortfolioBalances;
 
@@ -9907,6 +9955,40 @@ async function fetchRealBalances(w, { force = false } = {}) {
       }
       if (eng?.isProtocolReceiptToken?.(h.asset)) continue;
       holdings.push(h);
+    }
+
+    // Redes que o Portfolio API NÃO cobre: lê-las pelo método on-chain (poucas,
+    // leve). Assim a cobertura fica completa sem voltar ao monstro de pedidos.
+    const _onchainOnly = Object.keys(ALCHEMY_RPCS)
+      .filter(c => ALCHEMY_RPCS[c] && !PORTFOLIO_API_CHAINS.has(c) && !_alchemyChainUnavailable.has(c));
+    for (const chain of _onchainOnly) {
+      try {
+        const nativeHex = await _alchemyRpc(chain, 'eth_getBalance', [evmAddr, 'latest'], key);
+        if (_alchemyChainUnavailable.has(chain)) continue;
+        if (nativeHex) {
+          const nativeQty = parseInt(nativeHex, 16) / 1e18;
+          if (nativeQty > 1e-9) {
+            const sym = (chain === 'polygon') ? 'POL' : 'ETH';
+            holdings.push({ asset: sym, chain, contract: null, qty: nativeQty, decimals: 18, native: true });
+          }
+        }
+        const bal = await _alchemyRpc(chain, 'alchemy_getTokenBalances', [evmAddr, 'erc20'], key);
+        const toks = (bal && bal.tokenBalances) || [];
+        const nz = toks.filter(t => t.tokenBalance && t.tokenBalance !== '0x' && parseInt(t.tokenBalance, 16) > 0).slice(0, 40);
+        if (nz.length) {
+          const metas = await _rpcBatch(chain, nz.map(t => ({ method: 'alchemy_getTokenMetadata', params: [t.contractAddress] })), key);
+          for (let i = 0; i < nz.length; i++) {
+            const t = nz[i], meta = metas[i];
+            if (!meta || meta.decimals == null) continue;
+            const qty = parseInt(t.tokenBalance, 16) / Math.pow(10, meta.decimals);
+            if (qty <= 0) continue;
+            const sym = meta.symbol || '?';
+            if (eng?.isSpamToken?.({ asset: sym, chain, assetContract: t.contractAddress, amount: qty })) continue;
+            if (eng?.isProtocolReceiptToken?.(sym)) continue;
+            holdings.push({ asset: sym, chain, contract: t.contractAddress, qty, decimals: meta.decimals, logoUrl: meta.logo || null });
+          }
+        }
+      } catch (e) { /* rede on-chain falhou — não-fatal */ }
     }
 
     // Posições DeFi (LP) — o Portfolio API não as dá, por isso lemo-las à parte
