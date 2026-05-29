@@ -9029,21 +9029,12 @@ function _getFifoStateFor(w) {
 // (alchemy_getTokenBalances + getTokenMetadata) and price them at current market.
 // Cached in-memory per wallet for the session; refreshed on demand.
 // ══════════════════════════════════════════════════════════════
-// Cadeias que a chave atual NÃO tem acesso (403) — saltadas nesta sessão para
-// não repetir pedidos nem encher a consola de erros.
+// Cadeias que a chave atual NÃO tem acesso (403) ou que falham por CORS no
+// browser — marcadas dinamicamente quando um pedido falha, para não repetir nem
+// poluir a consola nesta sessão. (Teste empírico em Mai/2026: com a chave da
+// empresa a ter todas as redes ligadas, as 36 redes respondem ao browser. Esta
+// marcação dinâmica fica como rede de segurança caso alguma falhe pontualmente.)
 const _alchemyChainUnavailable = new Set();
-
-// Cadeias cujo endpoint Alchemy NÃO envia headers CORS → o browser bloqueia o
-// pedido antes do JS poder agir (erro "No Access-Control-Allow-Origin"). Estas
-// só funcionam através de um servidor/proxy. Até o proxy existir, saltamo-las no
-// browser para não poluir a consola nem perder tempo. (Confirmado empiricamente;
-// quando houver proxy, estas passam a funcionar e a lista deixa de ser usada.)
-const _BROWSER_CORS_BLOCKED = new Set([
-  'zora', 'ink', 'soneium', 'ronin', 'frax', 'flow', 'superseed',
-  'worldchain', 'apechain', 'bob', 'astar', 'abstract', 'lens', 'rootstock',
-]);
-// Pré-marcar como indisponíveis no browser (o proxy futuro limpará isto).
-_BROWSER_CORS_BLOCKED.forEach(c => _alchemyChainUnavailable.add(c));
 
 // ── Rate limiter global para a Alchemy ──────────────────────────────────────
 // O free tier da Alchemy tem um limite de pedidos por segundo (CUPS). Com 44
@@ -9079,19 +9070,20 @@ async function _alchemyRpc(chain, method, params, key) {
   }
   // 403 = a chave não tem esta rede ligada no painel Alchemy → saltar a rede toda
   if (res.status === 403) { _alchemyChainUnavailable.add(chain); return null; }
-  // 429 = rate limit → espera e tenta UMA vez mais; se persistir, devolve null
-  if (res.status === 429) {
-    await new Promise(r => setTimeout(r, 1200));
+  // 429 = rate limit → espera progressiva e tenta até 3x; só desiste no fim
+  let _retry = 0;
+  while (res.status === 429 && _retry < 3) {
+    _retry++;
+    await new Promise(r => setTimeout(r, 800 * _retry)); // 0.8s, 1.6s, 2.4s
     try {
       res = await fetch(base + key, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
       });
     } catch { return null; }
-    if (!res.ok) return null;
-  } else if (!res.ok) {
-    return null; // qualquer outro erro HTTP: silencioso, não estoira o fluxo
   }
+  if (res.status === 429) return null; // ainda limitado após 3 tentativas — desiste em silêncio
+  if (!res.ok) return null; // qualquer outro erro HTTP: silencioso, não estoira o fluxo
   const j = await res.json();
   if (j.error) {
     const msg = (j.error.message || '').toLowerCase();
