@@ -7653,6 +7653,7 @@ async function importCexCsv(exchange, label, csvText, opts) {
     adapter: parsed.adapter && parsed.adapter.id, provisional: !!parsed.provisional });
   // invalidar cache FIFO desta wallet (e caches consolidados, podem ter mudado)
   try { Object.keys(window).filter(k => k.startsWith('_fifoCache_'+w.id) || k.startsWith('_ownerFifoCache_')).forEach(k => delete window[k]); } catch(_){}
+  try { if (typeof _eventsCache !== 'undefined') _eventsCache.delete(w.id); } catch(_){}
   saveState();
   return { ok:true, wallet:w, imported: fresh.length, total: events.length,
     txs: parsed.transactions.length, errors: parsed.errors, adapter: parsed.adapter,
@@ -7933,6 +7934,7 @@ async function confirmCexImport() {
     closeModal('modalCexImport');
     toast(`✓ ${res.imported} eventos importados de ${res.txs} transações (${exchange})${res.provisional?' · adaptador provisório':''}`, 'success', 7000);
     try { delete window['_fifoCache_'+res.wallet.id]; } catch(_){}
+    try { if (typeof _eventsCache !== 'undefined') _eventsCache.delete(res.wallet.id); } catch(_){}
     boot();
   } catch (e) {
     console.error('[CEX import]', e);
@@ -9044,16 +9046,28 @@ function getSnapshotDelta24h(currentNet) {
 // ════════════════════════════════════════════════════════════════════
 
 // Compute FIFO state once (cached per render) for use across dashboard widgets
+// Cache do filtro de eventos por carteira. Sem isto, numa carteira com 10k+
+// transações, varríamos e convertíamos para minúsculas TODOS os eventos a cada
+// chamada — e a função é chamada ~14x por render. O cache faz o filtro UMA vez e
+// reutiliza, invalidando só quando os eventos mudam (nova tx) ou a carteira muda.
+const _eventsCache = new Map(); // w.id → { sig, events }
 function _eventsForWallet(w) {
   if (!w) return [];
+  const all = state.events || [];
+  // Assinatura: nº de eventos + último timestamp. Muda quando há eventos novos.
+  const sig = all.length + '_' + (all.length ? (all[all.length - 1]?.timestamp || 0) : 0);
+  const cached = _eventsCache.get(w.id);
+  if (cached && cached.sig === sig) return cached.events;
+
   const wAddr = (w.addr || w.evm || '').toLowerCase();
   const btcAddr = (w.bitcoinXpub || w.bitcoinAddress || '').toLowerCase();
   const solAddr = (w.sol || '').toLowerCase();
   const ids = [wAddr, btcAddr, solAddr].filter(Boolean);
-  if (ids.length === 0) return [];
-  return (state.events || []).filter(e =>
-    ids.includes((e.walletAddress || '').toLowerCase())
-  );
+  if (ids.length === 0) { _eventsCache.set(w.id, { sig, events: [] }); return []; }
+  const idSet = new Set(ids); // Set é mais rápido que Array.includes em loops grandes
+  const events = all.filter(e => idSet.has((e.walletAddress || '').toLowerCase()));
+  _eventsCache.set(w.id, { sig, events });
+  return events;
 }
 
 function _getFifoStateFor(w) {
