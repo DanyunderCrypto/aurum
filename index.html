@@ -9775,6 +9775,20 @@ async function fetchChainlinkPrice(chain, contract, key) {
 }
 window.fetchChainlinkPrice = fetchChainlinkPrice;
 
+// Token nativo de cada rede. CRÍTICO para valorização: sem isto, o saldo nativo
+// de redes não-ETH (SEI, Moonbeam, BNB…) era contado como ETH ao preço do ETH,
+// inflando o portfólio com valor fantasma. Redes não listadas assumem ETH.
+const NATIVE_TOKEN = {
+  polygon: 'POL', avalanche: 'AVAX', bsc: 'BNB', opbnb: 'BNB', celo: 'CELO',
+  sonic: 'S', mantle: 'MNT', gnosis: 'XDAI', metis: 'METIS', moonbeam: 'GLMR',
+  sei: 'SEI', ronin: 'RON', rootstock: 'RBTC', flow: 'FLOW', astar: 'ASTR',
+  berachain: 'BERA', apechain: 'APE', lens: 'GHO',
+  // restantes (eth, base, arbitrum, optimism, scroll, linea, blast, zksync,
+  // zkevm, zora, unichain, mode, ink, soneium, worldchain, bob, superseed,
+  // abstract, frax) usam ETH como nativo.
+};
+function _nativeSymbol(chain) { return NATIVE_TOKEN[chain] || 'ETH'; }
+
 // Redes suportadas pelo Portfolio API da Alchemy (descoberto empiricamente em
 // Mai/2026 — a lista do Portfolio API é menor que a do RPC normal). As que ficam
 // de fora (mantle, sonic, zkevm, metis, mode, frax, moonbeam, opbnb, bob,
@@ -9968,7 +9982,7 @@ async function fetchRealBalances(w, { force = false } = {}) {
         if (nativeHex) {
           const nativeQty = parseInt(nativeHex, 16) / 1e18;
           if (nativeQty > 1e-9) {
-            const sym = (chain === 'polygon') ? 'POL' : 'ETH';
+            const sym = _nativeSymbol(chain);
             holdings.push({ asset: sym, chain, contract: null, qty: nativeQty, decimals: 18, native: true });
           }
         }
@@ -10035,7 +10049,7 @@ async function fetchRealBalances(w, { force = false } = {}) {
       if (nativeHex) {
         const nativeQty = parseInt(nativeHex, 16) / 1e18;
         if (nativeQty > 1e-9) {
-          const sym = (chain === 'polygon') ? 'POL' : 'ETH';
+          const sym = _nativeSymbol(chain);
           holdings.push({ asset: sym, chain, contract: null, qty: nativeQty, decimals: 18, native: true });
         }
       }
@@ -10577,6 +10591,12 @@ function renderDefiPositions(w) {
     return null;
   };
   for (const lp of lpPositions) {
+    // Saltar posições LP vazias: NFTs de posições já fechadas (liquidez retirada)
+    // ficam com 0 tokens e 0 fees, mas o NFT persiste. Não fazem sentido mostrar.
+    const _hasTokens = (lp.token0?.amount > 1e-12) || (lp.token1?.amount > 1e-12);
+    const _hasFees = (lp.token0?.fees > 1e-12) || (lp.token1?.fees > 1e-12);
+    const _hasEmissions = (lp.aeroEarned > 1e-9);
+    if (!_hasTokens && !_hasFees && !_hasEmissions) continue;
     const p0 = _priceLeg(lp.chain, lp.token0.address, lp.token0.symbol);
     const p1 = _priceLeg(lp.chain, lp.token1.address, lp.token1.symbol);
     const val0 = p0 != null ? lp.token0.amount * p0 : null;
@@ -10664,6 +10684,9 @@ function renderDefiPositions(w) {
     let underlyingDecimals = v.decimals;
     const assetsQty = Number(BigInt(v.assetsRaw)) / Math.pow(10, underlyingDecimals);
     if (!isFinite(assetsQty) || assetsQty <= 0) continue;
+    // Esconder posições residuais: quantidade tão pequena que mostra "0,00".
+    // São restos de posições já fechadas (poeira), não posições reais.
+    if (assetsQty < 0.005) continue;
     const pk = `${(v.underlyingContract || '').toLowerCase()}:${v.chain}`;
     let ppu = evPrice.get(pk);
     if (ppu == null) {
