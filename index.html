@@ -6641,6 +6641,17 @@ const fifoEngine = (() => {
       const df = sym.toUpperCase().replace(/5/g,'S').replace(/0/g,'O').replace(/1/g,'I').replace(/3/g,'E').replace(/4/g,'A').replace(/8/g,'B').replace(/[^A-Z0-9]/g,'');
       if (KNOWN_TICKERS.has(df) && sym.toUpperCase() !== df) return true;
     }
+    // CJK impersonation: tokens de spam usam o nome de criptos famosas em chinês/
+    // japonês/coreano (比特币=Bitcoin, 以太坊=Ethereum) para parecer legítimos e
+    // enganar o utilizador. Um token ERC-20 numa EVM com nome destes é impostor —
+    // o Bitcoin real não é um ERC-20. Marcamos como spam. (Geral, sem lista por token.)
+    const CJK_IMPOSTOR_NAMES = ['比特币', '比特幣', '以太坊', '以太币', '泰达币', '狗狗币', '莱特币', 'ビットコイン', 'イーサリアム', '비트코인', '이더리움'];
+    if (CJK_IMPOSTOR_NAMES.some(n => sym.includes(n) || name.includes(n))) return true;
+    // Qualquer símbolo/nome predominantemente em CJK num token ERC-20 é altamente
+    // suspeito (tokens legítimos usam tickers ASCII). Se tem CJK E não está na
+    // allowlist de contratos, tratamos como spam para não inflar o portfólio.
+    if (/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(sym)) return true;
+
     // Scam-name patterns (URLs, "claim at X", etc.)
     for (const pat of SPAM_NAME_PATTERNS) {
       if (pat.test(name) || pat.test(sym)) return true;
@@ -9898,7 +9909,12 @@ async function fetchPortfolioBalances(evmAddr, key) {
           const chain = netToChain[t.network];
           if (!chain) continue;
           const meta = t.tokenMetadata || {};
-          const decimals = meta.decimals;
+          const isNative = !t.tokenAddress || t.tokenAddress === 'native';
+          // O token NATIVO (ETH, BNB…) vem com tokenAddress=null e SEM decimals na
+          // metadata. Nativos têm sempre 18 decimais. Sem este tratamento, o ETH
+          // em Base/Arbitrum/OP era saltado (decimals==null) e essas redes nunca
+          // apareciam no portfólio. Bug crítico — corrigido aqui.
+          const decimals = isNative ? 18 : meta.decimals;
           if (decimals == null) continue;
           const rawHex = t.tokenBalance;
           if (!rawHex || rawHex === '0x' || rawHex === '0x0') continue;
@@ -9906,8 +9922,7 @@ async function fetchPortfolioBalances(evmAddr, key) {
           try { qty = Number(BigInt(rawHex)) / Math.pow(10, decimals); }
           catch { qty = parseInt(rawHex, 16) / Math.pow(10, decimals); }
           if (!(qty > 0)) continue;
-          const sym = meta.symbol || '?';
-          const isNative = !t.tokenAddress || t.tokenAddress === 'native';
+          const sym = isNative ? _nativeSymbol(chain) : (meta.symbol || '?');
           const contract = isNative ? null : t.tokenAddress;
           const px = Array.isArray(t.tokenPrices) ? t.tokenPrices.find(p => p.currency === 'usd') : null;
           if (px && contract) priceMap.set(chain + ':' + contract.toLowerCase(), Number(px.value));
