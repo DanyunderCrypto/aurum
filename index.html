@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.07) 0.9px, transparent 0.9px); background-size:20px 20px; }
-[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.07) 0.9px, transparent 0.9px); background-size:20px 20px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.05) 0.9px, transparent 0.9px); background-size:20px 20px; }
+[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.05) 0.9px, transparent 0.9px); background-size:20px 20px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -873,8 +873,8 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   margin-bottom: 0.4rem;
 }
 .form-input, .form-select, .form-textarea {
-  background: var(--surface-elev);
-  border: 1px solid var(--border-soft);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(212,175,122,0.12);
   color: var(--text);
   padding: 0.75rem 0.95rem;
   font-family: var(--body);
@@ -890,6 +890,10 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   background: var(--surface);
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 2px rgba(212,175,122,0.1); }
+[data-theme="light"] .form-input, [data-theme="light"] .form-select, [data-theme="light"] .form-textarea {
+  background: rgba(154,118,53,0.04);
+  border: 1px solid rgba(154,118,53,0.18);
+}
 .form-select option { background:var(--bg2); }
 .form-note { font-size:0.72rem; color:var(--muted); font-style:italic; line-height:1.4; }
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:0.9rem; }
@@ -1087,7 +1091,7 @@ td.muted  { color:var(--muted); }
 .proto-info h3 { font-size:1rem; font-weight:600; }
 .proto-info small { font-family:var(--mono); font-size:0.7rem; color:var(--muted); letter-spacing:0.15em; text-transform:uppercase; }
 .proto-metrics { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; }
-.proto-metric { background:var(--bg2); padding:0.6rem 0.75rem; border-radius:var(--radius); }
+.proto-metric { background:rgba(212,175,122,0.04); border:1px solid rgba(212,175,122,0.08); padding:0.6rem 0.75rem; border-radius:var(--radius); }
 .proto-metric-label { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); margin-bottom:0.2rem; }
 .proto-metric-value { font-family:var(--display); font-size:1.2rem; }
 
@@ -11859,7 +11863,7 @@ function renderUnifiedPositions() {
           </div>
         </td></tr>`;
       } else if (!r.isMorpho) {
-        row += `<tr><td colspan="8" style="padding:0;background:var(--bg2);border-top:1px solid var(--gold)">
+        row += `<tr><td colspan="8" style="padding:0;background:rgba(212,175,122,0.04);border-top:1px solid var(--gold)">
           <div style="padding:1.2rem">
             <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:0.8rem">⬡ AAVE V3 ${r.chain} — Detalhe</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem">
@@ -11870,7 +11874,7 @@ function renderUnifiedPositions() {
                 ['Dívida', '$'+fmt(r.debt), 'var(--amber)'],
                 ['LTV Actual', fmt(r.ltv,2)+'%', ltvColor],
                 ['Disponível p/ Borrow', '$'+fmt(r.available||0), 'var(--blue)'],
-              ].map(([l,v,c])=>`<div style="background:var(--bg3);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
+              ].map(([l,v,c])=>`<div style="background:rgba(212,175,122,0.05);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
             </div>
             <div style="margin-top:1rem;font-family:var(--mono);font-size:0.7rem;color:var(--muted)">
               <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">→ Abrir em app.aave.com</a>
@@ -11914,7 +11918,7 @@ function renderUnifiedPositions() {
 function renderMorphoMarketCard(m) {
   const hfColor = !m.hf ? 'var(--muted)' : m.hf<1.2 ? 'var(--red)' : m.hf<1.5 ? 'var(--gold)' : 'var(--green)';
   const utilColor = m.utilization>0.9 ? 'var(--red)' : m.utilization>0.7 ? 'var(--gold)' : 'var(--green)';
-  return `<div style="background:var(--bg3);border:1px solid ${hfColor};border-radius:var(--radius);padding:1rem">
+  return `<div style="background:rgba(212,175,122,0.05);border:1px solid ${hfColor};border-radius:var(--radius);padding:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
       <div>
         <div style="font-family:var(--display);font-size:1.1rem;color:var(--white)">${m.colSym} → ${m.loanSym}</div>
@@ -11926,12 +11930,12 @@ function renderMorphoMarketCard(m) {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
-      <div style="padding:0.5rem 0.6rem;background:var(--bg);border-radius:2px">
+      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.04);border-radius:2px">
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div>
         <div style="color:var(--gold);font-weight:600">${m.colAmt.toFixed(4)} ${m.colSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.collateralUsd)}</div>
       </div>
-      <div style="padding:0.5rem 0.6rem;background:var(--bg);border-radius:2px">
+      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.04);border-radius:2px">
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div>
         <div style="color:var(--amber);font-weight:600">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.borrowUsd)}</div>
