@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.10) 0.8px, transparent 0.8px); background-size:18px 18px; }
-[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.05) 0.8px, transparent 0.8px); background-size:18px 18px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.045) 0.7px, transparent 0.7px); background-size:18px 18px; }
+[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.04) 0.7px, transparent 0.7px); background-size:18px 18px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -11190,6 +11190,10 @@ function renderPortfolioCharts(w) {
     }
   }
 
+  // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
+  // O hero renderiza antes desta função; lê este valor no re-render seguinte.
+  try { window['_portfolioTotal_' + w.id] = { eur: totalPortfolio, source: valueSource, ts: Date.now() }; } catch(_){}
+
   if (totalPortfolio < 1) return '';
 
   // Build per-asset basis for PnL: scale the FIFO average cost to the quantity we actually
@@ -11390,6 +11394,52 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   `;
 }
 
+// Grava o valor total do portfólio ao longo do tempo (para o gráfico de evolução
+// do hero). Como só sabemos o valor "agora", a curva constrói-se a partir de hoje:
+// guardamos um ponto por dia (o último valor do dia). Máx ~180 pontos (6 meses).
+function recordPortfolioValue(wid, eur) {
+  if (!wid || !(eur > 0)) return;
+  try {
+    state.valueHistory = state.valueHistory || {};
+    const hist = state.valueHistory[wid] || [];
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const last = hist[hist.length - 1];
+    if (last && last.d === today) {
+      last.v = eur; // atualiza o ponto de hoje
+    } else {
+      hist.push({ d: today, v: eur });
+    }
+    if (hist.length > 180) hist.splice(0, hist.length - 180);
+    state.valueHistory[wid] = hist;
+  } catch(_){}
+}
+
+// Sparkline dourado (curva de evolução do património). Devolve SVG ou '' se não
+// houver pontos suficientes ainda (a curva precisa de pelo menos 2 dias).
+function portfolioSparkline(wid, width = 260, height = 56) {
+  const hist = (state.valueHistory && state.valueHistory[wid]) || [];
+  if (hist.length < 2) {
+    return `<div style="display:flex;align-items:center;justify-content:center;height:${height}px;font-size:0.7rem;color:var(--text-dim);text-align:center;padding:0 1rem">A recolher histórico — a curva aparece a partir de amanhã</div>`;
+  }
+  const vals = hist.map(p => p.v);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = (max - min) || 1;
+  const pts = hist.map((p, i) => {
+    const x = (i / (hist.length - 1)) * width;
+    const y = height - ((p.v - min) / range) * (height - 6) - 3;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = pts.join(' ');
+  const area = `${line} ${width},${height} 0,${height}`;
+  const up = vals[vals.length - 1] >= vals[0];
+  const col = '#D4AF7A'; // dourado (identidade Aurum, em vez do verde genérico)
+  return `
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" style="display:block">
+      <polyline points="${area}" fill="rgba(212,175,122,0.08)" stroke="none"/>
+      <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>`;
+}
+
 function renderDashboard(w) {
   // Build unified protocol list
   const protoEntries = [];
@@ -11418,6 +11468,14 @@ function renderDashboard(w) {
   });
   const netWorth = totalCol - totalDebt;
   const gLTV = totalCol>0?(totalDebt/totalCol*100):0;
+
+  // Saldo TOTAL da carteira (tokens soltos + DeFi), exposto por renderPortfolioCharts
+  // no render anterior. Fallback para o netWorth DeFi se ainda não estiver disponível.
+  const _ptot = window['_portfolioTotal_' + w.id];
+  const walletTotalEUR = (_ptot && _ptot.eur > 0) ? _ptot.eur : null;
+  const _balanceLoading = !_ptot; // ainda não chegou o primeiro cálculo de saldos
+  if (walletTotalEUR) recordPortfolioValue(w.id, walletTotalEUR);
+  const hasLeveraged = protoEntries.length > 0 && (totalCol > 0 || totalDebt > 0);
   const cols = state.collateral.filter(c=>c.walletId===w.id);
   const isentos = cols.filter(c=>daysHeld(c.acqDate)>=365);
   const isentoEur = isentos.reduce((s,c)=>s+(+c.eur||0),0);
@@ -11472,32 +11530,39 @@ function renderDashboard(w) {
     ${alertHTML}
     ${lotSugBanner}
 
-    <!-- HERO BLOCK — net worth first (what everyone wants to see) -->
+    <!-- HERO BLOCK — saldo total da carteira primeiro (o que toda a gente quer ver) -->
     <div class="hero-block">
       <div class="hero-main">
-        <div class="hero-label">${t('hero.netPosition')}</div>
+        <div class="hero-label">Património total</div>
         <div class="hero-value">
-          <span class="currency-symbol">$</span>${fmt(netWorth, 2)}
+          ${walletTotalEUR
+            ? `<span class="currency-symbol">€</span>${fmt(walletTotalEUR, 2)}`
+            : _balanceLoading
+              ? `<span style="font-size:0.5em;color:var(--text-muted)">a carregar saldos…</span>`
+              : `<span class="currency-symbol">$</span>${fmt(netWorth, 2)}`}
         </div>
         ${deltaHTML}
       </div>
-      <div class="hero-side">
-        <div class="hero-mini-stat">
-          <div class="hero-mini-label">${t('hero.collateral')}</div>
-          <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalCol, 2)}</div>
-          <div class="hero-mini-sub">≈ €${fmt(totalCol*live.eurRate)}</div>
-        </div>
-        <div class="hero-mini-divider"></div>
-        <div class="hero-mini-stat">
-          <div class="hero-mini-label">${t('hero.debt')}</div>
-          <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalDebt, 2)}</div>
-          <div class="hero-mini-sub">${protoEntries.length} ${protoEntries.length===1?t('hero.activePosition'):t('hero.activePositions')}</div>
-        </div>
+      <div class="hero-side" style="flex-direction:column;align-items:stretch;justify-content:center;min-width:260px">
+        ${portfolioSparkline(w.id)}
+        ${hasLeveraged ? `
+        <div style="display:flex;gap:1rem;margin-top:0.6rem;justify-content:flex-end">
+          <div class="hero-mini-stat">
+            <div class="hero-mini-label">${t('hero.collateral')}</div>
+            <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalCol, 2)}</div>
+          </div>
+          <div class="hero-mini-divider"></div>
+          <div class="hero-mini-stat">
+            <div class="hero-mini-label">${t('hero.debt')}</div>
+            <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalDebt, 2)}</div>
+          </div>
+        </div>` : ''}
       </div>
     </div>
 
-    <!-- KEY METRICS (4 stats) -->
+    <!-- KEY METRICS — HF/LTV só quando há posições alavancadas (senão ocupam espaço inútil) -->
     <div class="metrics-grid">
+      ${hasLeveraged ? `
       <div class="metric-card">
         <div class="metric-label">Health Factor</div>
         <div class="metric-value" style="color:${hfColor}">${minHF!==null?minHF.toFixed(3):'—'}</div>
@@ -11507,7 +11572,7 @@ function renderDashboard(w) {
         <div class="metric-label">LTV Global</div>
         <div class="metric-value" style="color:${gLTV>80?'var(--red)':gLTV>60?'var(--gold)':'var(--green)'}">${fmt(gLTV,1)}<span class="currency-symbol">%</span></div>
         <div class="metric-sub">${gLTV<60?'margem confortável':gLTV<80?'a aproximar do limite':'zona perigosa'}</div>
-      </div>
+      </div>` : ''}
       <div class="metric-card">
         <div class="metric-label">Lotes Isentos</div>
         <div class="metric-value sv-green">${isentos.length}<span class="metric-sup">/${cols.length}</span></div>
