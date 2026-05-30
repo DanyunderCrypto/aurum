@@ -90,13 +90,13 @@
    Sprint 9.0: LIGHT MODE — warm off-white, gold preserved
    ═══════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  /* ── Light mode: fundo cinza, cartões cinza-claro com nuance dourada ── */
-  --bg:           #E6E4DF;      /* fundo cinza levemente quente, mais escuro que cards */
-  --bg1:          #F6F4EF;      /* cards — cinza muito claro com toque dourado */
-  --bg2:          #EEECE6;      /* recessed / hover */
-  --bg3:          #E2DFD8;
-  --surface:      #F6F4EF;      /* cinza-claro quente (nuance dourada subtil) */
-  --surface-elev: #FBFAF6;
+  /* ── Light mode: fundo cinza médio, cards cinza claro com nuance dourada (NÃO branco) ── */
+  --bg:           #D8D6D0;      /* fundo cinza médio-quente */
+  --bg1:          #E8E6DF;      /* cards — cinza claro (não branco), toque dourado */
+  --bg2:          #E0DDD5;      /* recessed / hover */
+  --bg3:          #D2CFC7;
+  --surface:      #E8E6DF;      /* cinza claro quente — claramente cinza, não branco */
+  --surface-elev: #EEEBE4;
   --surface-soft: rgba(154,118,53,0.05);
 
   /* Brand palette — gold kept ONLY as an accent; deepened for legibility on white */
@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.05) 0.9px, transparent 0.9px); background-size:20px 20px; }
-[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.05) 0.9px, transparent 0.9px); background-size:20px 20px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.035) 0.9px, transparent 0.9px); background-size:20px 20px; }
+[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.04) 0.9px, transparent 0.9px); background-size:20px 20px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -444,20 +444,20 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
-  border: 1px solid rgba(212,175,122,0.25);
+  background: linear-gradient(135deg, rgba(212,175,122,0.035), rgba(212,175,122,0.008));
+  border: 1px solid rgba(212,175,122,0.16);
   border-radius: 16px;
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
 }
 .panel:hover {
-  border-color: rgba(212,175,122,0.35);
+  border-color: rgba(212,175,122,0.26);
 }
 [data-theme="light"] .panel {
-  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
   border: 1px solid rgba(154,118,53,0.22);
-  box-shadow: 0 1px 3px rgba(30,35,45,0.05);
+  box-shadow: 0 1px 3px rgba(60,50,30,0.07);
 }
 [data-theme="light"] .panel:hover {
   border-color: rgba(154,118,53,0.32);
@@ -1091,7 +1091,7 @@ td.muted  { color:var(--muted); }
 .proto-info h3 { font-size:1rem; font-weight:600; }
 .proto-info small { font-family:var(--mono); font-size:0.7rem; color:var(--muted); letter-spacing:0.15em; text-transform:uppercase; }
 .proto-metrics { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; }
-.proto-metric { background:rgba(212,175,122,0.04); border:1px solid rgba(212,175,122,0.08); padding:0.6rem 0.75rem; border-radius:var(--radius); }
+.proto-metric { background:rgba(212,175,122,0.025); border:1px solid rgba(212,175,122,0.08); padding:0.6rem 0.75rem; border-radius:var(--radius); }
 .proto-metric-label { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); margin-bottom:0.2rem; }
 .proto-metric-value { font-family:var(--display); font-size:1.2rem; }
 
@@ -1115,7 +1115,7 @@ td.muted  { color:var(--muted); }
    DROP ZONE
 ══════════════════════════════════════════════════ */
 .drop-zone { border:2px dashed var(--border2); padding:2rem; text-align:center; transition:var(--trans); cursor:pointer; border-radius:var(--radius); }
-.drop-zone:hover, .drop-zone.drag-over { border-color:var(--gold); background:rgba(212,175,122,0.05); box-shadow:inset 0 0 30px rgba(212,175,122,0.03); }
+.drop-zone:hover, .drop-zone.drag-over { border-color:var(--gold); background:rgba(212,175,122,0.03); box-shadow:inset 0 0 30px rgba(212,175,122,0.03); }
 .drop-zone-icon { font-size:2.2rem; margin-bottom:0.6rem; display:block; }
 
 /* ══════════════════════════════════════════════════
@@ -1997,8 +1997,8 @@ body.stealth-mode .stealth-badge {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
   gap: 0;
-  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
-  border: 1px solid rgba(212,175,122,0.25);
+  background: linear-gradient(135deg, rgba(212,175,122,0.035), rgba(212,175,122,0.008));
+  border: 1px solid rgba(212,175,122,0.16);
   border-radius: var(--radius-lg, 14px);
   overflow: hidden;
   position: relative;
@@ -2138,18 +2138,18 @@ body.stealth-mode .stealth-badge {
   margin-top: 1.5rem;
 }
 .metric-card {
-  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
-  border: 1px solid rgba(212,175,122,0.25);
+  background: linear-gradient(135deg, rgba(212,175,122,0.035), rgba(212,175,122,0.008));
+  border: 1px solid rgba(212,175,122,0.16);
   border-radius: var(--radius-md);
   padding: 1.3rem 1.2rem;
   transition: transform 200ms var(--easing), border-color 200ms;
 }
 [data-theme="light"] .metric-card {
-  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
   border: 1px solid rgba(154,118,53,0.22);
 }
 [data-theme="light"] .hero-block {
-  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
   border: 1px solid rgba(154,118,53,0.22);
 }
 .metric-card:hover {
@@ -11863,7 +11863,7 @@ function renderUnifiedPositions() {
           </div>
         </td></tr>`;
       } else if (!r.isMorpho) {
-        row += `<tr><td colspan="8" style="padding:0;background:rgba(212,175,122,0.04);border-top:1px solid var(--gold)">
+        row += `<tr><td colspan="8" style="padding:0;background:rgba(212,175,122,0.025);border-top:1px solid var(--gold)">
           <div style="padding:1.2rem">
             <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:0.8rem">⬡ AAVE V3 ${r.chain} — Detalhe</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem">
@@ -11874,7 +11874,7 @@ function renderUnifiedPositions() {
                 ['Dívida', '$'+fmt(r.debt), 'var(--amber)'],
                 ['LTV Actual', fmt(r.ltv,2)+'%', ltvColor],
                 ['Disponível p/ Borrow', '$'+fmt(r.available||0), 'var(--blue)'],
-              ].map(([l,v,c])=>`<div style="background:rgba(212,175,122,0.05);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
+              ].map(([l,v,c])=>`<div style="background:rgba(212,175,122,0.03);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
             </div>
             <div style="margin-top:1rem;font-family:var(--mono);font-size:0.7rem;color:var(--muted)">
               <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">→ Abrir em app.aave.com</a>
@@ -11918,7 +11918,7 @@ function renderUnifiedPositions() {
 function renderMorphoMarketCard(m) {
   const hfColor = !m.hf ? 'var(--muted)' : m.hf<1.2 ? 'var(--red)' : m.hf<1.5 ? 'var(--gold)' : 'var(--green)';
   const utilColor = m.utilization>0.9 ? 'var(--red)' : m.utilization>0.7 ? 'var(--gold)' : 'var(--green)';
-  return `<div style="background:rgba(212,175,122,0.05);border:1px solid ${hfColor};border-radius:var(--radius);padding:1rem">
+  return `<div style="background:rgba(212,175,122,0.03);border:1px solid ${hfColor};border-radius:var(--radius);padding:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
       <div>
         <div style="font-family:var(--display);font-size:1.1rem;color:var(--white)">${m.colSym} → ${m.loanSym}</div>
@@ -11930,12 +11930,12 @@ function renderMorphoMarketCard(m) {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
-      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.04);border-radius:2px">
+      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.025);border-radius:2px">
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div>
         <div style="color:var(--gold);font-weight:600">${m.colAmt.toFixed(4)} ${m.colSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.collateralUsd)}</div>
       </div>
-      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.04);border-radius:2px">
+      <div style="padding:0.5rem 0.6rem;background:rgba(212,175,122,0.025);border-radius:2px">
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div>
         <div style="color:var(--amber);font-weight:600">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
         <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.borrowUsd)}</div>
