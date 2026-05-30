@@ -3823,7 +3823,8 @@ const MORALIS_CHAINS = { eth: 'eth', base: 'base', arb: 'arbitrum', op: 'optimis
 // Cache: window._moralisApyCache[walletId] = { byProto: {aave-v3:{apy,hf,netApy}}, ts }.
 // Só busca se o cache tiver mais de 10 min (as posições DeFi mudam devagar; poupa créditos).
 async function fetchMoralisApy(w) {
-  if (!w || !w.address || !_proxyActive()) return;
+  if (!w || !w.addr || !_proxyActive()) return;
+  if (!String(w.addr).startsWith('0x')) return; // só carteiras EVM (não CEX/Solana)
   window._moralisApyCache = window._moralisApyCache || {};
   const cached = window._moralisApyCache[w.id];
   if (cached && (Date.now() - cached.ts) < 600000) return; // 10 min de cache
@@ -3838,7 +3839,7 @@ async function fetchMoralisApy(w) {
   const byProto = {};
   for (const chain of chains) {
     try {
-      const url = _moralisUrl(`wallets/${w.address}/defi/positions?chain=${chain}`);
+      const url = _moralisUrl(`wallets/${w.addr}/defi/positions?chain=${chain}`);
       const res = await fetch(url);
       if (!res.ok) continue;
       const positionsArr = await res.json();
