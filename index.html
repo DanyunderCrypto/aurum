@@ -19,13 +19,13 @@
 ══════════════════════════════════════════════════ */
 :root {
   /* === R1: NEW DESIGN SYSTEM (ether.fi premium) === */
-  /* Surfaces — deep black with subtle elevation */
-  --bg:           #0A0A0F;
-  --bg1:          #14141A;
-  --bg2:          #1B1B23;
-  --bg3:          #24242E;
-  --surface:      #14141A;
-  --surface-elev: #1B1B23;
+  /* Surfaces — deep navy/petrol (Ember-style) with subtle elevation */
+  --bg:           #0A0E14;
+  --bg1:          #111722;
+  --bg2:          #18202D;
+  --bg3:          #212B3A;
+  --surface:      #111722;
+  --surface-elev: #18202D;
   --surface-soft: rgba(255,255,255,0.03);
 
   /* Brand palette — champagne luxury */
@@ -206,10 +206,8 @@
 html { font-size: 14px; scroll-behavior: smooth; }
 body {
   font-family: var(--body);
-  background: 
-    radial-gradient(ellipse 1200px 800px at 30% -10%, rgba(212,175,122,0.04), transparent 70%),
-    radial-gradient(ellipse 1000px 600px at 100% 50%, rgba(123,111,255,0.025), transparent 70%),
-    radial-gradient(ellipse 800px 500px at 0% 100%, rgba(0,232,158,0.02), transparent 70%),
+  background:
+    linear-gradient(180deg, #141C28 0%, #0A0E14 55%),
     var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -306,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.07) 1px, transparent 1px); background-size:22px 22px; }
-[data-theme="light"] body::before { background-image:radial-gradient(rgba(154,118,53,0.06) 1px, transparent 1px); }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.025) 0.5px, transparent 0.5px); background-size:16px 16px; }
+[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.025) 0.5px, transparent 0.5px); background-size:16px 16px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -443,24 +441,19 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background:
-    linear-gradient(180deg, rgba(212,175,122,0.035), transparent 120px),
-    var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.022);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 16px;
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 [data-theme="light"] .panel {
-  background:
-    linear-gradient(180deg, rgba(154,118,53,0.03), transparent 120px),
-    var(--surface);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
 }
 .panel:hover {
-  border-color: var(--border2);
-  box-shadow: var(--shadow-soft);
+  border-color: rgba(255,255,255,0.12);
 }
 .panel::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--gold) 40%,var(--amber) 60%,transparent); opacity:0.6; }
 .panel.panel-green::before { background:linear-gradient(90deg,transparent,var(--green),transparent); }
