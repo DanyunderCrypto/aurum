@@ -24,8 +24,8 @@
   --bg1:          #0F0F13;
   --bg2:          #16161B;
   --bg3:          #1F1F26;
-  --surface:      #16140F;
-  --surface-elev: #1E1B14;
+  --surface:      #0F0E0C;
+  --surface-elev: #15140F;
   --surface-soft: rgba(212,175,122,0.05);
 
   /* Brand palette — champagne luxury */
@@ -444,27 +444,23 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background:
-    linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.015)),
-    #16140F;
-  border: 1px solid rgba(212,175,122,0.22);
+  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
+  border: 1px solid rgba(212,175,122,0.25);
   border-radius: 16px;
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
 }
 .panel:hover {
-  border-color: rgba(212,175,122,0.32);
+  border-color: rgba(212,175,122,0.35);
 }
 [data-theme="light"] .panel {
-  background:
-    linear-gradient(135deg, rgba(154,118,53,0.05), rgba(154,118,53,0.01)),
-    var(--surface);
-  border: 1px solid rgba(154,118,53,0.18);
+  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  border: 1px solid rgba(154,118,53,0.22);
   box-shadow: 0 1px 3px rgba(30,35,45,0.05);
 }
 [data-theme="light"] .panel:hover {
-  border-color: rgba(154,118,53,0.30);
+  border-color: rgba(154,118,53,0.32);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
@@ -1997,10 +1993,8 @@ body.stealth-mode .stealth-badge {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
   gap: 0;
-  background:
-    radial-gradient(ellipse at top left, rgba(212,175,122,0.04), transparent 60%),
-    var(--surface);
-  border: 1px solid var(--border-soft);
+  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
+  border: 1px solid rgba(212,175,122,0.25);
   border-radius: var(--radius-lg, 14px);
   overflow: hidden;
   position: relative;
@@ -2140,11 +2134,19 @@ body.stealth-mode .stealth-badge {
   margin-top: 1.5rem;
 }
 .metric-card {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
+  background: linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.01));
+  border: 1px solid rgba(212,175,122,0.25);
   border-radius: var(--radius-md);
   padding: 1.3rem 1.2rem;
   transition: transform 200ms var(--easing), border-color 200ms;
+}
+[data-theme="light"] .metric-card {
+  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  border: 1px solid rgba(154,118,53,0.22);
+}
+[data-theme="light"] .hero-block {
+  background: linear-gradient(135deg, rgba(154,118,53,0.06), rgba(154,118,53,0.01)), var(--surface);
+  border: 1px solid rgba(154,118,53,0.22);
 }
 .metric-card:hover {
   transform: translateY(-2px);
