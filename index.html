@@ -19,13 +19,13 @@
 ══════════════════════════════════════════════════ */
 :root {
   /* === R1: NEW DESIGN SYSTEM (ether.fi premium) === */
-  /* Surfaces — deep navy/petrol (Ember-style) with subtle elevation */
-  --bg:           #0A0E14;
-  --bg1:          #111722;
-  --bg2:          #18202D;
-  --bg3:          #212B3A;
-  --surface:      #111722;
-  --surface-elev: #18202D;
+  /* Surfaces — deep black (Ember-style) with subtle elevation */
+  --bg:           #060608;
+  --bg1:          #0F0F13;
+  --bg2:          #16161B;
+  --bg3:          #1F1F26;
+  --surface:      #0F0F13;
+  --surface-elev: #16161B;
   --surface-soft: rgba(255,255,255,0.03);
 
   /* Brand palette — champagne luxury */
@@ -207,7 +207,7 @@ html { font-size: 14px; scroll-behavior: smooth; }
 body {
   font-family: var(--body);
   background:
-    linear-gradient(180deg, #141C28 0%, #0A0E14 55%),
+    linear-gradient(180deg, #0B0B0E 0%, #050507 60%),
     var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.025) 0.5px, transparent 0.5px); background-size:16px 16px; }
-[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.025) 0.5px, transparent 0.5px); background-size:16px 16px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.06) 0.7px, transparent 0.7px); background-size:18px 18px; }
+[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.04) 0.7px, transparent 0.7px); background-size:18px 18px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
