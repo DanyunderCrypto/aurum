@@ -3816,6 +3816,32 @@ function _moralisUrl(path) {
   return `${PROXY_BASE}/moralis/${path}`;
 }
 
+// Constrói o URL da Vybe (Solana). Só via proxy. Ex: _vybeUrl('v4/wallets/<addr>/token-balance')
+function _vybeUrl(path) {
+  if (!_proxyActive()) return null;
+  return `${PROXY_BASE}/vybe/${path}`;
+}
+
+// Busca o SOL em staking via Vybe (free tier). O endpoint token-balance dá o
+// stakedSolBalance, que a Alchemy NÃO vê (está delegado a um validador). NÃO duplica
+// o SOL líquido — são coisas diferentes (carteira vs delegado). Guarda em cache 10 min.
+async function fetchSolanaStaking(w) {
+  if (!w || !w.sol || !_proxyActive()) return;
+  window._solStakeCache = window._solStakeCache || {};
+  const cached = window._solStakeCache[w.id];
+  if (cached && (Date.now() - cached.ts) < 600000) return; // 10 min
+  try {
+    const url = _vybeUrl(`v4/wallets/${w.sol}/token-balance`);
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const d = await res.json();
+    const stakedSol = Number(d.stakedSolBalance) || 0;
+    const stakedUsd = Number(d.stakedSolBalanceUsd) || 0;
+    window._solStakeCache[w.id] = { stakedSol, stakedUsd, ts: Date.now() };
+    if (stakedSol > 0 && typeof renderDebounced === 'function') renderDebounced();
+  } catch(_) { /* silencioso: enriquecimento */ }
+}
+
 // Mapeia a chain interna (eth/base/arb...) para o nome de chain do Moralis.
 const MORALIS_CHAINS = { eth: 'eth', base: 'base', arb: 'arbitrum', op: 'optimism', poly: 'polygon', bnb: 'bsc', avax: 'avalanche', linea: 'linea' };
 
@@ -10180,6 +10206,30 @@ async function fetchSolanaBalances(solAddr, key) {
       pageKey = j?.data?.pageKey;
       pages++;
     } while (pageKey && pages < 5);
+
+    // SOL em staking (delegado a validador) — a Alchemy não o vê. Vem da Vybe (free).
+    // É separado do SOL líquido, por isso somar não duplica. Best-effort: se falhar,
+    // os tokens continuam a aparecer na mesma.
+    if (_proxyActive()) {
+      try {
+        const vres = await fetch(`${PROXY_BASE}/vybe/v4/wallets/${solAddr}/token-balance`);
+        if (vres.ok) {
+          const vd = await vres.json();
+          const stakedSol = Number(vd.stakedSolBalance) || 0;
+          const stakedUsd = Number(vd.stakedSolBalanceUsd) || 0;
+          if (stakedSol > 0) {
+            holdings.push({
+              asset: 'SOL', chain: 'solana', contract: null, qty: stakedSol,
+              decimals: 9, native: false, staked: true,
+              _stakedLabel: 'SOL (staked)',
+              logoUrl: null,
+              _portfolioPriceUSD: stakedSol > 0 ? (stakedUsd / stakedSol) : null,
+            });
+          }
+        }
+      } catch(_) { /* staking é extra; não pode partir os tokens */ }
+    }
+
     return { holdings, priceMap };
   } catch (e) { return null; }
 }
