@@ -44,9 +44,9 @@
   /* Text */
   --white:        #F5F5F0;      /* off-white, easier on eyes */
   --text:         #F5F5F0;
-  --text-muted:   rgba(245,245,240,0.55);
-  --text-dim:     rgba(245,245,240,0.30);
-  --muted:        rgba(245,245,240,0.40);
+  --text-muted:   rgba(245,245,240,0.68);
+  --text-dim:     rgba(245,245,240,0.48);
+  --muted:        rgba(245,245,240,0.55);
 
   /* Borders */
   --border:       rgba(212,175,122,0.10);
@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.06) 0.7px, transparent 0.7px); background-size:18px 18px; }
-[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.04) 0.7px, transparent 0.7px); background-size:18px 18px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.10) 0.8px, transparent 0.8px); background-size:18px 18px; }
+[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.05) 0.8px, transparent 0.8px); background-size:18px 18px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -419,7 +419,7 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 /* ══════════════════════════════════════════════════
    MAIN CONTENT
 ══════════════════════════════════════════════════ */
-.main { flex:1; padding:1.4rem; display:flex; flex-direction:column; gap:1.3rem; }
+.main { flex:1; width:100%; max-width:1280px; margin:0 auto; padding:1.4rem; display:flex; flex-direction:column; gap:1.3rem; }
 .tab-content { animation:fadeIn 0.18s ease; }
 @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
@@ -10937,17 +10937,17 @@ function renderDefiPositions(w) {
       return `<circle cx="${_c}" cy="${_c}" r="${_r}" fill="none" stroke="${_defiColors[i % _defiColors.length]}" stroke-width="${_sw}" stroke-dasharray="${dash}" transform="rotate(${rot} ${_c} ${_c})"/>`;
     }).join('');
     defiDonutHtml = `
-      <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1.1rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;justify-content:center">
         <svg viewBox="0 0 ${_ds} ${_ds}" width="${_ds}" height="${_ds}" style="flex-shrink:0">
           ${arcs}
-          <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:13px;font-weight:700;fill:var(--text)">€${fmt(grandTotalEUR)}</text>
-          <text x="${_c}" y="${_c + 12}" text-anchor="middle" style="font-size:8px;fill:var(--text-muted);letter-spacing:0.1em">DEFI</text>
+          <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:14px;font-weight:700;fill:var(--text)">€${fmt(grandTotalEUR)}</text>
+          <text x="${_c}" y="${_c + 13}" text-anchor="middle" style="font-size:8px;fill:var(--text-muted);letter-spacing:0.1em">DEFI</text>
         </svg>
-        <div style="flex:1;min-width:160px">
+        <div style="flex:1;min-width:240px;max-width:420px">
           ${defiSlices.map((s, i) => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border-soft)">
-              <span style="font-size:0.8rem;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:8px"></span>${s[0]}</span>
-              <span style="font-size:0.8rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} · ${(s[1] / grandTotalEUR * 100).toFixed(0)}%</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.55rem 0;border-bottom:1px solid var(--border-soft)">
+              <span style="font-size:0.85rem;color:var(--text)"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:10px"></span>${s[0]}</span>
+              <span style="font-size:0.85rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} <span style="color:var(--text-muted)">· ${(s[1] / grandTotalEUR * 100).toFixed(0)}%</span></span>
             </div>
           `).join('')}
         </div>
@@ -10955,18 +10955,28 @@ function renderDefiPositions(w) {
   }
 
   return `
+    ${defiDonutHtml ? `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
-        <span class="panel-title">⚖ Posições DeFi</span>
+        <span class="panel-title">⚖ Distribuição DeFi</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">total <strong style="color:var(--gold)">€${fmt(grandTotalEUR)}</strong></span>
       </div>
       <div class="panel-body">
         ${defiDonutHtml}
+      </div>
+    </div>` : ''}
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Posições</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">${(lpRows.length + rows.length + vaultRows.length)} posições</span>
+      </div>
+      <div class="panel-body">
         ${lpRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Pools de Liquidez · €${fmt(totalLpEUR)}${totalLpFeesEUR > 0.01 ? ` · fees por reclamar €${fmt(totalLpFeesEUR)}` : ''}</div>${lpRows.join('')}` : ''}
         ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:${lpRows.length ? '0.8rem' : '0'} 0 0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
         ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:0.8rem 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
         ${(lpRows.length && totalLpFeesEUR > 0.01) ? `
-        <div style="margin-top:0.8rem;padding:0.6rem 0.8rem;background:var(--bg-soft);border-radius:8px;border-left:2px solid var(--gold)">
+        <div style="margin-top:0.8rem;padding:0.6rem 0.8rem;background:var(--surface-soft);border-radius:8px;border-left:2px solid var(--gold)">
           <div style="font-size:0.7rem;color:var(--text);font-weight:600">Rendimentos DeFi a render: €${fmt(totalLpFeesEUR)}</div>
           ${(() => {
             const inc = (state.defiIncome || []).filter(e => e.walletId === w.id);
@@ -10979,13 +10989,17 @@ function renderDefiPositions(w) {
             return `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem">📋 Histórico registado: <strong>${inc.length}</strong> recebimentos (${parts.join(', ')}) — guardado para eventual tratamento Cat. E.</div>`;
           })()}
           <div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.2rem;line-height:1.5">
-            Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>tributado só na conversão a fiat</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.7">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
+            Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>tributado só na conversão a fiat</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.85">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
           </div>
         </div>` : ''}
-        <div style="margin-top:0.6rem;font-size:0.68rem;color:var(--text-muted);line-height:1.5">
-          Loops/lending: valor líquido = colateral − dívida. Vaults (ERC-4626): valor resgatável do subjacente. Pools de liquidez (Uniswap V3): valor dos dois tokens na posição + fees por reclamar. Fiscalmente, depositar/pedir emprestado/entrar em vault/pool não é alienação — só o yield/fees realizado em fiat é tributável (ver parecer OCC).
-          <br><br><span style="opacity:0.8">ℹ Nota: capital movido para <strong>agentes automáticos</strong> (ex: Yieldseeker/Autoseek) que detêm os fundos numa smart-account própria não é detetável por leitura da carteira — esse valor não aparece aqui. Suporte para posições manuais virá numa versão futura.</span>
-        </div>
+        <details style="margin-top:0.8rem">
+          <summary style="font-size:0.7rem;color:var(--text-muted);cursor:pointer;list-style:none;user-select:none">ⓘ Como calculamos estes valores &amp; notas fiscais</summary>
+          <div style="margin-top:0.5rem;padding:0.7rem 0.85rem;background:var(--surface-soft);border-radius:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.6">
+            <div><strong style="color:var(--text)">Valores:</strong> Loops/lending = colateral − dívida. Vaults (ERC-4626) = valor resgatável do subjacente. Pools (Uniswap V3) = valor dos dois tokens + fees por reclamar.</div>
+            <div style="margin-top:0.5rem"><strong style="color:var(--text)">Fiscal:</strong> depositar, pedir emprestado ou entrar em vault/pool <strong>não é alienação</strong> — só o yield/fees realizado em fiat é tributável (ver parecer OCC).</div>
+            <div style="margin-top:0.5rem"><strong style="color:var(--text)">Limitação:</strong> capital movido para agentes automáticos (ex: Yieldseeker/Autoseek) que detêm os fundos numa smart-account própria não é detetável por leitura da carteira — não aparece aqui. Suporte para posições manuais virá numa versão futura.</div>
+          </div>
+        </details>
       </div>
     </div>
   `;
