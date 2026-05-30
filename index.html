@@ -3035,8 +3035,8 @@ const I18N = {
     // Sections
     'section.upcomingExemptions': 'Próximas Isenções (365d)',
     'section.recentTransactions': 'Últimas Transações',
-    'section.allocationByAsset': '📊 Allocation por Asset',
-    'section.allocationByChain': '⛓ Allocation por Chain',
+    'section.allocationByAsset': '📊 Distribuição por Ativo',
+    'section.allocationByChain': '⛓ Distribuição por Rede',
     'section.taxLossHarvest': '🎯 Optimização Fiscal · Tax Loss Harvesting',
     'section.activePositions': 'Posições Activas — Todos os Protocolos',
     'section.totalAggregated': 'Total agregado',
@@ -11358,7 +11358,11 @@ function renderPortfolioCharts(w) {
   const unrealizedPct = totalBasisHeld > 0 ? (totalUnrealized / totalBasisHeld) * 100 : 0;
   const pnlReliable = totalBasisHeld > 0 && (valueWithoutBasis / totalPortfolio) < 0.5;
   // Chain bars
-  const chainBarsHTML = sortedChains.map(([chain, val], i) => {
+  const _CHAIN_LIMIT = 8;
+  const _showAllChains = window._showAllChains === true;
+  const _chainsToShow = _showAllChains ? sortedChains : sortedChains.slice(0, _CHAIN_LIMIT);
+  const _hiddenChains = sortedChains.length - _CHAIN_LIMIT;
+  const chainBarsHTML = _chainsToShow.map(([chain, val], i) => {
     const pct = (val / totalPortfolio) * 100;
     return `
       <div style="display:flex;align-items:center;gap:0.6rem;font-size:0.78rem">
@@ -11369,7 +11373,13 @@ function renderPortfolioCharts(w) {
         <div style="min-width:90px;text-align:right;font-family:var(--mono);font-size:0.74rem">€${fmt(val)} · ${pct.toFixed(1)}%</div>
       </div>
     `;
-  }).join('');
+  }).join('') + (
+    (!_showAllChains && _hiddenChains > 0)
+      ? `<button onclick="window._showAllChains=true;render()" style="background:none;border:none;color:var(--gold);font-size:0.74rem;cursor:pointer;padding:0.4rem 0;text-align:left;font-family:var(--mono)">+ ver mais ${_hiddenChains} rede${_hiddenChains>1?'s':''}</button>`
+      : (_showAllChains && sortedChains.length > _CHAIN_LIMIT)
+        ? `<button onclick="window._showAllChains=false;render()" style="background:none;border:none;color:var(--text-muted);font-size:0.74rem;cursor:pointer;padding:0.4rem 0;text-align:left;font-family:var(--mono)">− mostrar menos</button>`
+        : ''
+  );
 
   return `
     <div class="two-col" style="margin-top:1.5rem">
@@ -12210,7 +12220,7 @@ function renderProtocols(w) {
     <div class="section-row">
       <div class="section-label">Posições por Protocolo</div>
       <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-outline btn-sm" onclick="refreshAll()">↻ Refresh</button>
+        <button class="btn btn-outline btn-sm" onclick="refreshAll()">↻ Atualizar</button>
       </div>
     </div>
 
