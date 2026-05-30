@@ -24,9 +24,9 @@
   --bg1:          #0F0F13;
   --bg2:          #16161B;
   --bg3:          #1F1F26;
-  --surface:      #0F0F13;
-  --surface-elev: #16161B;
-  --surface-soft: rgba(255,255,255,0.03);
+  --surface:      #16140F;
+  --surface-elev: #1E1B14;
+  --surface-soft: rgba(212,175,122,0.05);
 
   /* Brand palette — champagne luxury */
   --gold:         #D4AF7A;      /* champagne primary */
@@ -138,7 +138,7 @@
 [data-theme="light"] body {
   background: var(--bg);
 }
-[data-theme="light"] body::before { display: none; }   /* CRT scanlines off */
+[data-theme="light"] body::after { display: none; }   /* CRT scanlines off */
 [data-theme="light"] .crypto-aurora,
 [data-theme="light"] .aurora-glow { display: none; }    /* ambient glow off */
 
@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.045) 0.7px, transparent 0.7px); background-size:18px 18px; }
-[data-theme="light"] body::before { background-image:radial-gradient(rgba(15,23,42,0.04) 0.7px, transparent 0.7px); background-size:18px 18px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.10) 0.9px, transparent 0.9px); background-size:20px 20px; }
+[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.10) 0.9px, transparent 0.9px); background-size:20px 20px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -444,17 +444,23 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background: rgba(255,255,255,0.022);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: #16140F;
+  border: 1px solid rgba(212,175,122,0.14);
   border-radius: 16px;
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
 }
+.panel:hover {
+  border-color: rgba(212,175,122,0.24);
+}
 [data-theme="light"] .panel {
   background: var(--surface);
-  border: 1px solid rgba(30,35,45,0.09);
+  border: 1px solid rgba(154,118,53,0.16);
   box-shadow: 0 1px 3px rgba(30,35,45,0.06), 0 1px 2px rgba(30,35,45,0.04);
+}
+[data-theme="light"] .panel:hover {
+  border-color: rgba(154,118,53,0.28);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
