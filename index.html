@@ -10712,6 +10712,7 @@ function renderTaxLossHarvest(w) {
 function renderDefiPositions(w) {
   const positions = live.positions || {};
   const rows = [];
+  const _unifiedRows = []; // todas as posições (pool/lend/vault) em formato uniforme para a tabela única
   let totalNetUSD = 0, totalCollatUSD = 0, totalDebtUSD = 0;
 
   // AAVE: per-chain positions (exclude the 'morpho' pseudo-key)
@@ -10735,6 +10736,19 @@ function renderDefiPositions(w) {
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">$${fmt(net)}</div>
       </div>
     `);
+    const _lbEur = (window._lastEurUsdRate || 0.92);
+    _unifiedRows.push({
+      kind: 'lend',
+      name: key === 'morpho' ? 'Morpho Blue' : 'AAVE V3',
+      sub: key === 'morpho' ? 'Multi-mercado' : (CHAINS[key]?.name || key),
+      chain: key === 'morpho' ? 'Multi' : (CHAINS[key]?.name || key),
+      chainColor: key === 'morpho' ? '#1C55FE' : (CHAINS[key]?.color || '#888'),
+      color: key === 'morpho' ? '#1C55FE' : '#B6509E',
+      icon: key === 'morpho' ? 'MO' : 'AA',
+      valueEUR: net * _lbEur,
+      status: hf ? `HF <span style="color:${hfColor}">${hf.toFixed(2)}</span>` : '',
+      detailHTML: `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`,
+    });
   }
 
   const _lpForGuard = window['_balCache_' + w.id]?.lpPositions || [];
@@ -10857,6 +10871,18 @@ function renderDefiPositions(w) {
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">${posValue != null ? '€' + fmt(posValue) : '—'}</div>
       </div>
     `);
+    _unifiedRows.push({
+      kind: 'pool',
+      name: `${lp.token0.symbol}/${lp.token1.symbol}`,
+      sub: `${lp.protocol} · ${chainName} · ${lp.feeTier}`,
+      chain: chainName,
+      chainColor: (CHAINS[lp.chain]?.color) || '#888',
+      color: '#5DCAA5',
+      icon: 'LP',
+      valueEUR: posValue,
+      status: lp.inRange ? '<span style="color:var(--green)">● in range</span>' : '<span style="color:var(--gold)">○ out of range</span>',
+      detailHTML: metricsLine || `<div style="font-size:0.72rem;color:var(--text-muted)">${lp.token0.symbol}: ${(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
+    });
   }
 
   // ── Vaults (ERC-4626): value = redeemable underlying × underlying price ──
@@ -10901,6 +10927,12 @@ function renderDefiPositions(w) {
           </div>
           <div style="text-align:right;font-family:var(--mono);font-size:0.8rem;color:var(--muted)">—</div>
         </div>`);
+      _unifiedRows.push({
+        kind: 'vault', name: v.asset, sub: `Vault · ${CHAINS[v.chain]?.name||v.chain}`,
+        chain: CHAINS[v.chain]?.name||v.chain, chainColor: CHAINS[v.chain]?.color||'#888',
+        color: '#378ADD', icon: 'V', valueEUR: null, status: '<span style="color:var(--muted)">sem preço</span>',
+        detailHTML: `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unidades do subjacente · preço indisponível</div>`,
+      });
       continue;
     }
     const valueEUR = assetsQty * ppu;
@@ -10914,6 +10946,12 @@ function renderDefiPositions(w) {
         </div>
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">€${fmt(valueEUR)}</div>
       </div>`);
+    _unifiedRows.push({
+      kind: 'vault', name: v.asset, sub: `Vault · ${CHAINS[v.chain]?.name||v.chain}`,
+      chain: CHAINS[v.chain]?.name||v.chain, chainColor: CHAINS[v.chain]?.color||'#888',
+      color: '#378ADD', icon: 'V', valueEUR: valueEUR, status: '',
+      detailHTML: `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unidades do subjacente</div>`,
+    });
   }
   const lendNetEUR = totalNetUSD * eurRate;
   const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
@@ -10957,6 +10995,30 @@ function renderDefiPositions(w) {
       </div>`;
   }
 
+  // Ordenar as posições unificadas por valor (maiores primeiro; sem-preço no fim).
+  _unifiedRows.sort((a, b) => (b.valueEUR || -1) - (a.valueEUR || -1));
+
+  // Tabela unificada: UMA linha por posição (pool/lend/vault), cada uma expansível.
+  window._expandedUni = window._expandedUni || new Set();
+  const uniTable = _unifiedRows.map((r, idx) => {
+    const rid = `uni_${idx}`;
+    const open = window._expandedUni.has(rid);
+    const kindBadge = { pool: 'Pool', lend: 'Lend/Borrow', vault: 'Vault' }[r.kind] || '';
+    return `
+      <div class="uni-pos-row" onclick="(window._expandedUni.has('${rid}')?window._expandedUni.delete('${rid}'):window._expandedUni.add('${rid}'));render()" style="cursor:pointer;border-bottom:1px solid var(--border-soft)">
+        <div style="display:flex;align-items:center;gap:0.7rem;padding:0.75rem 0">
+          <span style="color:var(--gold);font-family:var(--mono);font-size:0.75rem;width:14px;flex-shrink:0">${open?'▼':'▶'}</span>
+          <div style="width:30px;height:30px;border-radius:50%;background:${r.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.6rem;color:#fff;font-weight:700;flex-shrink:0">${r.icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:0.88rem;font-weight:600;color:var(--text)">${r.name} <span style="font-size:0.6rem;color:var(--text-dim);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">${kindBadge}</span></div>
+            <div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${r.sub}${r.status ? ` · ${r.status}` : ''}</div>
+          </div>
+          <div style="text-align:right;font-family:var(--mono);font-size:0.95rem;font-weight:700;color:var(--text);flex-shrink:0">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
+        </div>
+        ${open ? `<div style="padding:0 0 0.75rem 3rem">${r.detailHTML}</div>` : ''}
+      </div>`;
+  }).join('');
+
   return `
     ${defiDonutHtml ? `
     <div class="panel" style="margin-top:1.5rem">
@@ -10969,16 +11031,15 @@ function renderDefiPositions(w) {
       </div>
     </div>` : ''}
 
-    ${(lpRows.length || vaultRows.length) ? `
+    ${_unifiedRows.length ? `
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title">Pools &amp; Vaults</span>
-        <span style="font-size:0.7rem;color:var(--text-muted)">${(lpRows.length + vaultRows.length)} ${(lpRows.length + vaultRows.length) === 1 ? 'posição' : 'posições'}</span>
+        <span class="panel-title">Posições</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">${_unifiedRows.length} ${_unifiedRows.length === 1 ? 'posição' : 'posições'} · €${fmt(grandTotalEUR)}</span>
       </div>
       <div class="panel-body">
-        ${lpRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Pools de Liquidez · €${fmt(totalLpEUR)}${totalLpFeesEUR > 0.01 ? ` · fees por reclamar €${fmt(totalLpFeesEUR)}` : ''}</div>${lpRows.join('')}` : ''}
-        ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:${lpRows.length ? '0.8rem' : '0'} 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
-        ${(lpRows.length && totalLpFeesEUR > 0.01) ? `
+        ${uniTable}
+        ${(totalLpFeesEUR > 0.01) ? `
         <div style="margin-top:0.8rem;padding:0.6rem 0.8rem;background:var(--surface-soft);border-radius:8px;border-left:2px solid var(--gold)">
           <div style="font-size:0.7rem;color:var(--text);font-weight:600">Rendimentos DeFi a render: €${fmt(totalLpFeesEUR)}</div>
           ${(() => {
@@ -11605,20 +11666,6 @@ function renderDashboard(w) {
 
     <!-- FISCAL HERO — Aurum's signature, prominent but after the portfolio snapshot -->
     ${renderDashboardFiscalHero(w)}
-
-    <!-- ACTIVE POSITIONS (lend/borrow detail; LPs+vaults already shown in DeFi panel above) -->
-    ${(() => {
-      const up = renderUnifiedPositions();
-      // Hide entirely when there are no lend/borrow positions — the DeFi panel above already
-      // covers LPs, vaults and lending, so an empty "Sem posições activas" box is just noise.
-      if (/empty-icon/.test(up)) return '';
-      return `<div class="panel" style="margin-top:1.5rem">
-        <div class="panel-head">
-          <span class="panel-title">Posições de Lend / Borrow</span>
-        </div>
-        <div class="panel-body no-pad">${up}</div>
-      </div>`;
-    })()}
 
     ${renderTaxLossHarvest(w)}
 
