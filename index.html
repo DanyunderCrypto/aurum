@@ -10829,11 +10829,22 @@ function renderDefiPositions(w) {
         label: `HF ${hf.toFixed(2)}` } : null,
       detailHTML: (() => {
         const base = `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`;
-        // Enriquecimento: APY vindo do Moralis (se disponível no cache).
+        // MORPHO: o APY vem da própria API Morpho (já guardado em p.positions[].supplyApy/borrowApy).
+        if (key === 'morpho' && Array.isArray(p.positions) && p.positions.length) {
+          const rows = p.positions.filter(m => (m.supplyUsd > 0 || m.borrowUsd > 0));
+          const lines = rows.map(m => {
+            const parts = [];
+            if (m.supplyApy) parts.push(`<span style="color:var(--green)">supply ${(m.supplyApy*100).toFixed(2)}%</span>`);
+            if (m.borrowApy) parts.push(`<span style="color:var(--red)">borrow ${(m.borrowApy*100).toFixed(2)}%</span>`);
+            return parts.length ? `${m.colSym}→${m.loanSym}: ${parts.join(' · ')}` : '';
+          }).filter(Boolean);
+          return base + (lines.length ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${lines.join('<br>')} <span style="opacity:0.6">· via Morpho</span></div>` : '');
+        }
+        // AAVE (e outros): APY vindo do Moralis (se disponível no cache).
         const mc = window._moralisApyCache?.[w.id]?.byProto;
         if (!mc) return base;
-        const pid = key === 'morpho' ? 'morpho' : 'aave-v3';
-        const md = mc[pid] || mc[Object.keys(mc).find(k => k.includes(key === 'morpho' ? 'morpho' : 'aave')) || ''];
+        const pid = 'aave-v3';
+        const md = mc[pid] || mc[Object.keys(mc).find(k => k.includes('aave')) || ''];
         if (!md) return base;
         const supplyApys = (md.positions || []).filter(x => !x.isDebt && x.apy != null);
         const borrowApys = (md.positions || []).filter(x => x.isDebt && x.apy != null);
