@@ -3828,15 +3828,17 @@ async function fetchMoralisApy(w) {
   window._moralisApyCache = window._moralisApyCache || {};
   const cached = window._moralisApyCache[w.id];
   if (cached && (Date.now() - cached.ts) < 600000) return; // 10 min de cache
-  // Redes a consultar: as que a carteira realmente usa (das posições já detetadas).
-  const chains = new Set();
+  // Redes a consultar: as que a carteira usa + as principais (para apanhar posições
+  // de protocolos que os adaptadores à mão não cobrem, ex: PancakeSwap na BSC).
+  const chains = new Set(['base', 'eth', 'bsc', 'arbitrum']);
   const positions = live.positions || {};
   for (const key of Object.keys(positions)) {
     if (key !== 'morpho' && MORALIS_CHAINS[key]) chains.add(MORALIS_CHAINS[key]);
   }
-  if (positions.morpho) { chains.add('eth'); chains.add('base'); } // Morpho é multi-mercado
-  if (chains.size === 0) chains.add('base'); // fallback: pelo menos a Base
   const byProto = {};
+  const moralisPositions = []; // Fase 2: posições completas (para mostrar as que não temos)
+  // Protocolos que já cobrimos com adaptadores à mão — não trazer do Moralis (evita duplicar).
+  const COVERED = ['aave', 'morpho'];
   for (const chain of chains) {
     try {
       const url = _moralisUrl(`wallets/${w.addr}/defi/positions?chain=${chain}`);
@@ -3856,10 +3858,34 @@ async function fetchMoralisApy(w) {
           isDebt: det.is_debt,
           symbol: p.position?.tokens?.find(t => t.token_type === 'supplied' || t.token_type === 'borrowed')?.symbol,
         });
+
+        // ── Fase 2: recolher a posição completa, com filtros de segurança ──
+        const usd = Number(p.position?.balance_usd) || 0;
+        // FILTRO 1: ignorar pó/spam (valor < $1). Apanha as posições e-10 e pools de spam $0.
+        if (usd < 1) continue;
+        // FILTRO 2: não duplicar protocolos que já cobrimos à mão (AAVE, Morpho).
+        if (COVERED.some(c => pid.includes(c))) continue;
+        // FILTRO 3: nomes de token com caracteres suspeitos (spam que imita símbolos reais).
+        const toks = p.position?.tokens || [];
+        const hasSpamName = toks.some(t => /[^\x00-\x7F]/.test(t.symbol || '') && !/^[A-Za-z0-9.]+$/.test(t.symbol || ''));
+        if (hasSpamName) continue;
+        moralisPositions.push({
+          protocol: p.protocol_name || pid,
+          protocolId: pid,
+          chain,
+          label: p.position?.label || '',
+          valueUSD: usd,
+          apy: det.apy,
+          isDebt: det.is_debt,
+          tokens: toks.filter(t => t.token_type === 'supplied' || t.token_type === 'borrowed' || t.token_type === 'defi-token')
+                      .map(t => ({ symbol: t.symbol, amount: t.balance_formatted, usd: t.usd_value })),
+          logo: p.protocol_logo || '',
+          unclaimedUSD: Number(p.position?.total_unclaimed_usd_value) || 0,
+        });
       }
-    } catch(_) { /* silencioso: APY é enriquecimento, não pode partir a app */ }
+    } catch(_) { /* silencioso: enriquecimento, não pode partir a app */ }
   }
-  window._moralisApyCache[w.id] = { byProto, ts: Date.now() };
+  window._moralisApyCache[w.id] = { byProto, moralisPositions, ts: Date.now() };
   if (typeof renderDebounced === 'function') renderDebounced();
 }
 
@@ -11112,8 +11138,39 @@ function renderDefiPositions(w) {
       </div>`;
   }
 
+  // ── Fase 2: juntar posições DeFi do Moralis que NÃO temos pelos adaptadores à mão.
+  // Já vêm filtradas (sem spam/pó, sem AAVE/Morpho que já cobrimos). Mapeamos para o
+  // formato uniforme da tabela. Valor convertido USD→EUR.
+  const _mEur = (window._lastEurUsdRate || 0.92);
+  const _moralisPos = window._moralisApyCache?.[w.id]?.moralisPositions || [];
+  let _moralisTotalEUR = 0;
+  for (const mp of _moralisPos) {
+    const valueEUR = mp.valueUSD * _mEur;
+    _moralisTotalEUR += valueEUR;
+    const isLend = mp.isDebt != null || /aave|compound|spark|venus|morpho|maker/i.test(mp.protocolId);
+    const tokenSummary = (mp.tokens || []).map(t => t.symbol).filter(Boolean).slice(0, 3).join(' / ');
+    _unifiedRows.push({
+      kind: isLend ? 'lend' : 'pool',
+      name: mp.protocol,
+      sub: `${(CHAINS[mp.chain]?.name) || mp.chain}${tokenSummary ? ' · ' + tokenSummary : ''}`,
+      chain: (CHAINS[mp.chain]?.name) || mp.chain,
+      chainColor: (CHAINS[mp.chain]?.color) || '#888',
+      color: '#9B6FFF', // roxo: distingue posições vindas do Moralis
+      icon: (mp.protocol || '?').slice(0, 2).toUpperCase(),
+      valueEUR,
+      status: mp.apy ? `<span style="color:var(--green)">APY ${mp.apy.toFixed(2)}%</span>` : (mp.label || ''),
+      health: mp.apy ? { type: 'range', inRange: true, label: `APY ${mp.apy.toFixed(2)}%`, color: 'var(--green)' } : null,
+      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` ($${fmt(t.usd)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: $${fmt(mp.unclaimedUSD)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
+    });
+  }
+
   // Ordenar as posições unificadas por valor (maiores primeiro; sem-preço no fim).
   _unifiedRows.sort((a, b) => (b.valueEUR || -1) - (a.valueEUR || -1));
+
+  // Atualizar o total DeFi exposto ao hero, agora COM as posições do Moralis
+  // (senão a lista mostrava a PancakeSwap mas o património total não a contava).
+  const grandTotalWithMoralis = grandTotalEUR + _moralisTotalEUR;
+  try { window['_defiTotal_' + w.id] = { eur: grandTotalWithMoralis, ts: Date.now() }; } catch(_){}
 
   // Tabela unificada: UMA linha por posição (pool/lend/vault), cada uma expansível.
   window._expandedUni = window._expandedUni || new Set();
@@ -11164,7 +11221,7 @@ function renderDefiPositions(w) {
     <div class="panel">
       <div class="panel-head">
         <span class="panel-title">Posições</span>
-        <span style="font-size:0.7rem;color:var(--text-muted)">${_unifiedRows.length} ${_unifiedRows.length === 1 ? 'posição' : 'posições'} · €${fmt(grandTotalEUR)}</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">${_unifiedRows.length} ${_unifiedRows.length === 1 ? 'posição' : 'posições'} · €${fmt(grandTotalWithMoralis)}</span>
       </div>
       <div class="panel-body">
         ${uniTable}
