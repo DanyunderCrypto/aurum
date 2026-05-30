@@ -11206,7 +11206,7 @@ function renderPortfolioCharts(w) {
       if (h.contract) {
         const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (clk && clk.priceUSD) ppu = clk.priceUSD * eurRate;
-        else if (clk === undefined && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
+        else if (clk === undefined && !(window._clkTried = window._clkTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`) && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
       }
       // 1b. PREÇO DO PORTFOLIO API — a Alchemy já devolveu o preço USD do token
       // na mesma chamada dos saldos. Fonte fiável e gratuita (sem pedido extra).
@@ -11229,7 +11229,7 @@ function renderPortfolioCharts(w) {
       if (ppu == null && h.contract && !window.aurumFifoEngine?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
-        else if (ds === undefined) needDexPrice.push(h); // not yet fetched
+        else if (ds === undefined && !(window._dsTried = window._dsTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`)) needDexPrice.push(h); // not yet fetched
       }
       if (ppu == null) {
         unpricedCount++;
@@ -11250,12 +11250,14 @@ function renderPortfolioCharts(w) {
     // Batch-fetch Chainlink prices (oracle-grade) for tokens with feeds, then re-render.
     if (needChainlink.length > 0) {
       const klKey = resolveAlchemyKey(w);
+      needChainlink.forEach(h => window._clkTried.add(`${h.chain}:${h.contract.toLowerCase()}`));
       Promise.all(needChainlink.slice(0, 30).map(h => fetchChainlinkPrice(h.chain, h.contract, klKey)))
         .then(results => { if (results.some(r => r != null)) renderDebounced(); })
         .catch(() => {});
     }
     // Batch-fetch DexScreener prices for the still-unpriced tokens, then re-render once.
     if (needDexPrice.length > 0) {
+      needDexPrice.forEach(h => window._dsTried.add(`${h.chain}:${h.contract.toLowerCase()}`));
       Promise.all(needDexPrice.slice(0, 12).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
         .then(results => { if (results.some(Boolean)) renderDebounced(); })
         .catch(() => {});
@@ -17196,6 +17198,11 @@ function reapplyPricesToHistory() {
 async function refreshAll() {
   const w = activeWallet();
   if (!w) return;
+  // Refresh manual: limpar os registos de "preço já tentado" para voltar a tentar
+  // preços que falharam (Chainlink/DexScreener/LP). Sem isto, um preço que falhou
+  // numa sessão nunca mais era tentado. (Estes Sets existem para evitar o loop de
+  // render entre refreshes — só no refresh é seguro limpá-los.)
+  try { window._clkTried = new Set(); window._dsTried = new Set(); window._lpPriceTried = new Set(); } catch(_){}
   // Wallets CEX (kind:'cex') não têm dados on-chain — os eventos vêm do import
   // de CSV. Saltar o fetch evita chamadas Alchemy inúteis e erros de consola.
   if (w.kind === 'cex') {
