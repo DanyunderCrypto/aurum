@@ -3809,6 +3809,59 @@ function _dataUrl(path, key) {
   return `https://api.g.alchemy.com/data/v1/${key}/${path}`;
 }
 
+// Constrói o URL do Moralis (posições DeFi EVM). Só funciona via proxy (a chave do
+// Moralis está escondida no servidor). Ex: _moralisUrl('wallets/0x.../defi/positions?chain=base')
+function _moralisUrl(path) {
+  if (!_proxyActive()) return null; // Moralis exige proxy (chave no servidor)
+  return `${PROXY_BASE}/moralis/${path}`;
+}
+
+// Mapeia a chain interna (eth/base/arb...) para o nome de chain do Moralis.
+const MORALIS_CHAINS = { eth: 'eth', base: 'base', arb: 'arbitrum', op: 'optimism', poly: 'polygon', bnb: 'bsc', avax: 'avalanche', linea: 'linea' };
+
+// Busca o APY das posições DeFi do Moralis e guarda num cache por carteira.
+// Cache: window._moralisApyCache[walletId] = { byProto: {aave-v3:{apy,hf,netApy}}, ts }.
+// Só busca se o cache tiver mais de 10 min (as posições DeFi mudam devagar; poupa créditos).
+async function fetchMoralisApy(w) {
+  if (!w || !w.address || !_proxyActive()) return;
+  window._moralisApyCache = window._moralisApyCache || {};
+  const cached = window._moralisApyCache[w.id];
+  if (cached && (Date.now() - cached.ts) < 600000) return; // 10 min de cache
+  // Redes a consultar: as que a carteira realmente usa (das posições já detetadas).
+  const chains = new Set();
+  const positions = live.positions || {};
+  for (const key of Object.keys(positions)) {
+    if (key !== 'morpho' && MORALIS_CHAINS[key]) chains.add(MORALIS_CHAINS[key]);
+  }
+  if (positions.morpho) { chains.add('eth'); chains.add('base'); } // Morpho é multi-mercado
+  if (chains.size === 0) chains.add('base'); // fallback: pelo menos a Base
+  const byProto = {};
+  for (const chain of chains) {
+    try {
+      const url = _moralisUrl(`wallets/${w.address}/defi/positions?chain=${chain}`);
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const positionsArr = await res.json();
+      if (!Array.isArray(positionsArr)) continue;
+      for (const p of positionsArr) {
+        const pid = p.protocol_id || '';
+        const acc = p.account_data || {};
+        const det = (p.position && p.position.position_details) || {};
+        // Guardamos por protocolo: o net APY e o health factor da conta, e por posição o APY.
+        if (!byProto[pid]) byProto[pid] = { netApy: acc.net_apy, hf: acc.health_factor, positions: [] };
+        byProto[pid].positions.push({
+          label: p.position?.label,
+          apy: det.apy,
+          isDebt: det.is_debt,
+          symbol: p.position?.tokens?.find(t => t.token_type === 'supplied' || t.token_type === 'borrowed')?.symbol,
+        });
+      }
+    } catch(_) { /* silencioso: APY é enriquecimento, não pode partir a app */ }
+  }
+  window._moralisApyCache[w.id] = { byProto, ts: Date.now() };
+  if (typeof renderDebounced === 'function') renderDebounced();
+}
+
 // Alchemy RPC base URLs per chain (requires API key)
 const ALCHEMY_RPCS = {
   eth:      'https://eth-mainnet.g.alchemy.com/v2/',
@@ -10773,7 +10826,22 @@ function renderDefiPositions(w) {
         // HF: 1.0 = liquidação, 2.0+ = muito seguro. Barra: 0% (HF 1) → 100% (HF 2+).
         pct: Math.max(0, Math.min(100, (hf - 1) * 100)),
         label: `HF ${hf.toFixed(2)}` } : null,
-      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`,
+      detailHTML: (() => {
+        const base = `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`;
+        // Enriquecimento: APY vindo do Moralis (se disponível no cache).
+        const mc = window._moralisApyCache?.[w.id]?.byProto;
+        if (!mc) return base;
+        const pid = key === 'morpho' ? 'morpho' : 'aave-v3';
+        const md = mc[pid] || mc[Object.keys(mc).find(k => k.includes(key === 'morpho' ? 'morpho' : 'aave')) || ''];
+        if (!md) return base;
+        const supplyApys = (md.positions || []).filter(x => !x.isDebt && x.apy != null);
+        const borrowApys = (md.positions || []).filter(x => x.isDebt && x.apy != null);
+        let apyLine = '';
+        if (supplyApys.length) apyLine += `<span style="color:var(--green)">supply ${supplyApys.map(x=>x.apy.toFixed(2)+'%').join(' / ')}</span>`;
+        if (borrowApys.length) apyLine += `${apyLine?' · ':''}<span style="color:var(--red)">borrow ${borrowApys.map(x=>x.apy.toFixed(2)+'%').join(' / ')}</span>`;
+        if (md.netApy != null) apyLine += `${apyLine?' · ':''}net APY ${md.netApy.toFixed(2)}%`;
+        return base + (apyLine ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${apyLine} <span style="opacity:0.6">· via Moralis</span></div>` : '');
+      })(),
     });
   }
 
@@ -17277,6 +17345,8 @@ async function refreshAll() {
     console.log('No API key — skipping history fetch. Add key in Config tab.');
   }
   live.lastRefresh = new Date().toLocaleTimeString('pt-PT');
+  // Buscar APY das posições DeFi via Moralis (enriquecimento, não-bloqueante).
+  try { fetchMoralisApy(w); } catch(_){}
   // Gravar o valor total (tokens + DeFi) no histórico, uma vez por refresh.
   try {
     const _pt = window['_portfolioTotal_' + w.id]?.eur || 0;
