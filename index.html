@@ -90,14 +90,14 @@
    Sprint 9.0: LIGHT MODE — warm off-white, gold preserved
    ═══════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  /* ── Light mode: fundo cinza-creme, cartões creme quentes elevados (não branco puro) ── */
-  --bg:           #E2E0DA;      /* fundo cinza-creme, claramente mais escuro que os cartões */
-  --bg1:          #F4F1EA;      /* cards — creme quente (combina com o dourado) */
-  --bg2:          #ECE9E1;      /* recessed / hover */
-  --bg3:          #DEDAD0;
-  --surface:      #F4F1EA;      /* creme quente em vez de off-white frio */
-  --surface-elev: #FAF8F2;
-  --surface-soft: rgba(60,50,30,0.04);
+  /* ── Light mode: cinzento neutro frio (Linear/Notion), cartões elevados ── */
+  --bg:           #E4E6EB;      /* fundo cinza neutro, mais escuro que os cartões */
+  --bg1:          #F7F8FA;      /* cards — branco-acinzentado neutro */
+  --bg2:          #EDEEF1;      /* recessed / hover */
+  --bg3:          #E0E2E7;
+  --surface:      #F7F8FA;      /* branco-acinzentado neutro (sem creme) */
+  --surface-elev: #FCFCFD;
+  --surface-soft: rgba(30,35,45,0.04);
 
   /* Brand palette — gold kept ONLY as an accent; deepened for legibility on white */
   --gold:         #9A7635;
@@ -453,8 +453,8 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 }
 [data-theme="light"] .panel {
   background: var(--surface);
-  border: 1px solid rgba(60,50,30,0.10);
-  box-shadow: 0 1px 3px rgba(60,50,30,0.06), 0 1px 2px rgba(60,50,30,0.04);
+  border: 1px solid rgba(30,35,45,0.09);
+  box-shadow: 0 1px 3px rgba(30,35,45,0.06), 0 1px 2px rgba(30,35,45,0.04);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
