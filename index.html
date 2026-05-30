@@ -90,14 +90,14 @@
    Sprint 9.0: LIGHT MODE — warm off-white, gold preserved
    ═══════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  /* ── Light mode: cinzento neutro frio (Linear/Notion), cartões elevados ── */
-  --bg:           #E4E6EB;      /* fundo cinza neutro, mais escuro que os cartões */
-  --bg1:          #F7F8FA;      /* cards — branco-acinzentado neutro */
-  --bg2:          #EDEEF1;      /* recessed / hover */
-  --bg3:          #E0E2E7;
-  --surface:      #F7F8FA;      /* branco-acinzentado neutro (sem creme) */
-  --surface-elev: #FCFCFD;
-  --surface-soft: rgba(30,35,45,0.04);
+  /* ── Light mode: fundo cinza, cartões cinza-claro com nuance dourada ── */
+  --bg:           #E6E4DF;      /* fundo cinza levemente quente, mais escuro que cards */
+  --bg1:          #F6F4EF;      /* cards — cinza muito claro com toque dourado */
+  --bg2:          #EEECE6;      /* recessed / hover */
+  --bg3:          #E2DFD8;
+  --surface:      #F6F4EF;      /* cinza-claro quente (nuance dourada subtil) */
+  --surface-elev: #FBFAF6;
+  --surface-soft: rgba(154,118,53,0.05);
 
   /* Brand palette — gold kept ONLY as an accent; deepened for legibility on white */
   --gold:         #9A7635;
@@ -304,8 +304,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.10) 0.9px, transparent 0.9px); background-size:20px 20px; }
-[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.10) 0.9px, transparent 0.9px); background-size:20px 20px; }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.07) 0.9px, transparent 0.9px); background-size:20px 20px; }
+[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.07) 0.9px, transparent 0.9px); background-size:20px 20px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -444,23 +444,27 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background: #16140F;
-  border: 1px solid rgba(212,175,122,0.14);
+  background:
+    linear-gradient(135deg, rgba(212,175,122,0.06), rgba(212,175,122,0.015)),
+    #16140F;
+  border: 1px solid rgba(212,175,122,0.22);
   border-radius: 16px;
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
 }
 .panel:hover {
-  border-color: rgba(212,175,122,0.24);
+  border-color: rgba(212,175,122,0.32);
 }
 [data-theme="light"] .panel {
-  background: var(--surface);
-  border: 1px solid rgba(154,118,53,0.16);
-  box-shadow: 0 1px 3px rgba(30,35,45,0.06), 0 1px 2px rgba(30,35,45,0.04);
+  background:
+    linear-gradient(135deg, rgba(154,118,53,0.05), rgba(154,118,53,0.01)),
+    var(--surface);
+  border: 1px solid rgba(154,118,53,0.18);
+  box-shadow: 0 1px 3px rgba(30,35,45,0.05);
 }
 [data-theme="light"] .panel:hover {
-  border-color: rgba(154,118,53,0.28);
+  border-color: rgba(154,118,53,0.30);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
