@@ -10747,7 +10747,11 @@ function renderDefiPositions(w) {
       icon: key === 'morpho' ? 'MO' : 'AA',
       valueEUR: net * _lbEur,
       status: hf ? `HF <span style="color:${hfColor}">${hf.toFixed(2)}</span>` : '',
-      detailHTML: `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`,
+      health: hf ? { type: 'hf', value: hf, color: hfColor,
+        // HF: 1.0 = liquidação, 2.0+ = muito seguro. Barra: 0% (HF 1) → 100% (HF 2+).
+        pct: Math.max(0, Math.min(100, (hf - 1) * 100)),
+        label: `HF ${hf.toFixed(2)}` } : null,
+      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">Colateral $${fmt(collat)} · Dívida $${fmt(debt)}${p.ltv ? ` · LTV ${fmt(p.ltv,1)}%` : ''}${p.available ? ` · Disponível $${fmt(p.available)}` : ''}</div>`,
     });
   }
 
@@ -10881,7 +10885,10 @@ function renderDefiPositions(w) {
       icon: 'LP',
       valueEUR: posValue,
       status: lp.inRange ? '<span style="color:var(--green)">● in range</span>' : '<span style="color:var(--gold)">○ out of range</span>',
-      detailHTML: metricsLine || `<div style="font-size:0.72rem;color:var(--text-muted)">${lp.token0.symbol}: ${(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
+      health: { type: 'range', inRange: !!lp.inRange,
+        label: lp.inRange ? 'In range' : 'Out of range',
+        color: lp.inRange ? 'var(--green)' : 'var(--gold)' },
+      detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${lp.token0.symbol}: ${(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
     });
   }
 
@@ -10955,6 +10962,9 @@ function renderDefiPositions(w) {
   }
   const lendNetEUR = totalNetUSD * eurRate;
   const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
+  // Expor o total DeFi (pools + vaults + lend/borrow líquido) para o hero somar
+  // ao património total. Sem isto, o "Património total" mostrava só os tokens soltos.
+  try { window['_defiTotal_' + w.id] = { eur: grandTotalEUR, ts: Date.now() }; } catch(_){}
   if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0) return '';
 
   // Donut das posições DeFi por categoria (gémeo visual do donut dos tokens, mas
@@ -11004,18 +11014,30 @@ function renderDefiPositions(w) {
     const rid = `uni_${idx}`;
     const open = window._expandedUni.has(rid);
     const kindBadge = { pool: 'Pool', lend: 'Lend/Borrow', vault: 'Vault' }[r.kind] || '';
+    // Barra de saúde por tipo: HF (lend/borrow) → barra colorida; range (pools) → pílula.
+    let healthHTML = '';
+    if (r.health && r.health.type === 'hf') {
+      healthHTML = `
+        <div style="display:flex;flex-direction:column;gap:3px;min-width:78px;flex-shrink:0">
+          <span style="font-size:0.7rem;font-family:var(--mono);color:${r.health.color};text-align:right">${r.health.label}</span>
+          <div style="height:4px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="height:4px;width:${r.health.pct}%;background:${r.health.color};border-radius:3px"></div></div>
+        </div>`;
+    } else if (r.health && r.health.type === 'range') {
+      healthHTML = `<span style="font-size:0.7rem;color:${r.health.color};border:1px solid ${r.health.color}55;border-radius:20px;padding:2px 9px;flex-shrink:0;white-space:nowrap">${r.health.inRange ? '● ' : '○ '}${r.health.label}</span>`;
+    }
     return `
       <div class="uni-pos-row" onclick="(window._expandedUni.has('${rid}')?window._expandedUni.delete('${rid}'):window._expandedUni.add('${rid}'));render()" style="cursor:pointer;border-bottom:1px solid var(--border-soft)">
-        <div style="display:flex;align-items:center;gap:0.7rem;padding:0.75rem 0">
-          <span style="color:var(--gold);font-family:var(--mono);font-size:0.75rem;width:14px;flex-shrink:0">${open?'▼':'▶'}</span>
-          <div style="width:30px;height:30px;border-radius:50%;background:${r.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.6rem;color:#fff;font-weight:700;flex-shrink:0">${r.icon}</div>
+        <div style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 0">
+          <span style="color:var(--gold);font-family:var(--mono);font-size:0.8rem;width:14px;flex-shrink:0">${open?'▼':'▶'}</span>
+          <div style="width:34px;height:34px;border-radius:50%;background:${r.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.65rem;color:#fff;font-weight:700;flex-shrink:0">${r.icon}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:0.88rem;font-weight:600;color:var(--text)">${r.name} <span style="font-size:0.6rem;color:var(--text-dim);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">${kindBadge}</span></div>
-            <div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${r.sub}${r.status ? ` · ${r.status}` : ''}</div>
+            <div style="font-size:0.98rem;font-weight:600;color:var(--text)">${r.name} <span style="font-size:0.62rem;color:var(--text-dim);font-weight:400;text-transform:uppercase;letter-spacing:0.08em">${kindBadge}</span></div>
+            <div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${r.sub}</div>
           </div>
-          <div style="text-align:right;font-family:var(--mono);font-size:0.95rem;font-weight:700;color:var(--text);flex-shrink:0">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
+          ${healthHTML}
+          <div style="text-align:right;font-family:var(--mono);font-size:1.05rem;font-weight:700;color:var(--text);flex-shrink:0;min-width:80px">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
         </div>
-        ${open ? `<div style="padding:0 0 0.75rem 3rem">${r.detailHTML}</div>` : ''}
+        ${open ? `<div style="padding:0 0 0.9rem 3.2rem">${r.detailHTML}</div>` : ''}
       </div>`;
   }).join('');
 
@@ -11534,11 +11556,17 @@ function renderDashboard(w) {
   const gLTV = totalCol>0?(totalDebt/totalCol*100):0;
 
   // Saldo TOTAL da carteira (tokens soltos + DeFi), exposto por renderPortfolioCharts
-  // no render anterior. Fallback para o netWorth DeFi se ainda não estiver disponível.
+  // e renderDefiPositions no render anterior. Fallback para o netWorth DeFi se ainda
+  // não estiver disponível.
   const _ptot = window['_portfolioTotal_' + w.id];
-  const walletTotalEUR = (_ptot && _ptot.eur > 0) ? _ptot.eur : null;
-  const _balanceLoading = !_ptot; // ainda não chegou o primeiro cálculo de saldos
-  if (walletTotalEUR) recordPortfolioValue(w.id, walletTotalEUR);
+  const _dtot = window['_defiTotal_' + w.id];
+  const _tokensEUR = (_ptot && _ptot.eur > 0) ? _ptot.eur : 0;
+  const _defiEUR = (_dtot && _dtot.eur > 0) ? _dtot.eur : 0;
+  const walletTotalEUR = (_tokensEUR + _defiEUR) > 0 ? (_tokensEUR + _defiEUR) : null;
+  const _balanceLoading = !_ptot && !_dtot; // ainda não chegou nenhum cálculo
+  // NOTA: a gravação do histórico (recordPortfolioValue) é feita no refreshAll, não
+  // aqui — gravar a cada render podia mexer no state durante a renderização e
+  // contribuir para re-renders/flashes. Aqui só lemos para mostrar.
   const hasLeveraged = protoEntries.length > 0 && (totalCol > 0 || totalDebt > 0);
   const cols = state.collateral.filter(c=>c.walletId===w.id);
   const isentos = cols.filter(c=>daysHeld(c.acqDate)>=365);
@@ -13749,6 +13777,7 @@ function updateCalc() {
 }
 
 let interestAnimId = null;
+let _interestTickerId = null;
 let interestBase = 0;
 let interestStartTs = Date.now();
 const SECS_PER_YEAR = 365*24*3600;
@@ -13778,18 +13807,22 @@ function startInterestTicker() {
   interestBase = calcTotalInterest();
   interestStartTs = Date.now();
   const perSec = calcPerSecondInterest();
+  stopInterestTicker();
   function tick() {
     const elapsed = (Date.now()-interestStartTs)/1000;
     const current = interestBase + perSec*elapsed;
     const el = document.getElementById('interestTicker');
-    if (el) el.textContent = '$'+current.toFixed(6);
-    interestAnimId = requestAnimationFrame(tick);
+    if (!el) { stopInterestTicker(); return; } // elemento já não existe → parar
+    el.textContent = '$'+current.toFixed(6);
   }
-  cancelAnimationFrame(interestAnimId);
   tick();
+  _interestTickerId = setInterval(tick, 1000); // 1x/seg chega para um contador
 }
 
-function stopInterestTicker() { cancelAnimationFrame(interestAnimId); }
+function stopInterestTicker() {
+  if (typeof _interestTickerId !== 'undefined' && _interestTickerId) { clearInterval(_interestTickerId); _interestTickerId = null; }
+  if (typeof interestAnimId !== 'undefined' && interestAnimId) { cancelAnimationFrame(interestAnimId); interestAnimId = null; }
+}
 
 // ══════════════════════════════════════════════════════════
 // WALLETS TAB
@@ -17197,6 +17230,12 @@ async function refreshAll() {
     console.log('No API key — skipping history fetch. Add key in Config tab.');
   }
   live.lastRefresh = new Date().toLocaleTimeString('pt-PT');
+  // Gravar o valor total (tokens + DeFi) no histórico, uma vez por refresh.
+  try {
+    const _pt = window['_portfolioTotal_' + w.id]?.eur || 0;
+    const _dt = window['_defiTotal_' + w.id]?.eur || 0;
+    if (_pt + _dt > 0) recordPortfolioValue(w.id, _pt + _dt);
+  } catch(_){}
   checkAlerts(w);
   if (btn) { btn.textContent='↻'; btn.disabled=false; }
   renderDebounced();
