@@ -306,7 +306,8 @@ a {
 
 
 /* ══ SCANLINES ══ */
-body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.04) 2px,rgba(0,0,0,0.04) 4px); }
+body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(212,175,122,0.07) 1px, transparent 1px); background-size:22px 22px; }
+[data-theme="light"] body::before { background-image:radial-gradient(rgba(154,118,53,0.06) 1px, transparent 1px); }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -442,13 +443,20 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, rgba(212,175,122,0.035), transparent 120px),
+    var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
   margin-bottom: var(--space-md);
   overflow: hidden;
   transition: var(--trans);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+[data-theme="light"] .panel {
+  background:
+    linear-gradient(180deg, rgba(154,118,53,0.03), transparent 120px),
+    var(--surface);
 }
 .panel:hover {
   border-color: var(--border2);
@@ -10915,6 +10923,30 @@ function renderDefiPositions(w) {
   const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
   if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0) return '';
 
+  // Donut das posições DeFi por categoria (gémeo do donut dos tokens). Mostra de
+  // relance como o teu DeFi está distribuído: Lend/Borrow vs Pools vs Vaults.
+  const defiSlices = [];
+  if (lendNetEUR > 0.01) defiSlices.push({ label: 'Lend / Borrow', value: lendNetEUR });
+  if (totalLpEUR > 0.01) defiSlices.push({ label: 'Pools de Liquidez', value: totalLpEUR });
+  if (totalVaultEUR > 0.01) defiSlices.push({ label: 'Vaults', value: totalVaultEUR });
+  defiSlices.sort((a, b) => b.value - a.value);
+  const _defiColors = ['#D4AF7A', '#5DCAA5', '#378ADD', '#E8C895', '#7B6FFF'];
+  let defiDonutHtml = '';
+  if (defiSlices.length && grandTotalEUR > 0.01 && typeof renderDonutSVG === 'function') {
+    defiDonutHtml = `
+      <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;flex-wrap:wrap">
+        <div style="flex-shrink:0">${renderDonutSVG(defiSlices, _defiColors, grandTotalEUR)}</div>
+        <div style="flex:1;min-width:160px">
+          ${defiSlices.map((s, i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border-soft)">
+              <span style="font-size:0.8rem;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:8px"></span>${s.label}</span>
+              <span style="font-size:0.8rem;font-family:var(--mono);color:var(--text)">€${fmt(s.value)} · ${(s.value / grandTotalEUR * 100).toFixed(0)}%</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
   return `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
@@ -10922,6 +10954,7 @@ function renderDefiPositions(w) {
         <span style="font-size:0.7rem;color:var(--text-muted)">total <strong style="color:var(--gold)">€${fmt(grandTotalEUR)}</strong></span>
       </div>
       <div class="panel-body">
+        ${defiDonutHtml}
         ${lpRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.3rem">Pools de Liquidez · €${fmt(totalLpEUR)}${totalLpFeesEUR > 0.01 ? ` · fees por reclamar €${fmt(totalLpFeesEUR)}` : ''}</div>${lpRows.join('')}` : ''}
         ${rows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:${lpRows.length ? '0.8rem' : '0'} 0 0.3rem">Lend / Borrow / Loops · líquido $${fmt(totalNetUSD)}</div>${rows.join('')}` : ''}
         ${vaultRows.length ? `<div style="font-size:0.62rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin:0.8rem 0 0.3rem">Vaults · €${fmt(totalVaultEUR)}</div>${vaultRows.join('')}` : ''}
