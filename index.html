@@ -4247,10 +4247,13 @@ function _cascadingImg(urls, alt, size, fallbackHtml, objectFit, bg) {
   </span>`;
 }
 
-function tokenLogo(symbol, chain, contract, size = 24) {
+function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   const s = size;
   const fallback = _logoFallbackCircle(symbol, 'var(--bg3)', s);
   const urls = [];
+  // 1ª fonte: o logo que a Alchemy já nos deu na resposta dos saldos (quando existe).
+  // É o mais fiável porque vem da mesma fonte dos dados — sem pedido extra.
+  if (logoUrl && /^https?:\/\//.test(logoUrl)) urls.push(logoUrl);
   // DexScreener by contract — broadest coverage (2M+ tokens incl. DeFi/protocol tokens).
   const DS_CHAIN = { eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon', avalanche:'avalanche', bnb:'bsc' };
   const dsChain = DS_CHAIN[chain];
@@ -11261,15 +11264,13 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   const legend = segments.map(s => {
     const meta = assetMeta && assetMeta.get(s.label);
     const isOther = s.label === 'Outros' || /baixo valor$/.test(s.label);
-    // Logo: prefer a direct URL from DexScreener/Alchemy, else token logo by contract/symbol.
+    // Logo: cascata completa via tokenLogo (logo da Alchemy → DexScreener → ícones
+    // → círculo com inicial). O utilizador nunca vê imagem partida.
     let logo;
     if (isOther) {
       logo = `<div style="width:22px;height:22px;background:${s.color};border-radius:50%;flex-shrink:0"></div>`;
-    } else if (meta && meta.logoUrl) {
-      const fb = (typeof _logoFallbackCircle === 'function') ? _logoFallbackCircle(s.label, s.color, 22) : '';
-      logo = `<span style="position:relative;display:inline-flex;width:22px;height:22px;flex-shrink:0;vertical-align:middle"><img src="${meta.logoUrl}" width="22" height="22" loading="lazy" style="width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--bg2)" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex'"><span style="display:none;position:absolute;inset:0">${fb}</span></span>`;
     } else if (meta && typeof tokenLogo === 'function') {
-      logo = tokenLogo(s.label, meta.chain, meta.contract, 22);
+      logo = tokenLogo(s.label, meta.chain, meta.contract, 22, meta.logoUrl);
     } else {
       logo = `<div style="width:22px;height:22px;background:${s.color};border-radius:50%;flex-shrink:0"></div>`;
     }
