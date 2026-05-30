@@ -9045,6 +9045,11 @@ function getSnapshotDelta24h(currentNet) {
   // Fallback: use oldest snapshot if no 24h-old one
   if (!candidate && snaps.length >= 2) candidate = snaps[0];
   if (!candidate || candidate.netWorth === 0) return null;
+  // Proteção: se o snapshot antigo é de ordem de grandeza muito diferente da atual
+  // (ex: base mudou de "só lend/borrow" para "património total"), a comparação não
+  // faz sentido — devolve null até haver snapshots na mesma base. Evita o −100% falso.
+  const _ratio = currentNet / candidate.netWorth;
+  if (_ratio > 5 || _ratio < 0.2) return null;
   const deltaAbs = currentNet - candidate.netWorth;
   const deltaPct = (deltaAbs / Math.abs(candidate.netWorth)) * 100;
   return { abs: deltaAbs, pct: deltaPct, since: candidate.date, hoursAgo: Math.round((now - candidate.ts)/3600000) };
@@ -10775,19 +10780,24 @@ function renderDefiPositions(w) {
       for (const leg of [lp.token0, lp.token1]) {
         if (!leg.address) continue;
         const ck = `${lp.chain}:${leg.address.toLowerCase()}`;
-        if (_chainlinkCache.get(ck) === undefined && CHAINLINK_FEEDS[lp.chain]?.[leg.address.toLowerCase()]) {
-          need.push({ chain: lp.chain, contract: leg.address });
+        // Só buscar se: não está em cache E ainda não foi tentado nesta sessão.
+        // Sem o "já tentado", LPs sem preço Chainlink faziam render→fetch→render
+        // em loop infinito (o piscar do dashboard).
+        window._lpPriceTried = window._lpPriceTried || new Set();
+        if (_chainlinkCache.get(ck) === undefined && !window._lpPriceTried.has(ck) && CHAINLINK_FEEDS[lp.chain]?.[leg.address.toLowerCase()]) {
+          need.push({ chain: lp.chain, contract: leg.address, ck });
         }
       }
     }
     if (need.length && !window._lpPriceRefetching) {
       window._lpPriceRefetching = true;
+      need.forEach(n => window._lpPriceTried.add(n.ck)); // marcar como tentados antes de buscar
       Promise.all(need.map(n => fetchChainlinkPrice(n.chain, n.contract, klKey)))
         .then(rs => {
           window._lpPriceRefetching = false;
-          // setTimeout escapes the current render cycle so the re-render isn't swallowed by
-          // the in-progress one (the bug that left WETH/USDC showing "—" until a manual render).
-          if (rs.some(r => r != null) && typeof render === 'function') setTimeout(() => render(), 50);
+          // Re-render UMA vez se algum preço chegou (via debounce, não setTimeout cru,
+          // para não competir com o ciclo de render).
+          if (rs.some(r => r != null) && typeof renderDebounced === 'function') renderDebounced(300);
         })
         .catch(() => { window._lpPriceRefetching = false; });
     }
@@ -11574,9 +11584,12 @@ function renderDashboard(w) {
   const hfColor = !minHF?'var(--text-muted)':minHF<1.2?'var(--red)':minHF<1.5?'var(--gold)':'var(--green)';
   const hfBadge = !minHF?'—':minHF<1.2?'CRÍTICO':minHF<1.5?'ATENÇÃO':'SAUDÁVEL';
 
-  // Save snapshot for delta tracking
-  if (totalCol > 0 || totalDebt > 0) saveSnapshot(netWorth, totalCol, totalDebt);
-  const delta = getSnapshotDelta24h(netWorth);
+  // Snapshot + delta sobre o PATRIMÓNIO TOTAL (tokens + DeFi), não só o lend/borrow.
+  // Antes usava netWorth (só lend/borrow), o que dava −100% quando o total passou a
+  // incluir as pools. Só grava/compara quando já temos o total real carregado.
+  const _snapBasis = walletTotalEUR != null ? walletTotalEUR : null;
+  if (_snapBasis != null) saveSnapshot(_snapBasis, totalCol, totalDebt);
+  const delta = _snapBasis != null ? getSnapshotDelta24h(_snapBasis) : null;
 
   // Find next upcoming exemption
   const pending = cols.filter(c=>daysHeld(c.acqDate)<365)
