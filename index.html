@@ -10923,24 +10923,38 @@ function renderDefiPositions(w) {
   const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
   if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0) return '';
 
-  // Donut das posições DeFi por categoria (gémeo do donut dos tokens). Mostra de
-  // relance como o teu DeFi está distribuído: Lend/Borrow vs Pools vs Vaults.
+  // Donut das posições DeFi por categoria (gémeo visual do donut dos tokens, mas
+  // próprio — a renderDonutSVG é específica para tokens, com legenda de logos/PnL
+  // que não faz sentido para categorias). Mostra Lend/Borrow vs Pools vs Vaults.
   const defiSlices = [];
-  if (lendNetEUR > 0.01) defiSlices.push({ label: 'Lend / Borrow', value: lendNetEUR });
-  if (totalLpEUR > 0.01) defiSlices.push({ label: 'Pools de Liquidez', value: totalLpEUR });
-  if (totalVaultEUR > 0.01) defiSlices.push({ label: 'Vaults', value: totalVaultEUR });
-  defiSlices.sort((a, b) => b.value - a.value);
+  if (lendNetEUR > 0.01) defiSlices.push(['Lend / Borrow', lendNetEUR]);
+  if (totalLpEUR > 0.01) defiSlices.push(['Pools de Liquidez', totalLpEUR]);
+  if (totalVaultEUR > 0.01) defiSlices.push(['Vaults', totalVaultEUR]);
+  defiSlices.sort((a, b) => b[1] - a[1]);
   const _defiColors = ['#D4AF7A', '#5DCAA5', '#378ADD', '#E8C895', '#7B6FFF'];
   let defiDonutHtml = '';
-  if (defiSlices.length && grandTotalEUR > 0.01 && typeof renderDonutSVG === 'function') {
+  if (defiSlices.length && grandTotalEUR > 0.01) {
+    const _ds = 130, _sw = 22, _r = (_ds / 2) - (_sw / 2), _circ = 2 * Math.PI * _r, _c = _ds / 2;
+    let _cum = 0;
+    const arcs = defiSlices.map(([label, value], i) => {
+      const pct = value / grandTotalEUR;
+      const dash = `${pct * _circ} ${_circ}`;
+      const rot = _cum * 360 - 90;
+      _cum += pct;
+      return `<circle cx="${_c}" cy="${_c}" r="${_r}" fill="none" stroke="${_defiColors[i % _defiColors.length]}" stroke-width="${_sw}" stroke-dasharray="${dash}" transform="rotate(${rot} ${_c} ${_c})"/>`;
+    }).join('');
     defiDonutHtml = `
-      <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;flex-wrap:wrap">
-        <div style="flex-shrink:0">${renderDonutSVG(defiSlices, _defiColors, grandTotalEUR)}</div>
+      <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1.1rem;flex-wrap:wrap">
+        <svg viewBox="0 0 ${_ds} ${_ds}" width="${_ds}" height="${_ds}" style="flex-shrink:0">
+          ${arcs}
+          <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:13px;font-weight:700;fill:var(--text)">€${fmt(grandTotalEUR)}</text>
+          <text x="${_c}" y="${_c + 12}" text-anchor="middle" style="font-size:8px;fill:var(--text-muted);letter-spacing:0.1em">DEFI</text>
+        </svg>
         <div style="flex:1;min-width:160px">
           ${defiSlices.map((s, i) => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border-soft)">
-              <span style="font-size:0.8rem;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:8px"></span>${s.label}</span>
-              <span style="font-size:0.8rem;font-family:var(--mono);color:var(--text)">€${fmt(s.value)} · ${(s.value / grandTotalEUR * 100).toFixed(0)}%</span>
+              <span style="font-size:0.8rem;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:8px"></span>${s[0]}</span>
+              <span style="font-size:0.8rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} · ${(s[1] / grandTotalEUR * 100).toFixed(0)}%</span>
             </div>
           `).join('')}
         </div>
