@@ -11496,7 +11496,7 @@ function renderDashboard(w) {
     ? `<div class="alert alert-danger" style="margin-bottom:1.5rem">⚠️ <strong>LIQUIDAÇÃO EM RISCO — HF ${minHF.toFixed(3)}</strong> Adiciona colateral ou reduz dívida imediatamente.</div>`
     : minHF!==null&&minHF<1.5
     ? `<div class="alert alert-warn" style="margin-bottom:1.5rem">⚠ Health Factor em atenção (${minHF.toFixed(3)}). Mantém margem de segurança.</div>`
-    : minHF===null
+    : _balanceLoading
     ? `<div class="alert alert-info" style="margin-bottom:1.5rem">◆ A carregar dados on-chain... Clica Refresh ou aguarda o próximo ciclo automático.</div>`
     : '';
 
@@ -11530,9 +11530,9 @@ function renderDashboard(w) {
     ${alertHTML}
     ${lotSugBanner}
 
-    <!-- HERO BLOCK — saldo total da carteira primeiro (o que toda a gente quer ver) -->
-    <div class="hero-block">
-      <div class="hero-main">
+    <!-- HERO BLOCK — património centrado, gráfico de evolução por baixo -->
+    <div class="hero-block" style="flex-direction:column;align-items:center;text-align:center">
+      <div class="hero-main" style="align-items:center">
         <div class="hero-label">Património total</div>
         <div class="hero-value">
           ${walletTotalEUR
@@ -11542,11 +11542,8 @@ function renderDashboard(w) {
               : `<span class="currency-symbol">$</span>${fmt(netWorth, 2)}`}
         </div>
         ${deltaHTML}
-      </div>
-      <div class="hero-side" style="flex-direction:column;align-items:stretch;justify-content:center;min-width:260px">
-        ${portfolioSparkline(w.id)}
         ${hasLeveraged ? `
-        <div style="display:flex;gap:1rem;margin-top:0.6rem;justify-content:flex-end">
+        <div style="display:flex;gap:1.5rem;margin-top:0.7rem;justify-content:center">
           <div class="hero-mini-stat">
             <div class="hero-mini-label">${t('hero.collateral')}</div>
             <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalCol, 2)}</div>
@@ -11557,6 +11554,9 @@ function renderDashboard(w) {
             <div class="hero-mini-value"><span class="currency-symbol">$</span>${fmt(totalDebt, 2)}</div>
           </div>
         </div>` : ''}
+      </div>
+      <div style="width:100%;margin-top:1rem">
+        ${portfolioSparkline(w.id, 1000, 70)}
       </div>
     </div>
 
