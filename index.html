@@ -4379,8 +4379,11 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   const fallback = _logoFallbackCircle(symbol, 'var(--bg3)', s);
   const urls = [];
   // 1ª fonte: o logo que a Alchemy já nos deu na resposta dos saldos (quando existe).
-  // É o mais fiável porque vem da mesma fonte dos dados — sem pedido extra.
-  if (logoUrl && /^https?:\/\//.test(logoUrl)) urls.push(logoUrl);
+  // SEGURANÇA: só carregamos logos de domínios de CONFIANÇA. Tokens de scam (sobretudo
+  // na Solana) trazem metadata com URLs IPFS/arbitrários que podem ser maliciosos
+  // (exfiltração de dados, tracking). O browser tentaria buscá-los e um antivírus
+  // bloqueia — pior, poderiam ser um vetor de ataque. Só permitimos CDNs conhecidos.
+  if (logoUrl && _isTrustedLogoUrl(logoUrl)) urls.push(logoUrl);
   // DexScreener by contract — broadest coverage (2M+ tokens incl. DeFi/protocol tokens).
   const DS_CHAIN = { eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon', avalanche:'avalanche', bnb:'bsc' };
   const dsChain = DS_CHAIN[chain];
@@ -4394,6 +4397,28 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   }
   if (urls.length === 0) return fallback;
   return _cascadingImg(urls, symbol, s, fallback, 'cover', 'var(--bg2)');
+}
+
+// Só permite logos de CDNs de confiança. Bloqueia IPFS, data:, e domínios arbitrários
+// (tokens de scam trazem metadata maliciosa). Lista branca de hosts conhecidos e seguros.
+function _isTrustedLogoUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (!/^https:\/\//i.test(url)) return false; // só https (sem ipfs:, data:, http:)
+  let host;
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  const TRUSTED = [
+    'logo.moralis.io', 'cdn.moralis.io',
+    'dd.dexscreener.com', 'dexscreener.com',
+    'cdn.jsdelivr.net',
+    'coin-images.coingecko.com', 'assets.coingecko.com',
+    'static.coinstats.app',
+    'raw.githubusercontent.com', // token lists oficiais (Solana, Uniswap)
+    'arweave.net', // metadata Solana oficial (alguns tokens legítimos)
+    'static.jup.ag', 'metadata.jito.network',
+  ];
+  // Bloqueia explicitamente gateways IPFS (vetor comum de scam tokens).
+  if (/ipfs/i.test(host) || /ipfs/i.test(url)) return false;
+  return TRUSTED.some(d => host === d || host.endsWith('.' + d));
 }
 
 function protocolLogo(key, proto, size = 24) {
@@ -9210,11 +9235,17 @@ function _eventsForWallet(w) {
 
   const wAddr = (w.addr || w.evm || '').toLowerCase();
   const btcAddr = (w.bitcoinXpub || w.bitcoinAddress || '').toLowerCase();
-  const solAddr = (w.sol || '').toLowerCase();
-  const ids = [wAddr, btcAddr, solAddr].filter(Boolean);
-  if (ids.length === 0) { _eventsCache.set(w.id, { sig, events: [] }); return []; }
+  const solAddr = w.sol || ''; // base58 — case-sensitive, NÃO lowercase
+  const ids = [wAddr, btcAddr].filter(Boolean);
+  if (ids.length === 0 && !solAddr) { _eventsCache.set(w.id, { sig, events: [] }); return []; }
   const idSet = new Set(ids); // Set é mais rápido que Array.includes em loops grandes
-  const events = all.filter(e => idSet.has((e.walletAddress || '').toLowerCase()));
+  const events = all.filter(e => {
+    const ew = e.walletAddress || '';
+    if (idSet.has(ew.toLowerCase())) return true;
+    // Solana: o endereço é base58 (case-sensitive). Comparação exata + chain como reforço.
+    if (solAddr && (ew === solAddr || (e.chain === 'solana' && ew.toLowerCase() === solAddr.toLowerCase()))) return true;
+    return false;
+  });
   _eventsCache.set(w.id, { sig, events });
   return events;
 }
@@ -14278,13 +14309,20 @@ async function fetchPricesForActiveWallet() {
     return;
   }
 
-  // Get all events for this wallet (EVM + BTC)
+  // Get all events for this wallet (EVM + BTC + Solana)
   const wAddr = (w.addr || w.evm || '').toLowerCase();
   const btcAddr = (w.bitcoinXpub || w.bitcoinAddress || '').toLowerCase();
-  const ids = [wAddr, btcAddr].filter(Boolean);
-  const events = (state.events || []).filter(e =>
-    ids.includes((e.walletAddress || '').toLowerCase())
-  );
+  const solAddr = w.sol || ''; // base58 — case-sensitive, NÃO fazer lowercase
+  const idsLower = [wAddr, btcAddr].filter(Boolean);
+  const events = (state.events || []).filter(e => {
+    const ew = e.walletAddress || '';
+    // EVM/BTC: comparação lowercase. Solana: comparação exata (base58 case-sensitive).
+    if (idsLower.includes(ew.toLowerCase())) return true;
+    if (solAddr && ew === solAddr) return true;
+    // Fallback robusto: qualquer evento da chain solana (caso o walletAddress varie).
+    if (solAddr && e.chain === 'solana') return true;
+    return false;
+  });
 
   if (events.length === 0) {
     toast('Sem eventos indexados — primeiro corre o indexer', 'warn');
@@ -15345,7 +15383,8 @@ function renderHistory(w) {
   const btcAddr = (w.bitcoinXpub || w.bitcoinAddress || '').toLowerCase();
   const walletEvents = state.events.filter(e =>
     (wAddr && e.walletAddress === wAddr) ||
-    (btcAddr && e.walletAddress === btcAddr)
+    (btcAddr && e.walletAddress === btcAddr) ||
+    (w.sol && (e.walletAddress === w.sol || e.chain === 'solana'))
   );
   const meta = state.indexerMeta[w.id] || {};
 
