@@ -9226,6 +9226,29 @@ function saveSnapshot(netWorth, totalCol, totalDebt) {
   try { localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps)); } catch(e) {}
 }
 
+// Delta do património a partir do MESMO histórico que o sparkline desenha
+// (state.valueHistory), para o número (%) e a curva contarem a mesma história.
+// Antes o delta vinha de loadSnapshots() (fonte diferente) → gráfico a descer com
+// delta positivo (contrassenso). Agora ambos leem de valueHistory.
+function getValueHistoryDelta(wid, currentEur) {
+  const hist = (state.valueHistory && state.valueHistory[wid]) || [];
+  if (hist.length < 2) return null;
+  const first = hist[0];
+  const last = hist[hist.length - 1];
+  // Usar o valor atual se fornecido (mais fresco que o último ponto gravado).
+  const cur = (currentEur != null && currentEur > 0) ? currentEur : last.v;
+  if (!first.v || first.v === 0) return null;
+  // Proteção: se a base mudou de ordem de grandeza (método de cálculo diferente),
+  // a comparação não faz sentido — não mostra delta.
+  const ratio = cur / first.v;
+  if (ratio > 5 || ratio < 0.2) return null;
+  const deltaAbs = cur - first.v;
+  const deltaPct = (deltaAbs / Math.abs(first.v)) * 100;
+  // Quantos dias separam o primeiro ponto do último.
+  const days = hist.length - 1;
+  return { abs: deltaAbs, pct: deltaPct, since: first.d, days };
+}
+
 function getSnapshotDelta24h(currentNet) {
   const snaps = loadSnapshots();
   if (snaps.length < 2) return null;
@@ -12053,7 +12076,8 @@ function renderDashboard(w) {
   // incluir as pools. Só grava/compara quando já temos o total real carregado.
   const _snapBasis = walletTotalEUR != null ? walletTotalEUR : null;
   if (_snapBasis != null) saveSnapshot(_snapBasis, totalCol, totalDebt);
-  const delta = _snapBasis != null ? getSnapshotDelta24h(_snapBasis) : null;
+  // Delta a partir do MESMO histórico que o sparkline desenha (coerência número↔curva).
+  const delta = _snapBasis != null ? getValueHistoryDelta(w.id, _snapBasis) : null;
 
   // Find next upcoming exemption
   const pending = cols.filter(c=>daysHeld(c.acqDate)<365)
@@ -12096,7 +12120,7 @@ function renderDashboard(w) {
       <span class="hero-delta-arrow">${delta.abs>=0?'↑':'↓'}</span>
       <span class="hero-delta-value">${delta.abs>=0?'+':'−'}<span class="currency-symbol">$</span>${fmt(Math.abs(delta.abs), 0)}</span>
       <span class="hero-delta-pct">(${delta.abs>=0?'+':''}${delta.pct.toFixed(2)}%)</span>
-      <span class="hero-delta-period">· ${delta.hoursAgo<48?delta.hoursAgo+'h':Math.round(delta.hoursAgo/24)+'d'}</span>
+      <span class="hero-delta-period">· ${delta.days <= 1 ? '1d' : delta.days + 'd'}</span>
     </div>
   ` : delta ? `<div class="hero-delta neutral"><span>Sem variação significativa nas últimas 24h</span></div>` : `<div class="hero-delta neutral"><span class="hero-delta-period">Recolhendo histórico para mostrar variação 24h…</span></div>`;
 
