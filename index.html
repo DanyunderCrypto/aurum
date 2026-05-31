@@ -6114,6 +6114,13 @@ function resolveCoinId(asset, chain, contract) {
     return `${chain}:${contract.toLowerCase()}`;
   }
 
+  // Solana: SOL nativo via coingecko; tokens SPL via mint (base58, não 0x).
+  // DefiLlama aceita o formato "solana:{mint}".
+  if (chain === 'solana') {
+    if (ASSET === 'SOL' || !contract) return 'coingecko:solana';
+    return `solana:${contract}`; // mint base58 (case-sensitive — NÃO lowercase)
+  }
+
   // Check curated map
   const entry = COIN_ID_MAP[ASSET];
   if (typeof entry === 'string') return entry;
