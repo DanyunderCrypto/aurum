@@ -3223,7 +3223,7 @@ const I18N = {
     'history.indexer': 'Universal Indexer',
     'history.reIndex': '↺ Re-indexar',
     'history.clearEvents': '✕ Limpar eventos',
-    'history.indexerDesc': 'O indexer descarrega <strong>todo o histórico on-chain</strong> da tua wallet desde o primeiro bloco — necessário para FIFO correcto e regime transitório &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> address único ou xpub/ypub/zpub completo (via Mempool.space, sem API key).',
+    'history.indexerDesc': 'O indexer descarrega <strong>todo o histórico on-chain</strong> da tua wallet desde o primeiro bloco — necessário para FIFO correcto e regime transitório &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> address único ou xpub/ypub/zpub completo (via Mempool.space, sem API key). <strong>Solana:</strong> histórico de transações on-chain (via Alchemy RPC).',
     'history.priceOracle': 'Price Oracle',
     'history.priceOracleProvider': 'DefiLlama + ECB · cache permanente',
     'history.fetchPrices': '💶 Buscar Preços ({n} eventos)',
@@ -3529,7 +3529,7 @@ const I18N = {
     'history.indexer': 'Universal Indexer',
     'history.reIndex': '↺ Re-index',
     'history.clearEvents': '✕ Clear events',
-    'history.indexerDesc': 'The indexer downloads <strong>all on-chain history</strong> of your wallet from the first block — required for correct FIFO and transitional regime &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> single address or full xpub/ypub/zpub (via Mempool.space, no API key).',
+    'history.indexerDesc': 'The indexer downloads <strong>all on-chain history</strong> of your wallet from the first block — required for correct FIFO and transitional regime &lt;2023 (Art. 220 OE/2023).<br><strong>EVM:</strong> eth, base, arbitrum, optimism (via Alchemy). <strong>Bitcoin:</strong> single address or full xpub/ypub/zpub (via Mempool.space, no API key). <strong>Solana:</strong> on-chain transaction history (via Alchemy RPC).',
     'history.priceOracle': 'Price Oracle',
     'history.priceOracleProvider': 'DefiLlama + ECB · permanent cache',
     'history.fetchPrices': '💶 Fetch Prices ({n} events)',
@@ -12093,8 +12093,8 @@ function renderDashboard(w) {
     ${lotSugBanner}
 
     <!-- HERO BLOCK — património centrado, gráfico de evolução por baixo -->
-    <div class="hero-block" style="flex-direction:column;align-items:center;text-align:center">
-      <div class="hero-main" style="align-items:center">
+    <div class="hero-block" style="display:flex;flex-direction:column;align-items:center;text-align:center">
+      <div class="hero-main" style="align-items:center;width:100%;box-sizing:border-box">
         <div class="hero-label">Património total</div>
         <div class="hero-value">
           ${walletTotalEUR
@@ -15285,10 +15285,15 @@ async function startIndexerForActiveWallet() {
 
     // ── Solana indexing (if applicable) ──
     if (hasSOL) {
+      // Garantir que a barra de progresso está VISÍVEL (em carteiras só-Solana, ou se
+      // um render entretanto a escondeu). Forçamos display:block no container.
+      const progEl = document.getElementById('indexerProgress');
+      if (progEl) progEl.style.display = 'block';
       const phaseEl = document.getElementById('indexerPhase');
       const countEl = document.getElementById('indexerCount');
       const barEl = document.getElementById('indexerBar');
       if (phaseEl) phaseEl.textContent = `A indexar SOLANA…`;
+      if (barEl) barEl.style.width = hasEVM || hasBTC ? '90%' : '10%';
       // Seed de símbolos a partir dos saldos atuais (resolve nomes de tokens).
       const seedSymbols = {};
       try {
@@ -15302,10 +15307,17 @@ async function startIndexerForActiveWallet() {
         signal: window._indexerController.signal,
         seedSymbols,
         onProgress: (p) => {
+          const base = (hasEVM || hasBTC) ? 90 : 10; // ponto de partida da fatia Solana
           if (p.phase === 'sol-signatures' && phaseEl) phaseEl.textContent = `Solana: ${p.count} assinaturas…`;
           if (p.phase === 'sol-transactions') {
             if (phaseEl) phaseEl.textContent = `Solana: ${p.processed}/${p.total} transações…`;
             if (countEl) countEl.textContent = `${p.events} eventos`;
+            // Barra: de 'base'% a 99% conforme processa as transações.
+            if (barEl && p.total > 0) {
+              const frac = Math.min(1, p.processed / p.total);
+              const pct = base + frac * (99 - base);
+              barEl.style.width = pct.toFixed(0) + '%';
+            }
           }
         },
       });
@@ -15578,11 +15590,10 @@ function renderHistory(w) {
             </div>`;
           }
           if (!hasEVMConf && !hasBTCConf && hasSolConf) {
-            // Só Solana: aparece no tracker de saldos, mas o histórico de
-            // transações (que alimenta o cálculo fiscal) ainda não é suportado.
-            return `<div class="alert alert-warn" style="margin-bottom:1rem">
+            // Só Solana: agora COM suporte fiscal (histórico on-chain indexado + preços).
+            return `<div class="alert alert-info" style="margin-bottom:1rem">
               <span>ℹ</span>
-              <div>Os saldos de <strong>Solana</strong> aparecem no teu portfólio, mas o <strong>histórico de transações de Solana para fins fiscais ainda não é suportado</strong>. Para o cálculo fiscal (mais-valias), adiciona uma carteira EVM ou Bitcoin. O suporte fiscal de Solana virá numa versão futura.</div>
+              <div>Carteira <strong>Solana</strong>: o histórico de transações on-chain é indexado e usado no cálculo fiscal (mais-valias, FIFO, regime PT). Corre o <strong>indexer</strong> e depois <strong>"Buscar Preços"</strong> para o relatório fiscal ficar completo. Posições DeFi "puras" de protocolos (lending/pools) podem não estar todas cobertas — confirma o portfólio.</div>
             </div>`;
           }
           if (!hasEVMConf && (w.addr || w.evm) && !resolveAlchemyKey(w)) {
