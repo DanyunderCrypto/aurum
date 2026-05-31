@@ -2688,15 +2688,13 @@ body.stealth-mode .stealth-badge {
   <div class="nav-tabs" id="navTabs">
     <button class="nav-tab active" data-i18n="tab.dashboard" onclick="showTab('dashboard')">Dashboard</button>
     <button class="nav-tab" data-i18n="tab.positions" onclick="showTab('protocols')">Posições</button>
-    <button class="nav-tab" data-i18n="tab.wallets" onclick="showTab('wallets')">Wallets</button>
+    <button class="nav-tab" data-i18n="tab.history" onclick="showTab('history')">Histórico</button>
     <span class="nav-divider"></span>
     <button class="nav-tab" data-i18n="tab.fiscal" onclick="showTab('fiscal')">Fiscal PT</button>
-    <button class="nav-tab" data-i18n="tab.strategy" onclick="showTab('strategy')">365 Dias</button>
-    <button class="nav-tab" data-i18n="tab.simulator" onclick="showTab('simulator')">Simulador</button>
+    <button class="nav-tab" data-i18n="tab.planning" onclick="showTab('planning')">Planeamento</button>
     <span class="nav-divider"></span>
-    <button class="nav-tab" data-i18n="tab.history" onclick="showTab('history')">Histórico</button>
+    <button class="nav-tab" data-i18n="tab.wallets" onclick="showTab('wallets')">Wallets</button>
     <button class="nav-tab" data-i18n="tab.cards" onclick="showTab('cards')">Cartões</button>
-    <span class="nav-divider"></span>
     <button class="nav-tab" data-i18n="tab.config" onclick="showTab('settings')">Config</button>
   </div>
   <div class="topbar-right">
@@ -3008,6 +3006,7 @@ const I18N = {
     'tab.history': 'Histórico',
     'tab.strategy': '365 Dias',
     'tab.simulator': 'Simulador',
+    'tab.planning': 'Planeamento',
     'tab.wallets': 'Wallets',
     'tab.fiscal': 'Fiscal PT',
     'tab.config': 'Config',
@@ -3314,6 +3313,7 @@ const I18N = {
     'tab.history': 'History',
     'tab.strategy': '365 Days',
     'tab.simulator': 'Simulator',
+    'tab.planning': 'Planning',
     'tab.wallets': 'Wallets',
     'tab.fiscal': 'Tax PT',
     'tab.config': 'Settings',
@@ -9072,7 +9072,7 @@ function render() {
   try {
     const w = activeWallet();
     if (!state.wallets.length || !w) { mc.innerHTML = renderSetup(); return; }
-    const renders = { dashboard: renderDashboard, protocols: renderProtocols, cards: renderCards, history: renderHistory, strategy: renderStrategy, simulator: renderSimulator, wallets: renderWallets, fiscal: renderFiscal, settings: renderSettings };
+    const renders = { dashboard: renderDashboard, protocols: renderProtocols, cards: renderCards, history: renderHistory, strategy: renderStrategy, simulator: renderSimulator, planning: renderPlanning, wallets: renderWallets, fiscal: renderFiscal, settings: renderSettings };
     const html = `<div class="tab-content">${(renders[currentTab]||renderDashboard)(w)}</div>`;
     // Se o HTML novo é idêntico ao que já está no ecrã, NÃO reescrever o DOM —
     // reescrever apaga e reconstrói tudo, causando um "flash" visível mesmo quando
@@ -9097,6 +9097,7 @@ function afterRender() {
   updateHFPill();
   buildWalletDD();
   if (currentTab === 'simulator') initSimulator();
+  if (currentTab === 'planning' && window._planningSubtab === 'simulator') initSimulator();
   if (currentTab === 'dashboard') startInterestTicker();
   else stopInterestTicker();
   applyStealthMode();
@@ -12085,7 +12086,7 @@ function renderDashboard(w) {
           <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.15rem">Valor total: <span class="currency-symbol">$</span>${fmt(totalUsd)} · regista para tirar partido da regra dos 365 dias</div>
         </div>
       </div>
-      <button class="btn btn-gold btn-sm" onclick="showTab('strategy');setTimeout(()=>{openModal('modalCollateral');renderLotSuggestions();},150)">→ Registar lotes</button>
+      <button class="btn btn-gold btn-sm" onclick="window._planningSubtab='fiscal';showTab('planning');setTimeout(()=>{openModal('modalCollateral');renderLotSuggestions();},150)">→ Registar lotes</button>
     </div>`;
   })();
 
@@ -13494,6 +13495,22 @@ function mempoolShowTooltip(e, lot) {
 function mempoolHideTooltip() {
   const tip = document.getElementById('mempoolTooltip');
   if (tip) tip.classList.remove('visible');
+}
+
+// Aba "Planeamento" — funde o planeamento fiscal de lotes (365 Dias / strategy) com o
+// simulador de liquidação. São as duas vertentes de "projetar o futuro": planeamento
+// de isenção fiscal + planeamento de risco. Reutiliza as funções existentes (sem as
+// reescrever), só as apresenta numa vista única com uma navegação interna leve.
+function renderPlanning(w) {
+  const sub = window._planningSubtab || 'fiscal';
+  const tabBtn = (id, label) => `<button class="btn btn-sm ${sub === id ? 'btn-gold' : 'btn-outline'}" onclick="window._planningSubtab='${id}';render()" style="margin-right:0.5rem">${label}</button>`;
+  const body = sub === 'simulator' ? renderSimulator(w) : renderStrategy(w);
+  return `
+    <div style="margin-bottom:1.2rem;display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap">
+      ${tabBtn('fiscal', (state.lang||'pt')==='en' ? 'Tax planning (365d)' : 'Planeamento fiscal (365d)')}
+      ${tabBtn('simulator', (state.lang||'pt')==='en' ? 'Liquidation simulator' : 'Simulador de liquidação')}
+    </div>
+    ${body}`;
 }
 
 function renderStrategy(w) {
@@ -19905,10 +19922,10 @@ function confirmTaxAwareImport() {
 
   // Always render to refresh UI
   render();
-  // Navigate to strategy tab if cashbacks were created (after render)
+  // Navigate to planning tab if cashbacks were created (after render)
   if (results.cashbackLots > 0) {
     setTimeout(() => {
-      if (typeof showTab === 'function') showTab('strategy');
+      if (typeof showTab === 'function') { window._planningSubtab='fiscal'; showTab('planning'); }
     }, 350);
   }
 }
