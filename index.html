@@ -10235,6 +10235,164 @@ async function fetchSolanaBalances(solAddr, key) {
 }
 window.fetchSolanaBalances = fetchSolanaBalances;
 
+// ============================================================================
+// ADAPTADOR SOLANA ON-CHAIN — histórico de transações para o fiscal.
+// Lê transações via RPC (getSignaturesForAddress + getTransaction jsonParsed),
+// extrai deltas de saldo (pre/post), produz eventos no formato do motor EVM.
+// Regra fiscal herda do motor (cripto↔cripto=permuta; só fiat tributa).
+// NOTA FASE A: sem preços históricos ainda — eventos entram, valor fiscal vem depois.
+// ============================================================================
+const SOL_WSOL_MINT = 'So11111111111111111111111111111111111111112';
+const SOL_LAMPORTS = 1e9;
+const SOL_KNOWN_MINTS = {
+  'So11111111111111111111111111111111111111112': 'SOL',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 'USDT',
+  'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So': 'mSOL',
+  'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn': 'jitoSOL',
+  '7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj': 'stSOL',
+  '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R': 'RAY',
+  'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL': 'JTO',
+  'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN': 'JUP',
+  'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE': 'ORCA',
+  'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263': 'BONK',
+};
+
+function _solRpcCall(method, params) {
+  const url = _proxyActive() ? `${PROXY_BASE}/rpc/solana-mainnet` : null;
+  if (!url) return Promise.reject(new Error('Solana RPC needs proxy'));
+  return fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  }).then(r => r.json()).then(j => { if (j.error) throw new Error(JSON.stringify(j.error)); return j.result; });
+}
+
+function _solExtractDeltas(tx, owner) {
+  if (!tx || !tx.meta) return null;
+  const meta = tx.meta, msg = tx.transaction?.message || {};
+  const keys = (msg.accountKeys || []).map(k => (typeof k === 'string' ? k : k.pubkey));
+  const oi = keys.indexOf(owner);
+  let solDelta = 0;
+  if (oi >= 0 && Array.isArray(meta.preBalances) && Array.isArray(meta.postBalances)) {
+    solDelta = ((meta.postBalances[oi] || 0) - (meta.preBalances[oi] || 0)) / SOL_LAMPORTS;
+  }
+  const fee = (meta.fee || 0) / SOL_LAMPORTS;
+  const ownerPaysFee = oi === 0;
+  const byMint = {};
+  for (const b of (meta.preTokenBalances || [])) {
+    if (b.owner && b.owner !== owner) continue;
+    if (!b.owner && keys[b.accountIndex] !== owner) continue;
+    byMint[b.mint] = byMint[b.mint] || { pre: 0, post: 0, decimals: b.uiTokenAmount?.decimals ?? 0 };
+    byMint[b.mint].pre += Number(b.uiTokenAmount?.uiAmount || 0);
+  }
+  for (const b of (meta.postTokenBalances || [])) {
+    if (b.owner && b.owner !== owner) continue;
+    if (!b.owner && keys[b.accountIndex] !== owner) continue;
+    byMint[b.mint] = byMint[b.mint] || { pre: 0, post: 0, decimals: b.uiTokenAmount?.decimals ?? 0 };
+    byMint[b.mint].post += Number(b.uiTokenAmount?.uiAmount || 0);
+  }
+  const tokenDeltas = [];
+  for (const mint of Object.keys(byMint)) {
+    const d = byMint[mint].post - byMint[mint].pre;
+    if (Math.abs(d) > 1e-12) tokenDeltas.push({ mint, delta: d, decimals: byMint[mint].decimals });
+  }
+  return { solDelta, tokenDeltas, fee, ownerPaysFee, ts: tx.blockTime || 0, slot: tx.slot || 0, err: tx.meta.err || null };
+}
+
+function _solDeltasToEvents(deltas, signature, owner) {
+  if (!deltas || deltas.err) return [];
+  const events = [];
+  const date = deltas.ts ? new Date(deltas.ts * 1000).toISOString().slice(0, 10) : '';
+  const mkId = (suf) => `solana:solana:${owner}:${signature}:${suf}`;
+  let solMove = deltas.solDelta;
+  if (deltas.ownerPaysFee) solMove += deltas.fee;
+  if (Math.abs(solMove) > 1e-9) {
+    events.push({ id: mkId('SOL'), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
+      walletAddress: owner, direction: solMove > 0 ? 'in' : 'out', asset: 'SOL', contract: null,
+      amount: Math.abs(solMove), counterparty: '', _source: 'solana-onchain' });
+  }
+  for (const td of deltas.tokenDeltas) {
+    const isWsol = td.mint === SOL_WSOL_MINT;
+    events.push({ id: mkId(td.mint), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
+      walletAddress: owner, direction: td.delta > 0 ? 'in' : 'out', asset: isWsol ? 'SOL' : null,
+      contract: isWsol ? null : td.mint, amount: Math.abs(td.delta), counterparty: '', _source: 'solana-onchain' });
+  }
+  if (deltas.ownerPaysFee && deltas.fee > 0) {
+    events.push({ id: mkId('fee'), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
+      walletAddress: owner, direction: 'out', asset: 'SOL', contract: null, amount: deltas.fee,
+      _isFee: true, _source: 'solana-onchain' });
+  }
+  return events;
+}
+
+function _solClassifyTx(events) {
+  const nonFee = events.filter(e => !e._isFee);
+  const ins = nonFee.filter(e => e.direction === 'in');
+  const outs = nonFee.filter(e => e.direction === 'out');
+  if (ins.length >= 1 && outs.length >= 1) { for (const e of nonFee) { e.type = 'swap'; e.txType = 'swap'; } }
+  else if (ins.length >= 1) { for (const e of ins) { e.type = 'transfer_in'; e.txType = 'transfer_in'; } }
+  else if (outs.length >= 1) { for (const e of outs) { e.type = 'transfer_out'; e.txType = 'transfer_out'; } }
+  return events;
+}
+
+function _solResolveSymbol(mint, seedSymbols) {
+  if (!mint) return 'SOL';
+  const k = mint.toLowerCase();
+  if (SOL_KNOWN_MINTS[mint]) return SOL_KNOWN_MINTS[mint];
+  for (const [m, s] of Object.entries(SOL_KNOWN_MINTS)) if (m.toLowerCase() === k) return s;
+  if (seedSymbols && seedSymbols[k]) return seedSymbols[k];
+  return mint.slice(0, 4) + '…' + mint.slice(-4);
+}
+
+// Indexa o histórico de transações de uma carteira Solana → eventos no state.
+// seedSymbols: mapa { mintLower: símbolo } dos saldos atuais (para resolver nomes).
+async function indexSolanaWallet(solAddr, opts = {}) {
+  if (!solAddr || !_proxyActive()) return { events: 0, signatures: 0 };
+  const seedSymbols = opts.seedSymbols || {};
+  const maxSignatures = opts.maxSignatures || 3000;
+  const pageLimit = 1000;
+  // 1. Listar assinaturas (paginado)
+  const sigs = [];
+  let before = undefined, pages = 0;
+  const maxPages = Math.ceil(maxSignatures / pageLimit) + 1;
+  while (pages < maxPages) {
+    if (opts.signal?.aborted) break;
+    const params = [solAddr, before ? { limit: pageLimit, before } : { limit: pageLimit }];
+    let result;
+    try { result = await _solRpcCall('getSignaturesForAddress', params); }
+    catch (e) { break; }
+    if (!Array.isArray(result) || result.length === 0) break;
+    for (const r of result) sigs.push({ signature: r.signature, slot: r.slot, blockTime: r.blockTime, err: r.err });
+    if (result.length < pageLimit) break;
+    before = result[result.length - 1].signature;
+    pages++;
+    if (sigs.length >= maxSignatures) break;
+    opts.onProgress?.({ phase: 'sol-signatures', count: sigs.length });
+  }
+  // 2. Buscar detalhe e converter (em lotes)
+  const batchSize = 8;
+  const allEvents = [];
+  for (let i = 0; i < sigs.length; i += batchSize) {
+    if (opts.signal?.aborted) break;
+    const batch = sigs.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map(async (s) => {
+      if (s.err) return [];
+      try {
+        const tx = await _solRpcCall('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+        if (!tx) return [];
+        let evs = _solDeltasToEvents(_solExtractDeltas(tx, solAddr), s.signature, solAddr);
+        evs = _solClassifyTx(evs);
+        for (const e of evs) if (!e.asset) e.asset = _solResolveSymbol(e.contract, seedSymbols);
+        return evs;
+      } catch (_) { return []; }
+    }));
+    for (const evs of results) allEvents.push(...evs);
+    opts.onProgress?.({ phase: 'sol-transactions', processed: Math.min(i + batchSize, sigs.length), total: sigs.length, events: allEvents.length });
+  }
+  return { events: allEvents, signatures: sigs.length };
+}
+window.indexSolanaWallet = indexSolanaWallet;
+
 async function fetchRealBalances(w, { force = false } = {}) {
   const cacheKey = '_balCache_' + w.id;
   const now = Date.now();
@@ -14984,9 +15142,11 @@ async function startIndexerForActiveWallet() {
   const hasEVM = walletAddr && walletAddr.startsWith('0x') && walletAddr.length === 42;
   const btcInput = w.bitcoinXpub || w.bitcoinAddress || '';
   const hasBTC = btcInput && (mempoolAdapter.isXpub(btcInput) || mempoolAdapter.isBtcAddress(btcInput));
+  const solAddr = w.sol || '';
+  const hasSOL = solAddr && !solAddr.startsWith('0x') && solAddr.length >= 32 && _proxyActive();
 
-  if (!hasEVM && !hasBTC) {
-    toast('Wallet sem endereço EVM nem Bitcoin configurado', 'warn');
+  if (!hasEVM && !hasBTC && !hasSOL) {
+    toast('Wallet sem endereço EVM, Bitcoin nem Solana configurado', 'warn');
     return;
   }
   if (hasEVM && !resolveAlchemyKey(w)) {
@@ -15000,6 +15160,7 @@ async function startIndexerForActiveWallet() {
 
   let evmSummary = null;
   let btcSummary = null;
+  let solSummary = null;
 
   try {
     // ── EVM indexing (if applicable) ──
@@ -15037,16 +15198,75 @@ async function startIndexerForActiveWallet() {
       if (barEl) barEl.style.width = '100%';
     }
 
-    // Persist meta
+    // ── Solana indexing (if applicable) ──
+    if (hasSOL) {
+      const phaseEl = document.getElementById('indexerPhase');
+      const countEl = document.getElementById('indexerCount');
+      const barEl = document.getElementById('indexerBar');
+      if (phaseEl) phaseEl.textContent = `A indexar SOLANA…`;
+      // Seed de símbolos a partir dos saldos atuais (resolve nomes de tokens).
+      const seedSymbols = {};
+      try {
+        const bal = window['_balCache_' + w.id];
+        for (const h of (bal?.holdings || [])) {
+          if (h.chain === 'solana' && h.contract && h.asset) seedSymbols[h.contract.toLowerCase()] = h.asset;
+        }
+      } catch(_) {}
+
+      const solRes = await indexSolanaWallet(solAddr, {
+        signal: window._indexerController.signal,
+        seedSymbols,
+        onProgress: (p) => {
+          if (p.phase === 'sol-signatures' && phaseEl) phaseEl.textContent = `Solana: ${p.count} assinaturas…`;
+          if (p.phase === 'sol-transactions') {
+            if (phaseEl) phaseEl.textContent = `Solana: ${p.processed}/${p.total} transações…`;
+            if (countEl) countEl.textContent = `${p.events} eventos`;
+          }
+        },
+      });
+
+      // Preservar enriquecimento (preços, overrides) ao re-indexar — mesmo cuidado do EVM.
+      const solOwner = solAddr;
+      const preserveMap = new Map();
+      for (const e of (state.events || [])) {
+        if (e.chain === 'solana' && e.walletAddress === solOwner) {
+          const keep = {};
+          if (typeof e.priceEUR === 'number') keep.priceEUR = e.priceEUR;
+          if (typeof e.priceUSD === 'number') keep.priceUSD = e.priceUSD;
+          if (e.priceNote) keep.priceNote = e.priceNote;
+          if (e.userOverride) keep.userOverride = e.userOverride;
+          if (e._originalType) keep._originalType = e._originalType;
+          if (Object.keys(keep).length > 0) preserveMap.set(e.id, keep);
+        }
+      }
+      for (const e of solRes.events) {
+        const keep = preserveMap.get(e.id);
+        if (!keep) continue;
+        if (typeof keep.priceEUR === 'number') e.priceEUR = keep.priceEUR;
+        if (typeof keep.priceUSD === 'number') e.priceUSD = keep.priceUSD;
+        if (keep.priceNote) e.priceNote = keep.priceNote;
+        if (keep.userOverride) {
+          e.userOverride = keep.userOverride;
+          if (keep.userOverride.txType) { e._originalType = keep._originalType || e.type; e.type = keep.userOverride.txType; }
+        }
+      }
+      // Remover eventos Solana antigos desta carteira e re-adicionar.
+      state.events = (state.events || []).filter(e => !(e.chain === 'solana' && e.walletAddress === solOwner));
+      state.events.push(...solRes.events);
+      solSummary = { events: solRes.events.length, signatures: solRes.signatures };
+      if (barEl) barEl.style.width = '100%';
+    }
     state.indexerMeta = state.indexerMeta || {};
     state.indexerMeta[w.id] = {
       lastIndexedAt: Date.now(),
-      totalEvents: (evmSummary?.totalEvents || 0) + (btcSummary?.events || 0),
+      totalEvents: (evmSummary?.totalEvents || 0) + (btcSummary?.events || 0) + (solSummary?.events || 0),
       totalCalls: evmSummary?.totalCalls || 0,
       durationMs: (evmSummary?.durationMs || 0) + (btcSummary?.durationMs || 0),
       chains: evmSummary?.chains || {},
       bitcoinType: btcSummary?.type,
       bitcoinEvents: btcSummary?.events || 0,
+      solanaEvents: solSummary?.events || 0,
+      solanaSignatures: solSummary?.signatures || 0,
     };
     saveState();
 
@@ -15054,6 +15274,7 @@ async function startIndexerForActiveWallet() {
     const parts = [];
     if (evmSummary) parts.push(`${evmSummary.totalEvents} EVM events`);
     if (btcSummary) parts.push(`${btcSummary.events} BTC events`);
+    if (solSummary) parts.push(`${solSummary.events} SOL events`);
     const errors = (evmSummary?.errors?.length || 0) + (btcSummary?.errors?.length || 0);
     if (errors > 0) {
       toast(`Indexer: ${parts.join(' · ')} · ${errors} erro(s)`, 'warn');
