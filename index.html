@@ -11730,7 +11730,18 @@ function renderPortfolioCharts(w) {
 
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
   // O hero renderiza antes desta função; lê este valor no re-render seguinte.
-  try { window['_portfolioTotal_' + w.id] = { eur: totalPortfolio, source: valueSource, ts: Date.now() }; } catch(_){}
+  try {
+    const prev = window['_portfolioTotal_' + w.id];
+    window['_portfolioTotal_' + w.id] = { eur: totalPortfolio, source: valueSource, ts: Date.now() };
+    // Se o valor dos tokens acabou de ficar disponível (ou mudou significativamente) e
+    // estamos no dashboard, o hero está a mostrar um total parcial (só DeFi). Disparamos
+    // UM re-render para o hero apanhar o total completo. Flag evita loop infinito.
+    const changed = !prev || Math.abs((prev.eur || 0) - totalPortfolio) > 0.01;
+    if (changed && currentTab === 'dashboard' && !window._heroRerenderPending) {
+      window._heroRerenderPending = true;
+      setTimeout(() => { window._heroRerenderPending = false; if (currentTab === 'dashboard') render(); }, 60);
+    }
+  } catch(_){}
 
   if (totalPortfolio < 1) return '';
 
@@ -12117,7 +12128,7 @@ function renderDashboard(w) {
           </div>
         </div>` : ''}
       </div>
-      <div style="width:100%;margin-top:1rem">
+      <div style="width:100%;margin-top:1rem;padding:0 2.4rem 1.6rem;box-sizing:border-box">
         ${portfolioSparkline(w.id, 1000, 70)}
       </div>
     </div>
