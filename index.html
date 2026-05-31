@@ -10336,6 +10336,56 @@ async function fetchSolanaBalances(solAddr, key) {
 }
 window.fetchSolanaBalances = fetchSolanaBalances;
 
+// Busca os saldos Solana via Zerion (early access). Vantagem decisiva: a Zerion
+// INTERPRETA os receipt tokens dos protocolos (pbSPYx, pbJITOSOL, pbUSDC, etc.) e
+// dá-lhes valor real — coisa que a Alchemy/CoinStats não fazem (viam-nos como tokens
+// sem preço). Por isso vê o património Solana completo (ex: $1.981 vs ~$40 da Alchemy).
+// Devolve no mesmo formato que fetchSolanaBalances (holdings + priceMap), para encaixar
+// sem mexer no resto. Se falhar, o chamador faz fallback para a Alchemy.
+async function fetchSolanaBalancesZerion(solAddr) {
+  if (!solAddr || !_proxyActive()) return null;
+  const holdings = [];
+  const priceMap = new Map();
+  try {
+    // Sem filtro: traz tokens + posições (locked/staked) com valores interpretados.
+    // (only_complex ainda não é suportado para Solana — confirmado pela API.)
+    const res = await fetch(`${PROXY_BASE}/zerion/v1/wallets/${solAddr}/positions/?currency=usd`);
+    if (!res.ok) return null; // 4xx/5xx → fallback para Alchemy
+    const d = await res.json();
+    if (d.errors || !Array.isArray(d.data)) return null;
+    for (const p of d.data) {
+      const a = p.attributes || {};
+      const fi = a.fungible_info || {};
+      const impl = (fi.implementations || []).find(i => i.chain_id === 'solana') || (fi.implementations || [])[0] || {};
+      const qty = a.quantity?.float;
+      if (!(qty > 0)) continue;
+      const valueUsd = a.value || 0;
+      // Ignorar pó sem valor (mantém o relatório limpo). Mantém posições com valor.
+      if (valueUsd < 0.01 && a.position_type === 'wallet') continue;
+      const sym = fi.symbol || fi.name || (impl.address ? impl.address.slice(0, 4) + '…' + impl.address.slice(-4) : '?');
+      const mint = impl.address || null; // mint base58 (case-sensitive)
+      const isNative = sym === 'SOL' && !mint;
+      const pricePerUnit = qty > 0 ? (valueUsd / qty) : (a.price || null);
+      if (mint && pricePerUnit != null) priceMap.set('solana:' + mint.toLowerCase(), pricePerUnit);
+      holdings.push({
+        asset: sym, chain: 'solana', contract: mint, qty,
+        decimals: impl.decimals ?? a.quantity?.decimals ?? 9,
+        native: isNative,
+        staked: a.position_type === 'staked' || a.position_type === 'locked',
+        _posType: a.position_type || 'wallet',
+        _protocol: a.protocol || null,
+        logoUrl: _isTrustedLogoUrl(fi.icon?.url) ? fi.icon.url : null,
+        _portfolioPriceUSD: pricePerUnit,
+        _source: 'zerion',
+      });
+    }
+    return { holdings, priceMap, _source: 'zerion' };
+  } catch (_) {
+    return null; // erro → fallback
+  }
+}
+window.fetchSolanaBalancesZerion = fetchSolanaBalancesZerion;
+
 // ============================================================================
 // ADAPTADOR SOLANA ON-CHAIN — histórico de transações para o fiscal.
 // Lê transações via RPC (getSignaturesForAddress + getTransaction jsonParsed),
@@ -10512,7 +10562,16 @@ async function fetchRealBalances(w, { force = false } = {}) {
   const vaults = [];   // ERC-4626 vault positions { asset, chain, vaultContract, shares, underlyingContract, assetsRaw }
 
   // Solana (SOL + SPL) via Portfolio API — corre em paralelo, não bloqueia o EVM.
-  const _solanaPromise = solAddr ? fetchSolanaBalances(solAddr, key).catch(() => null) : Promise.resolve(null);
+  // Solana: tentar a Zerion primeiro (vê os receipt tokens dos protocolos com valor
+  // real — ex: PiggyBank). Se a Zerion falhar/indisponível, fallback para a Alchemy
+  // (que vê os tokens soltos mas não os receipt tokens dos protocolos).
+  const _solanaPromise = solAddr
+    ? (async () => {
+        const z = await fetchSolanaBalancesZerion(solAddr).catch(() => null);
+        if (z && z.holdings && z.holdings.length > 0) return z;
+        return fetchSolanaBalances(solAddr, key).catch(() => null);
+      })()
+    : Promise.resolve(null);
 
   // ── CAMINHO RÁPIDO: Portfolio API (1 chamada multi-chain) ──────────────────
   // Substitui o loop de milhares de pedidos. Traz saldos + metadata + preços de
