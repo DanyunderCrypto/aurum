@@ -15519,7 +15519,7 @@ function renderHistory(w) {
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
-          <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()" ${(() => { const hasEVM = (w.addr||w.evm) && resolveAlchemyKey(w); const hasBTC = w.bitcoinAddress||w.bitcoinXpub; return (!hasEVM && !hasBTC) || isIndexing ? 'disabled' : ''; })()}>
+          <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()" ${(() => { const hasEVM = (w.addr||w.evm) && resolveAlchemyKey(w); const hasBTC = w.bitcoinAddress||w.bitcoinXpub; const hasSOL = w.sol && (typeof _proxyActive==='function' && _proxyActive()); return (!hasEVM && !hasBTC && !hasSOL) || isIndexing ? 'disabled' : ''; })()}>
             ${isIndexing ? ((state.lang||'pt')==='en'?'⏳ Indexing…':'⏳ A indexar…') : (totalEvents > 0 ? t('history.reIndex') : ((state.lang||'pt')==='en'?'⚡ Index Now':'⚡ Indexar Agora'))}
           </button>
           ${isIndexing ? `<button class="btn btn-outline btn-sm" onclick="cancelIndexer()">${t('history.cancel')}</button>` : ''}
