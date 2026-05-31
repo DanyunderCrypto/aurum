@@ -6950,7 +6950,25 @@ const fifoEngine = (() => {
       const isStable = STABLECOIN_SYMBOLS.has((event.asset || '').toUpperCase());
       const explicitFiatSale = event.userOverride?.txType === 'sale' || tx === 'sell' || tx === 'sale';
       if (isStable && !explicitFiatSale) return 'stablecoin_transfer';
-      return 'disposal';     // sold to fiat, sent off-chain
+
+      // ON-CHAIN ISOLATED OUT → NOT a taxable disposal by default (user decision 2026-05-31).
+      // On-chain há SEMPRE um endereço de destino, nunca "fiat" directo. Uma saída isolada de
+      // SOL/token (sem entrada no mesmo tx) é quase sempre: (a) uma transferência para outra
+      // carteira do próprio, (b) a perna de saída de um swap via agregador que o parser não
+      // emparelhou, ou (c) um depósito numa exchange. NENHUM destes é uma alienação para fiat.
+      // Coerente com a regra PT (só cripto→fiat tributa; on-chain não há fiat). O lot é
+      // consumido (FIFO consistente, basis carrega), mas NÃO gera mais-valia. Se foi mesmo uma
+      // venda real, o utilizador reclassifica (txType='sale'). Conservador e correcto.
+      // CEX out (source='cex_import') mantém o tratamento de alienação — aí a contraparte é a
+      // exchange e pode ser venda para fiat real.
+      const isOnChain = event._source === 'solana-onchain' || (event.source === 'api+onchain') || (!event.source && !event.userOverride);
+      const isCexOut = event.source === 'cex_import';
+      if (!isCexOut && !explicitFiatSale && event.chain) {
+        // Tratamos como movimento on-chain não-tributável (consome lot, não tributa).
+        return 'onchain_transfer_out';
+      }
+
+      return 'disposal';     // sold to fiat, sent off-chain (CEX or explicit sale)
     }
 
     return 'skip';
@@ -7002,6 +7020,7 @@ const fifoEngine = (() => {
     let lotCounter = 0;
     let disposalCounter = 0;
     let stablecoinTransferCount = 0;
+    let onchainTransferOutCount = 0;
     const pendingSwapBasis = new Map();  // txHash → carried basis from swap_sell legs (permuta mode)
 
     // Group events by txHash to process swaps atomically
@@ -7422,6 +7441,23 @@ const fifoEngine = (() => {
             asset: e.asset,
             chain: e.chain,
             message: `Saída de ${e.amount} ${e.asset} tratada como transferência (não venda a fiat). Reclassifica se foi off-ramp real.`,
+          });
+        }
+        else if (klass === 'onchain_transfer_out') {
+          // Saída on-chain isolada (SOL/token sem entrada no mesmo tx). Por decisão fiscal
+          // (2026-05-31), NÃO é alienação tributável por defeito: on-chain não há fiat directo,
+          // e estas saídas são quase sempre transferências para outra carteira do próprio, a
+          // perna de saída de um swap não-emparelhado, ou depósito numa exchange. Consumimos o
+          // lot (FIFO consistente), mas NÃO registamos mais-valia. Reclassificável como venda real.
+          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          _consumeFifo(e.asset, e.chain, e.amount, ts);
+          onchainTransferOutCount++;
+          warnings.push({
+            type: 'onchain_transfer_out',
+            eventId: e.id || e.txHash,
+            asset: e.asset,
+            chain: e.chain,
+            message: `Saída on-chain de ${e.amount} ${e.asset} tratada como transferência (não venda a fiat). Reclassifica se foi venda real.`,
           });
         }
         else if (klass === 'swap_sell') {
