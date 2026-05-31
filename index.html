@@ -6141,9 +6141,12 @@ function resolveCoinId(asset, chain, contract) {
 
   // Solana: SOL nativo via coingecko; tokens SPL via mint (base58, não 0x).
   // DefiLlama aceita o formato "solana:{mint}".
+  // CRÍTICO: NUNCA usar o preço do SOL como fallback para tokens SPL — isso atribuía
+  // ~€100/unidade a todos os tokens (bug do ganho fantasma). Token sem mint → null (sem preço).
   if (chain === 'solana') {
-    if (ASSET === 'SOL' || !contract) return 'coingecko:solana';
-    return `solana:${contract}`; // mint base58 (case-sensitive — NÃO lowercase)
+    if (ASSET === 'SOL' && !contract) return 'coingecko:solana'; // SOL nativo (sem mint)
+    if (contract) return `solana:${contract}`; // mint base58 (case-sensitive — NÃO lowercase)
+    return null; // token SPL sem mint conhecido → sem preço (não inventar)
   }
 
   // Check curated map
@@ -10346,18 +10349,19 @@ function _solDeltasToEvents(deltas, signature, owner) {
   if (deltas.ownerPaysFee) solMove += deltas.fee;
   if (Math.abs(solMove) > 1e-9) {
     events.push({ id: mkId('SOL'), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
-      walletAddress: owner, direction: solMove > 0 ? 'in' : 'out', asset: 'SOL', contract: null,
+      walletAddress: owner, direction: solMove > 0 ? 'in' : 'out', asset: 'SOL', contract: null, assetContract: null,
       amount: Math.abs(solMove), counterparty: '', _source: 'solana-onchain' });
   }
   for (const td of deltas.tokenDeltas) {
     const isWsol = td.mint === SOL_WSOL_MINT;
     events.push({ id: mkId(td.mint), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
       walletAddress: owner, direction: td.delta > 0 ? 'in' : 'out', asset: isWsol ? 'SOL' : null,
-      contract: isWsol ? null : td.mint, amount: Math.abs(td.delta), counterparty: '', _source: 'solana-onchain' });
+      contract: isWsol ? null : td.mint, assetContract: isWsol ? null : td.mint,
+      amount: Math.abs(td.delta), counterparty: '', _source: 'solana-onchain' });
   }
   if (deltas.ownerPaysFee && deltas.fee > 0) {
     events.push({ id: mkId('fee'), chain: 'solana', txHash: signature, timestamp: deltas.ts, date,
-      walletAddress: owner, direction: 'out', asset: 'SOL', contract: null, amount: deltas.fee,
+      walletAddress: owner, direction: 'out', asset: 'SOL', contract: null, assetContract: null, amount: deltas.fee,
       _isFee: true, _source: 'solana-onchain' });
   }
   return events;
