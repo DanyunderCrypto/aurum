@@ -10394,14 +10394,21 @@ async function fetchSolanaBalancesZerion(solAddr) {
     // de receipt tokens com preço corrompido. Ex: pbSPYx (corrompido) → deriva do SPYx
     // (subjacente, estável). O receipt 'pbXXX' representa o subjacente 'XXX'.
     const reliablePriceBySymbol = new Map();
+    // Pré-popular stablecoins conhecidas a $1 — permite derivar receipt tokens de
+    // stablecoins (ex: pbUSDC → USDC ≈ $1) mesmo quando o subjacente não aparece como
+    // token separado com preço na resposta. (Aproxima rate 1:1; conservador.)
+    for (const sc of ['USDC', 'USDT', 'USD', 'DAI', 'PYUSD', 'USDS', 'FDUSD']) {
+      reliablePriceBySymbol.set(sc, 1);
+    }
     for (const p of d.data) {
       const a = p.attributes || {}, fi = a.fungible_info || {};
       const sym = (fi.symbol || '').toUpperCase();
       const ch = a.changes?.percent_1d;
       const pricePerU = a.price;
       // Preço fiável: existe, positivo, e sem salto absurdo (<200% em 1 dia).
+      // (Não sobrepõe as stablecoins pré-definidas se o preço Zerion for disparatado.)
       if (sym && pricePerU > 0 && !(typeof ch === 'number' && Math.abs(ch) > 200)) {
-        reliablePriceBySymbol.set(sym, pricePerU);
+        if (!reliablePriceBySymbol.has(sym)) reliablePriceBySymbol.set(sym, pricePerU);
       }
     }
     // Resolve o preço do subjacente de um receipt token (pbSPYx→SPYx, pbUSDC→USDC, etc.)
@@ -10422,9 +10429,12 @@ async function fetchSolanaBalancesZerion(solAddr) {
       const qty = a.quantity?.float;
       if (!(qty > 0)) continue;
       const valueUsd = a.value || 0;
-      // Ignorar pó sem valor (mantém o relatório limpo). Mantém posições com valor.
-      if (valueUsd < 0.01 && a.position_type === 'wallet') continue;
       const sym = fi.symbol || fi.name || (impl.address ? impl.address.slice(0, 4) + '…' + impl.address.slice(-4) : '?');
+      // É um receipt token com subjacente derivável (ex: pbUSDC)? Esses NÃO são pó mesmo
+      // que a Zerion lhes dê valor 0 — vamos derivar o valor do subjacente mais abaixo.
+      const _isDerivable = (sym || '').toUpperCase().startsWith('PB') && _underlyingPrice(sym) != null;
+      // Ignorar pó sem valor (mantém o relatório limpo), exceto receipt tokens deriváveis.
+      if (valueUsd < 0.01 && a.position_type === 'wallet' && !_isDerivable) continue;
       const mint = impl.address || null; // mint base58 (case-sensitive)
       const isNative = sym === 'SOL' && !mint;
       let pricePerUnit = qty > 0 ? (valueUsd / qty) : (a.price || null);
@@ -10439,20 +10449,23 @@ async function fetchSolanaBalancesZerion(solAddr) {
       const underPx = _underlyingPrice(sym); // preço do subjacente (estável), ou null
       let priceNote = null, priceDerived = false, priceUnreliable = false;
 
-      let corrupted = false;
+      let corrupted = false, missingButDerivable = false;
       if (underPx != null && underPx > 0 && pricePerUnit != null && pricePerUnit > 0) {
         const ratio = pricePerUnit / underPx;
         // rate plausível de um receipt token: ~0.9 a 1.5. Fora de [0.5, 1.8] → corrompido.
         if (ratio > 1.8 || ratio < 0.5) corrupted = true;
+      } else if ((pricePerUnit == null || pricePerUnit <= 0) && underPx != null && underPx > 0) {
+        // SEM preço (ex: pbUSDC a $0 na Zerion) mas é um receipt com subjacente derivável.
+        missingButDerivable = true;
       } else if (typeof change1d === 'number' && Math.abs(change1d) > 200) {
         // sem subjacente para comparar, recorrer ao sinal do salto diário extremo
         corrupted = true;
       }
 
-      // ESTRATÉGIA PRAGMÁTICA: se corrompido, DERIVAR do subjacente (valor ≈ qty × preço_sub;
-      // assume rate ~1:1, subestima ligeiramente o yield, conservador). Sem subjacente fiável
-      // → não confiar (excluir do total com aviso). Nunca mostrar valor falso.
-      if (corrupted) {
+      // ESTRATÉGIA PRAGMÁTICA: se corrompido OU sem preço mas derivável, DERIVAR do subjacente
+      // (valor ≈ qty × preço_sub; assume rate ~1:1, subestima ligeiramente o yield, conservador).
+      // Sem subjacente fiável → não confiar (excluir do total com aviso). Nunca valor falso.
+      if (corrupted || missingButDerivable) {
         if (underPx != null && underPx > 0) {
           pricePerUnit = underPx;
           priceDerived = true;
