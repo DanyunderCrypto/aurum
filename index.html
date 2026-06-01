@@ -10407,10 +10407,10 @@ async function fetchSolanaBalancesZerion(solAddr) {
     // Resolve o preço do subjacente de um receipt token (pbSPYx→SPYx, pbUSDC→USDC, etc.)
     function _underlyingPrice(sym) {
       const S = (sym || '').toUpperCase();
-      // Prefixos comuns de receipt tokens de protocolos Solana.
-      const m = S.match(/^(PB|ST|X|W)(.+)$/); // pbSPYx, stSOL, xSOL, wSOL...
-      if (m && reliablePriceBySymbol.has(m[2])) return reliablePriceBySymbol.get(m[2]);
-      // Tentar remover só 'pb' (PiggyBank), o caso principal.
+      // APENAS o prefixo 'PB' (PiggyBank) é seguro para derivar: é o caso comprovadamente
+      // corrompido e o receipt é ~1:1 com o subjacente. Prefixos como 'x'/'st'/'w' são
+      // AMBÍGUOS — há tokens legítimos com esses prefixos e preço próprio (ex: xSOL da Hylo
+      // = "Leveraged SOL", NÃO é 1:1 com SOL). Derivá-los estragaria preços corretos.
       if (S.startsWith('PB') && reliablePriceBySymbol.has(S.slice(2))) return reliablePriceBySymbol.get(S.slice(2));
       return null;
     }
