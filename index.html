@@ -10385,8 +10385,17 @@ async function fetchSolanaBalancesZerion(solAddr) {
   try {
     // Sem filtro: traz tokens + posições (locked/staked) com valores interpretados.
     // (only_complex ainda não é suportado para Solana — confirmado pela API.)
-    const res = await fetch(`${PROXY_BASE}/zerion/v1/wallets/${solAddr}/positions/?currency=usd`);
-    if (!res.ok) return null; // 4xx/5xx → fallback para Alchemy
+    // RETRY com recuo: a Zerion pode devolver 429 (rate limit) temporário. Sem retry, um
+    // 429 faria a app cair no fallback e PERDER os receipt tokens (pbUSDC, pbSPYx) →
+    // património errado. Com retry, um 429 passageiro é absorvido.
+    let res = null;
+    let delay = 600;
+    for (let attempt = 0; attempt <= 4; attempt++) {
+      res = await fetch(`${PROXY_BASE}/zerion/v1/wallets/${solAddr}/positions/?currency=usd`);
+      if (res.status !== 429) break;
+      if (attempt < 4) { await new Promise(r => setTimeout(r, delay)); delay = Math.min(delay * 2, 6000); }
+    }
+    if (!res || !res.ok) return null; // 4xx/5xx (incl. 429 persistente) → fallback para Alchemy
     const d = await res.json();
     if (d.errors || !Array.isArray(d.data)) return null;
 
