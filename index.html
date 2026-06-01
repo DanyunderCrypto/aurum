@@ -10389,6 +10389,32 @@ async function fetchSolanaBalancesZerion(solAddr) {
     if (!res.ok) return null; // 4xx/5xx → fallback para Alchemy
     const d = await res.json();
     if (d.errors || !Array.isArray(d.data)) return null;
+
+    // Mapa de preços FIÁVEIS por símbolo (change_1d normal) — usado para derivar o valor
+    // de receipt tokens com preço corrompido. Ex: pbSPYx (corrompido) → deriva do SPYx
+    // (subjacente, estável). O receipt 'pbXXX' representa o subjacente 'XXX'.
+    const reliablePriceBySymbol = new Map();
+    for (const p of d.data) {
+      const a = p.attributes || {}, fi = a.fungible_info || {};
+      const sym = (fi.symbol || '').toUpperCase();
+      const ch = a.changes?.percent_1d;
+      const pricePerU = a.price;
+      // Preço fiável: existe, positivo, e sem salto absurdo (<200% em 1 dia).
+      if (sym && pricePerU > 0 && !(typeof ch === 'number' && Math.abs(ch) > 200)) {
+        reliablePriceBySymbol.set(sym, pricePerU);
+      }
+    }
+    // Resolve o preço do subjacente de um receipt token (pbSPYx→SPYx, pbUSDC→USDC, etc.)
+    function _underlyingPrice(sym) {
+      const S = (sym || '').toUpperCase();
+      // Prefixos comuns de receipt tokens de protocolos Solana.
+      const m = S.match(/^(PB|ST|X|W)(.+)$/); // pbSPYx, stSOL, xSOL, wSOL...
+      if (m && reliablePriceBySymbol.has(m[2])) return reliablePriceBySymbol.get(m[2]);
+      // Tentar remover só 'pb' (PiggyBank), o caso principal.
+      if (S.startsWith('PB') && reliablePriceBySymbol.has(S.slice(2))) return reliablePriceBySymbol.get(S.slice(2));
+      return null;
+    }
+
     for (const p of d.data) {
       const a = p.attributes || {};
       const fi = a.fungible_info || {};
@@ -10401,7 +10427,32 @@ async function fetchSolanaBalancesZerion(solAddr) {
       const sym = fi.symbol || fi.name || (impl.address ? impl.address.slice(0, 4) + '…' + impl.address.slice(-4) : '?');
       const mint = impl.address || null; // mint base58 (case-sensitive)
       const isNative = sym === 'SOL' && !mint;
-      const pricePerUnit = qty > 0 ? (valueUsd / qty) : (a.price || null);
+      let pricePerUnit = qty > 0 ? (valueUsd / qty) : (a.price || null);
+
+      // GUARDA DE PREÇO ANÓMALO: receipt tokens ilíquidos de protocolos (ex: pbSPYx) podem
+      // ter preço corrompido na Zerion (pools de liquidez mínima → preço disparatado e
+      // volátil). Sinal fiável: change_1d extremo (ex: +558% num dia).
+      const change1d = a.changes?.percent_1d;
+      const corrupted = (typeof change1d === 'number' && Math.abs(change1d) > 200);
+
+      // ESTRATÉGIA PRAGMÁTICA: se o preço está corrompido, tentar DERIVAR do subjacente.
+      // O receipt 'pbSPYx' representa o 'SPYx' (subjacente, mais líquido e com preço estável).
+      // valor ≈ qty × preço_subjacente (assume rate ~1:1; subestima ligeiramente o yield
+      // acumulado, ~4%, o que é conservador e aceitável). Muito melhor que o valor 14x errado.
+      let priceNote = null, priceDerived = false, priceUnreliable = false;
+      if (corrupted) {
+        const underPx = _underlyingPrice(sym);
+        if (underPx != null && underPx > 0) {
+          pricePerUnit = underPx;      // deriva do subjacente
+          priceDerived = true;
+          priceNote = 'derived_underlying';
+        } else {
+          // Sem subjacente fiável → não confiar no preço (excluir do total, mostrar com aviso).
+          pricePerUnit = null;
+          priceUnreliable = true;
+        }
+      }
+
       if (mint && pricePerUnit != null) priceMap.set('solana:' + mint.toLowerCase(), pricePerUnit);
       holdings.push({
         asset: sym, chain: 'solana', contract: mint, qty,
@@ -10412,6 +10463,10 @@ async function fetchSolanaBalancesZerion(solAddr) {
         _protocol: a.protocol || null,
         logoUrl: _isTrustedLogoUrl(fi.icon?.url) ? fi.icon.url : null,
         _portfolioPriceUSD: pricePerUnit,
+        _priceUnreliable: priceUnreliable,
+        _priceDerived: priceDerived,
+        _priceNote: priceNote,
+        _zerionChange1d: change1d,
         _source: 'zerion',
       });
     }
@@ -10537,7 +10592,10 @@ function _solResolveSymbol(mint, seedSymbols) {
 async function indexSolanaWallet(solAddr, opts = {}) {
   if (!solAddr || !_proxyActive()) return { events: 0, signatures: 0 };
   const seedSymbols = opts.seedSymbols || {};
-  const maxSignatures = opts.maxSignatures || 3000;
+  // Histórico COMPLETO é necessário para o FIFO/basis fiscal estar correto (tal como
+  // no EVM). 3000 cortava carteiras ativas (ex: 4943 tx → só 60% indexado → basis errado).
+  // 25000 cobre carteiras muito ativas; a paginação (1000/página) mantém-se eficiente.
+  const maxSignatures = opts.maxSignatures || 25000;
   const pageLimit = 1000;
   // 1. Listar assinaturas (paginado)
   const sigs = [];
@@ -11761,6 +11819,14 @@ function renderPortfolioCharts(w) {
     const needChainlink = [];
     for (const h of realBal) {
       let ppu = null;
+      // GUARDA: holding com preço não fiável (ex: receipt token ilíquido com preço Zerion
+      // corrompido — change_1d absurdo). Não contribui para o total (não inflar o
+      // património com um número falso). É mostrado na lista com aviso, mas vale €0 no total.
+      if (h._priceUnreliable) {
+        unpricedCount++;
+        if (unpricedSamples.length < 5) unpricedSamples.push(h.asset + ' (preço não fiável)');
+        continue;
+      }
       // 1. CHAINLINK ORACLE (top priority) — oracle-grade, immune to fake pairs. Cached read.
       if (h.contract) {
         const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
