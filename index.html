@@ -10429,25 +10429,35 @@ async function fetchSolanaBalancesZerion(solAddr) {
       const isNative = sym === 'SOL' && !mint;
       let pricePerUnit = qty > 0 ? (valueUsd / qty) : (a.price || null);
 
-      // GUARDA DE PREÇO ANÓMALO: receipt tokens ilíquidos de protocolos (ex: pbSPYx) podem
-      // ter preço corrompido na Zerion (pools de liquidez mínima → preço disparatado e
-      // volátil). Sinal fiável: change_1d extremo (ex: +558% num dia).
+      // GUARDA DE PREÇO ANÓMALO para receipt tokens ilíquidos de protocolos (ex: pbSPYx).
+      // A Zerion dá-lhes preço corrompido (pools de liquidez mínima → disparatado e volátil).
+      // O change_1d sozinho NÃO chega: um preço pode estar corrompido sem salto diário (já
+      // saltou ontem, hoje está "estável" no valor errado). Sinal robusto: comparar com o
+      // SUBJACENTE. Um receipt 'pbXXX' representa 'XXX' e o seu rate é tipicamente 1.0–1.2;
+      // se o preço do receipt diverge muito do subjacente (>1.8x ou <0.5x), está corrompido.
       const change1d = a.changes?.percent_1d;
-      const corrupted = (typeof change1d === 'number' && Math.abs(change1d) > 200);
-
-      // ESTRATÉGIA PRAGMÁTICA: se o preço está corrompido, tentar DERIVAR do subjacente.
-      // O receipt 'pbSPYx' representa o 'SPYx' (subjacente, mais líquido e com preço estável).
-      // valor ≈ qty × preço_subjacente (assume rate ~1:1; subestima ligeiramente o yield
-      // acumulado, ~4%, o que é conservador e aceitável). Muito melhor que o valor 14x errado.
+      const underPx = _underlyingPrice(sym); // preço do subjacente (estável), ou null
       let priceNote = null, priceDerived = false, priceUnreliable = false;
+
+      let corrupted = false;
+      if (underPx != null && underPx > 0 && pricePerUnit != null && pricePerUnit > 0) {
+        const ratio = pricePerUnit / underPx;
+        // rate plausível de um receipt token: ~0.9 a 1.5. Fora de [0.5, 1.8] → corrompido.
+        if (ratio > 1.8 || ratio < 0.5) corrupted = true;
+      } else if (typeof change1d === 'number' && Math.abs(change1d) > 200) {
+        // sem subjacente para comparar, recorrer ao sinal do salto diário extremo
+        corrupted = true;
+      }
+
+      // ESTRATÉGIA PRAGMÁTICA: se corrompido, DERIVAR do subjacente (valor ≈ qty × preço_sub;
+      // assume rate ~1:1, subestima ligeiramente o yield, conservador). Sem subjacente fiável
+      // → não confiar (excluir do total com aviso). Nunca mostrar valor falso.
       if (corrupted) {
-        const underPx = _underlyingPrice(sym);
         if (underPx != null && underPx > 0) {
-          pricePerUnit = underPx;      // deriva do subjacente
+          pricePerUnit = underPx;
           priceDerived = true;
           priceNote = 'derived_underlying';
         } else {
-          // Sem subjacente fiável → não confiar no preço (excluir do total, mostrar com aviso).
           pricePerUnit = null;
           priceUnreliable = true;
         }
