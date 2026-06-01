@@ -11967,11 +11967,24 @@ function renderPortfolioCharts(w) {
   // O hero renderiza antes desta função; lê este valor no re-render seguinte.
   try {
     const prev = window['_portfolioTotal_' + w.id];
-    window['_portfolioTotal_' + w.id] = { eur: totalPortfolio, source: valueSource, ts: Date.now() };
+    // GUARDA ANTI-FLASH: o caminho FIFO (fallback, quando o cache _balCache_ está frio)
+    // descarta receipt tokens → produz um total parcial menor. Se já tínhamos um valor do
+    // cache quente (source 'onchain') e este cálculo (valueSource diferente, ou cache vazio)
+    // dá MENOS, não baixamos o total — mantemos o melhor valor conhecido até os holdings
+    // reais chegarem (o fetchRealBalances abaixo dispara o re-render quando chegam). Isto
+    // elimina o "aparece e desaparece" (€1247 → valor parcial → €1247).
+    const usingColdFallback = !(window['_balCache_' + w.id]?.data?.length > 0);
+    const wouldDrop = prev && prev.eur > 0 && totalPortfolio < prev.eur * 0.9;
+    if (usingColdFallback && wouldDrop) {
+      // manter o valor anterior; não escrever o parcial. O re-render virá com os dados reais.
+    } else {
+      window['_portfolioTotal_' + w.id] = { eur: totalPortfolio, source: valueSource, ts: Date.now() };
+    }
     // Se o valor dos tokens acabou de ficar disponível (ou mudou significativamente) e
     // estamos no dashboard, o hero está a mostrar um total parcial (só DeFi). Disparamos
     // UM re-render para o hero apanhar o total completo. Flag evita loop infinito.
-    const changed = !prev || Math.abs((prev.eur || 0) - totalPortfolio) > 0.01;
+    const curTotal = window['_portfolioTotal_' + w.id]?.eur || 0;
+    const changed = !prev || Math.abs((prev.eur || 0) - curTotal) > 0.01;
     if (changed && currentTab === 'dashboard' && !window._heroRerenderPending) {
       window._heroRerenderPending = true;
       setTimeout(() => { window._heroRerenderPending = false; if (currentTab === 'dashboard') render(); }, 60);
