@@ -15782,6 +15782,7 @@ function renderHistory(w) {
   const pageEvents = filtered.slice(page * pageSize, (page + 1) * pageSize);
   // Expose current page event IDs globally for bulk-select operations
   window._currentPageEventIds = pageEvents.map(e => e.id);
+  window._currentPageDays = [...new Set(pageEvents.map(e => e.date || '—'))];
   const totalPages = Math.ceil(filtered.length / pageSize);
 
   const fmtAddr = (a) => a ? a.slice(0, 6) + '…' + a.slice(-4) : '—';
@@ -16034,6 +16035,16 @@ function renderHistory(w) {
           </div>
         ` : '')}
         <div class="panel-body no-pad">
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:0.5rem;padding:0.5rem 0.9rem;border-bottom:1px solid var(--border)">
+            <span style="font-size:0.7rem;color:var(--text-muted)">${(state.lang||'pt')==='en'?'Grouped by day':'Agrupado por dia'}</span>
+            <button class="btn btn-outline btn-sm" style="font-size:0.68rem" onclick="(function(){
+              const days=[...new Set((window._currentPageDays||[]))];
+              const s=window._histCollapsedDays||(window._histCollapsedDays=new Set());
+              const allCollapsed=days.length>0&&days.every(d=>s.has(d));
+              if(allCollapsed){days.forEach(d=>s.delete(d));}else{days.forEach(d=>s.add(d));}
+              render();
+            })()">${(state.lang||'pt')==='en'?'Collapse / expand all':'Colapsar / expandir tudo'}</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -16052,7 +16063,52 @@ function renderHistory(w) {
                 </tr>
               </thead>
               <tbody>
-                ${pageEvents.map(e => {
+                ${(() => {
+                  // AGRUPAR POR DIA: dá hierarquia visual à lista (em vez de uma corrida
+                  // infinita de linhas). Cada dia tem um cabeçalho com contagem e total,
+                  // colapsável. Os dias colapsados guardam-se em window._histCollapsedDays.
+                  const collapsed = window._histCollapsedDays || (window._histCollapsedDays = new Set());
+                  const groups = [];
+                  const byDay = new Map();
+                  for (const e of pageEvents) {
+                    const day = e.date || '—';
+                    if (!byDay.has(day)) { byDay.set(day, []); groups.push(day); }
+                    byDay.get(day).push(e);
+                  }
+                  const fmtDayHeader = (day) => {
+                    if (day === '—') return (state.lang||'pt')==='en' ? 'Unknown date' : 'Data desconhecida';
+                    try {
+                      const d = new Date(day + 'T12:00:00Z');
+                      return d.toLocaleDateString((state.lang||'pt')==='en'?'en-GB':'pt-PT', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+                    } catch(_) { return day; }
+                  };
+                  let _html = '';
+                  for (const day of groups) {
+                    const evs = byDay.get(day);
+                    const isCollapsed = collapsed.has(day);
+                    let net = 0, priced = 0;
+                    for (const e of evs) {
+                      if (typeof e.priceEUR === 'number') {
+                        priced++;
+                        const v = e.amount * e.priceEUR;
+                        net += (e.direction === 'out' ? -v : v);
+                      }
+                    }
+                    const netStr = priced > 0
+                      ? `<span style="color:${net>=0?'var(--green)':'var(--red)'};font-family:var(--num)">${net>=0?'+':''}€${net.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`
+                      : '<span style="color:var(--text-muted)">—</span>';
+                    const escDay = day.replace(/'/g, '');
+                    _html += `
+                      <tr class="hist-day-header" style="cursor:pointer;background:rgba(212,175,122,0.04)" onclick="(function(){const s=window._histCollapsedDays||(window._histCollapsedDays=new Set());s.has('${escDay}')?s.delete('${escDay}'):s.add('${escDay}');render();})()">
+                        <td colspan="10" style="padding:0.5rem 0.75rem;border-top:1px solid var(--border)">
+                          <span style="display:inline-block;width:1rem;color:var(--gold)">${isCollapsed?'▸':'▾'}</span>
+                          <span style="font-weight:600;color:var(--text);font-size:0.8rem">${fmtDayHeader(day)}</span>
+                          <span style="color:var(--text-muted);font-size:0.72rem;margin-left:0.5rem">${evs.length} mov.</span>
+                          <span style="float:right;font-size:0.78rem">${netStr}</span>
+                        </td>
+                      </tr>`;
+                    if (isCollapsed) continue;
+                    _html += evs.map(e => {
                   const overrideMark = e.userOverride ? '<span title="Reclassificado manualmente" style="color:var(--gold);font-size:0.7rem">✎</span>' : '';
                   const spamMark = e.userOverride?.spam ? '<span title="Marcado como spam" style="color:var(--red);font-size:0.7rem">⊘</span>' : '';
                   const rowOpacity = e.userOverride?.spam ? 'opacity:0.4' : '';
@@ -16084,7 +16140,10 @@ function renderHistory(w) {
                     <td><a href="${getTxUrl(e.chain, e.txHash)}" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:0.7rem;color:var(--gold)">${e.txHash.slice(0, 6)}…</a></td>
                     <td style="text-align:center"><button class="btn-row-menu" data-event-id="${escId}" onclick="openEventActionMenu(event, this.dataset.eventId)" title="Acções">⋯</button></td>
                   </tr>
-                `;}).join('')}
+                `;}).join('');
+                  } // fim do for (day of groups)
+                  return _html;
+                })()}
               </tbody>
             </table>
           </div>
