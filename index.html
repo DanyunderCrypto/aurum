@@ -10506,7 +10506,31 @@ function _solRpcCall(method, params) {
   return fetch(url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  }).then(r => r.json()).then(j => { if (j.error) throw new Error(JSON.stringify(j.error)); return j.result; });
+  }).then(async r => {
+    if (r.status === 429) { const e = new Error('rate_limited'); e._rateLimited = true; throw e; }
+    if (!r.ok) { const e = new Error('http_' + r.status); e._httpStatus = r.status; throw e; }
+    const j = await r.json();
+    if (j.error) throw new Error(JSON.stringify(j.error));
+    return j.result;
+  });
+}
+
+// Chamada RPC com retry e recuo exponencial em caso de 429 (rate limit). Essencial para
+// carteiras ativas (milhares de tx) onde o débito de pedidos excede o limite do RPC.
+async function _solRpcCallRetry(method, params, maxRetries = 5) {
+  let delay = 500;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await _solRpcCall(method, params);
+    } catch (e) {
+      if (e._rateLimited && attempt < maxRetries) {
+        await new Promise(res => setTimeout(res, delay));
+        delay = Math.min(delay * 2, 8000); // recuo exponencial até 8s
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 function _solExtractDeltas(tx, owner) {
@@ -10615,8 +10639,9 @@ async function indexSolanaWallet(solAddr, opts = {}) {
     if (sigs.length >= maxSignatures) break;
     opts.onProgress?.({ phase: 'sol-signatures', count: sigs.length });
   }
-  // 2. Buscar detalhe e converter (em lotes)
-  const batchSize = 8;
+  // 2. Buscar detalhe e converter (em lotes, com throttling + retry para evitar 429)
+  const batchSize = 5;       // lotes menores = menos pressão no RPC
+  const batchPauseMs = 250;  // pausa entre lotes (suaviza o débito de pedidos)
   const allEvents = [];
   for (let i = 0; i < sigs.length; i += batchSize) {
     if (opts.signal?.aborted) break;
@@ -10624,7 +10649,7 @@ async function indexSolanaWallet(solAddr, opts = {}) {
     const results = await Promise.all(batch.map(async (s) => {
       if (s.err) return [];
       try {
-        const tx = await _solRpcCall('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+        const tx = await _solRpcCallRetry('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
         if (!tx) return [];
         let evs = _solDeltasToEvents(_solExtractDeltas(tx, solAddr), s.signature, solAddr);
         evs = _solClassifyTx(evs);
@@ -10634,6 +10659,8 @@ async function indexSolanaWallet(solAddr, opts = {}) {
     }));
     for (const evs of results) allEvents.push(...evs);
     opts.onProgress?.({ phase: 'sol-transactions', processed: Math.min(i + batchSize, sigs.length), total: sigs.length, events: allEvents.length });
+    // Pausa entre lotes (exceto no último) para respeitar o rate limit do RPC.
+    if (i + batchSize < sigs.length) await new Promise(res => setTimeout(res, batchPauseMs));
   }
   return { events: allEvents, signatures: sigs.length };
 }
