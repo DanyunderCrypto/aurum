@@ -2984,8 +2984,97 @@ body.stealth-mode .stealth-badge {
 
 </div>
 
+<!-- ═══════════ CENTRO DE AJUDA (botão flutuante + painel) ═══════════ -->
+<button id="helpFab" onclick="toggleHelpCenter()" aria-label="Ajuda" title="Ajuda" style="position:fixed;bottom:24px;right:24px;z-index:9998;width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;background:linear-gradient(135deg,#F0D9A8,#D4AF7A 55%,#A88556);box-shadow:0 4px 20px rgba(212,175,122,0.4);display:flex;align-items:center;justify-content:center;transition:transform 0.15s">
+  <span id="helpFabIcon" style="display:flex;align-items:center;justify-content:center">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3C7.03 3 3 6.58 3 11c0 2.05.87 3.92 2.3 5.34-.1 1.17-.5 2.3-1.18 3.26-.16.22 0 .53.27.5 1.5-.18 2.9-.7 4.05-1.5 1.05.32 2.18.5 3.36.5 4.97 0 9-3.58 9-8s-4.03-8-9-8z" fill="#1a1208"/>
+      <circle cx="8.5" cy="11" r="1.15" fill="#F0D9A8"/>
+      <circle cx="12" cy="11" r="1.15" fill="#F0D9A8"/>
+      <circle cx="15.5" cy="11" r="1.15" fill="#F0D9A8"/>
+    </svg>
+  </span>
+</button>
+
+<div id="helpPanel" style="position:fixed;bottom:92px;right:24px;z-index:9999;width:380px;max-width:calc(100vw - 48px);max-height:calc(100vh - 140px);background:var(--card,#15130f);border:1px solid var(--border,rgba(212,175,122,0.2));border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.5);display:none;flex-direction:column;overflow:hidden">
+  <!-- Cabeçalho -->
+  <div style="padding:1.3rem 1.3rem 1rem;background:linear-gradient(135deg,rgba(212,175,122,0.12),rgba(212,175,122,0.02))">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-family:var(--display,serif);font-size:1.2rem;font-weight:600;color:var(--text,#f0e9dd)">Como podemos ajudar?</div>
+        <div style="font-size:0.78rem;color:var(--text-muted,#aaa);margin-top:0.2rem">Aurum · centro de ajuda</div>
+      </div>
+      <button onclick="toggleHelpCenter()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem;line-height:1">✕</button>
+    </div>
+  </div>
+  <!-- Pesquisa -->
+  <div style="padding:0.8rem 1.3rem 0.5rem">
+    <input id="helpSearch" oninput="filterHelpFaqs(this.value)" placeholder="🔍 Procurar ajuda..." style="width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid var(--border,rgba(212,175,122,0.2));background:var(--bg,#0d0b08);color:var(--text,#f0e9dd);font-size:0.85rem;box-sizing:border-box">
+  </div>
+  <!-- Lista de FAQs -->
+  <div id="helpFaqList" style="overflow-y:auto;padding:0.5rem 1.3rem 1rem;flex:1"></div>
+  <!-- Rodapé / contacto -->
+  <div style="padding:0.9rem 1.3rem;border-top:1px solid var(--border,rgba(212,175,122,0.15));background:rgba(212,175,122,0.03)">
+    <a href="mailto:suporte@aurum.app?subject=Ajuda%20Aurum" style="display:flex;align-items:center;gap:0.5rem;color:var(--gold,#D4AF7A);text-decoration:none;font-size:0.85rem;font-weight:600">
+      ✉️ Enviar mensagem ao suporte
+    </a>
+    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem">Respondemos normalmente em 24-48h.</div>
+  </div>
+</div>
+
+</div>
+
 <script>
 'use strict';
+// ══════════════════════════════════════════════════════════
+// CENTRO DE AJUDA
+// ══════════════════════════════════════════════════════════
+const HELP_FAQS = [
+  { q: 'Como adiciono uma carteira?', a: 'Vai a Wallets → Registar Wallet. Podes ligar endereços EVM (0x...), Solana e Bitcoin na mesma carteira. Os dados on-chain são buscados automaticamente — não precisas de chaves nem configuração.' },
+  { q: 'Preciso de uma API key (Alchemy)?', a: 'Não. A Aurum trata do acesso aos dados on-chain por ti. Basta indicares o endereço da carteira.' },
+  { q: 'Os meus dados são privados?', a: 'Sim. Os teus dados (carteiras, transações, lotes) ficam guardados apenas no teu browser (IndexedDB). Nada é enviado nem guardado em servidores. Faz backup regularmente em Config → Exportar.' },
+  { q: 'Como funciona a regra dos 365 dias?', a: 'Em Portugal, mais-valias de cripto detidas há 365 dias ou mais são isentas de IRS (Anexo G1, taxa 0%). Abaixo de 365 dias, são tributadas a 28% (Anexo G). A Aurum calcula isto automaticamente por lote (FIFO) e mostra-te quando cada lote atinge a isenção em Planeamento.' },
+  { q: 'Trocar uma cripto por outra paga imposto?', a: 'Não. Em Portugal, trocar cripto por cripto (incluindo stablecoins) é uma permuta e não é tributável — o custo de aquisição transita para o novo ativo. Só a venda para moeda fiduciária (EUR, USD) realiza a mais-valia.' },
+  { q: 'Porque é que algumas posições Solana mostram valor aproximado?', a: 'Alguns tokens de protocolos DeFi (receipt tokens, ex: PiggyBank) não têm preço de mercado público. A Aurum estima o valor a partir do ativo subjacente, de forma conservadora. O valor real pode ser ligeiramente superior.' },
+  { q: 'O que é o indexador?', a: 'É o motor que lê o histórico de transações on-chain das tuas carteiras (em Histórico → Indexador). Corre uma vez para o histórico completo e depois atualiza só o que é novo. É essencial para o cálculo fiscal correto.' },
+  { q: 'A app substitui um contabilista?', a: 'Não. A Aurum é uma ferramenta de apoio que organiza e calcula com base nas regras fiscais portuguesas. Confirma sempre com um contabilista certificado (TOC) especializado em cripto antes de submeter a tua declaração.' },
+  { q: 'Como faço backup dos meus dados?', a: 'Vai a Config → Exportar dados. Guarda o ficheiro num sítio seguro. Para restaurar, usa Config → Importar. Recomendamos backup antes de cada atualização da app.' },
+  { q: 'Que ecossistemas são suportados?', a: 'EVM (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB e mais), Solana e Bitcoin. A maioria dos protocolos DeFi populares (Aave, Morpho, Uniswap, etc.) é detetada automaticamente.' },
+];
+function toggleHelpCenter() {
+  const panel = document.getElementById('helpPanel');
+  const icon = document.getElementById('helpFabIcon');
+  if (!panel) return;
+  const isOpen = panel.style.display === 'flex';
+  const chatSvg = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C7.03 3 3 6.58 3 11c0 2.05.87 3.92 2.3 5.34-.1 1.17-.5 2.3-1.18 3.26-.16.22 0 .53.27.5 1.5-.18 2.9-.7 4.05-1.5 1.05.32 2.18.5 3.36.5 4.97 0 9-3.58 9-8s-4.03-8-9-8z" fill="#1a1208"/><circle cx="8.5" cy="11" r="1.15" fill="#F0D9A8"/><circle cx="12" cy="11" r="1.15" fill="#F0D9A8"/><circle cx="15.5" cy="11" r="1.15" fill="#F0D9A8"/></svg>';
+  if (isOpen) { panel.style.display = 'none'; if (icon) icon.innerHTML = chatSvg; }
+  else {
+    panel.style.display = 'flex';
+    if (icon) icon.innerHTML = '<span style="font-size:1.4rem;color:#1a1208;font-weight:600">✕</span>';
+    renderHelpFaqs(HELP_FAQS);
+    setTimeout(() => document.getElementById('helpSearch')?.focus(), 50);
+  }
+}
+function renderHelpFaqs(faqs) {
+  const list = document.getElementById('helpFaqList');
+  if (!list) return;
+  if (!faqs.length) {
+    list.innerHTML = '<div style="padding:1.5rem 0;text-align:center;color:var(--text-muted);font-size:0.85rem">Sem resultados. Tenta outras palavras ou envia-nos uma mensagem.</div>';
+    return;
+  }
+  list.innerHTML = faqs.map((f, i) => `
+    <div style="border-bottom:1px solid var(--border,rgba(212,175,122,0.1))">
+      <button onclick="(function(){const b=document.getElementById('hfaq${i}');b.style.display=b.style.display==='block'?'none':'block';})()" style="width:100%;text-align:left;background:none;border:none;color:var(--text,#f0e9dd);cursor:pointer;padding:0.7rem 0;font-size:0.85rem;font-weight:500;display:flex;justify-content:space-between;gap:0.5rem">
+        <span>${f.q}</span><span style="color:var(--gold);flex-shrink:0">›</span>
+      </button>
+      <div id="hfaq${i}" style="display:none;padding:0 0 0.8rem;font-size:0.8rem;line-height:1.6;color:var(--text-muted,#bbb)">${f.a}</div>
+    </div>`).join('');
+}
+function filterHelpFaqs(query) {
+  const q = (query || '').toLowerCase().trim();
+  if (!q) { renderHelpFaqs(HELP_FAQS); return; }
+  renderHelpFaqs(HELP_FAQS.filter(f => (f.q + ' ' + f.a).toLowerCase().includes(q)));
+}
 // ══════════════════════════════════════════════════════════
 // NETWORK & PROTOCOL CONFIG
 // ══════════════════════════════════════════════════════════
@@ -9188,7 +9277,7 @@ function renderSetup() {
     <div>
       <div class="setup-title" style="font-family:var(--display);letter-spacing:0.08em;font-weight:600">AURUM</div>
       <div style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.3em;color:var(--gold);opacity:0.7;margin-top:0.5rem;text-transform:uppercase">Your DeFi · Refined</div>
-      <p class="setup-sub" style="margin-top:1.25rem;text-align:center">Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Sem servidor. Os teus dados ficam contigo.</p>
+      <p class="setup-sub" style="margin-top:1.25rem;text-align:center">Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam no teu browser — nada é guardado em servidores.</p>
     </div>
     <div class="setup-steps"><span>01</span> Regista a wallet → <span>02</span> A app busca os dados → <span>03</span> Monitoriza tudo</div>
     <div style="font-family:var(--mono);font-size:0.6rem;color:rgba(212,175,122,0.4)">v2.0 · dados guardados localmente no teu browser</div>
@@ -9196,21 +9285,13 @@ function renderSetup() {
       <div class="panel-head"><span class="panel-title">⬡ Primeira Wallet</span></div>
       <div class="panel-body">
         <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="sw_name" placeholder="ex: Wallet Principal DeFi"></div>
-        <div class="form-group"><label class="form-label">Endereço EVM (Ethereum/Base/etc.) *</label><input class="form-input" id="sw_addr" placeholder="0x..."></div>
-        <div class="form-group">
-          <label class="form-label">Alchemy API Key <span style="color:var(--green)">(grátis · necessária para o histórico)</span></label>
-          <input class="form-input" id="sw_alchemy" placeholder="Cole a tua API key do Alchemy">
-          <details style="margin-top:0.5rem;font-size:0.8rem">
-            <summary style="cursor:pointer;color:var(--gold,#C6A35A);user-select:none">📖 Como obter (1 minuto, grátis)</summary>
-            <ol style="margin:0.6rem 0 0;padding-left:1.2rem;line-height:1.7;color:var(--text-muted,#aaa)">
-              <li>Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> → cria conta grátis.</li>
-              <li>Clica <strong>Create new app</strong>, dá um nome (ex: "Aurum").</li>
-              <li>Abre a app → botão <strong>API Key</strong> → copia.</li>
-              <li>Cola aqui. Uma key serve <strong>todas as chains</strong>.</li>
-            </ol>
-          </details>
-        </div>
-        <div class="form-group"><label class="form-label">Endereço Solana <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_sol" placeholder="Opcional"></div>
+        <div class="form-group"><label class="form-label">Endereço EVM <span style="color:var(--muted)">(Ethereum / Base / Arbitrum / etc.)</span></label><input class="form-input" id="sw_addr" placeholder="0x..."></div>
+        <div class="form-group"><label class="form-label">Endereço Solana <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_sol" placeholder="Endereço Solana (base58)"></div>
+        <div class="form-group"><label class="form-label">Endereço Bitcoin <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_btc" placeholder="bc1q... ou xpub/ypub/zpub"></div>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin:0.2rem 0 0.8rem;line-height:1.5">
+          💡 Podes ligar EVM, Solana e Bitcoin na mesma wallet. Os dados on-chain são
+          buscados automaticamente — <strong>não precisas de chaves nem de configurar nada</strong>.
+        </p>
         <button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:0.5rem" onclick="saveFirstWallet()">INICIAR TRACKING ⬡</button>
       </div>
     </div>
@@ -9218,9 +9299,21 @@ function renderSetup() {
 }
 
 function saveFirstWallet() {
-  const addr = document.getElementById('sw_addr')?.value?.trim();
-  if (!addr?.startsWith('0x') || addr.length !== 42) { toast('Endereço EVM inválido','warn'); return; }
-  const w = { id:genId(), name:document.getElementById('sw_name')?.value?.trim()||'Minha Wallet', addr, sol:document.getElementById('sw_sol')?.value?.trim()||'', alchemyKey:document.getElementById('sw_alchemy')?.value?.trim()||'' };
+  const addr = document.getElementById('sw_addr')?.value?.trim() || '';
+  const sol = document.getElementById('sw_sol')?.value?.trim() || '';
+  const btc = document.getElementById('sw_btc')?.value?.trim() || '';
+  // Validação: pelo menos UM endereço válido. Não exige EVM (alguém pode ter só Solana/BTC).
+  const evmValid = addr === '' || (addr.startsWith('0x') && addr.length === 42);
+  if (addr && !evmValid) { toast('Endereço EVM inválido (deve começar por 0x e ter 42 caracteres)', 'warn'); return; }
+  if (!addr && !sol && !btc) { toast('Indica pelo menos um endereço (EVM, Solana ou Bitcoin)', 'warn'); return; }
+  const w = {
+    id: genId(),
+    name: document.getElementById('sw_name')?.value?.trim() || 'Minha Wallet',
+    addr,
+    sol,
+    bitcoinAddress: (btc && !/^[xyz]pub/i.test(btc)) ? btc : '',
+    bitcoinXpub: (btc && /^[xyz]pub/i.test(btc)) ? btc : '',
+  };
   state.wallets.push(w);
   state.activeWId = w.id;
   saveState(); boot();
@@ -9425,6 +9518,10 @@ async function _alchemyRpc(chain, method, params, key) {
   }
   // 403 = a chave não tem esta rede ligada no painel Alchemy → saltar a rede toda
   if (res.status === 403) { _alchemyChainUnavailable.add(chain); return null; }
+  // 400/404 = rede não suportada por este endpoint (ex: chains que a Alchemy não serve
+  // via este método) → marcar como indisponível para não repetir o pedido (evita encher
+  // a consola de erros a cada refresh e poupa chamadas).
+  if (res.status === 400 || res.status === 404) { _alchemyChainUnavailable.add(chain); return null; }
   // 429 = rate limit → espera progressiva e tenta até 3x; só desiste no fim
   let _retry = 0;
   while (res.status === 429 && _retry < 3) {
