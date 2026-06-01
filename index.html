@@ -6357,18 +6357,24 @@ const ecbRateAdapter = (() => {
 // Reuses the existing `idb` adapter from Sprint 2.
 // ─────────────────────────────────────────────────
 const priceCache = (() => {
+  // Constrói a chave do cache. Prefere o priceId (coinId, que inclui o contract —
+  // ex: 'solana:E65CoK...' ou 'eth:0xabc...') para EVITAR COLISÕES entre tokens
+  // diferentes com o mesmo símbolo (ex: USDC real vs USDC scam na mesma chain/data).
+  // Fallback para asset_chain (retrocompat com cache antigo) quando não há priceId.
+  function _key(asset, chain, dateStr, priceId) {
+    if (priceId) return `${PRICE_IDB_STORE_KEY_PREFIX}id:${priceId}_${dateStr}`;
+    return `${PRICE_IDB_STORE_KEY_PREFIX}${asset}_${chain}_${dateStr}`;
+  }
   return {
-    async getPriceUSD(asset, chain, dateStr) {
+    async getPriceUSD(asset, chain, dateStr, priceId) {
       try {
-        const k = `${PRICE_IDB_STORE_KEY_PREFIX}${asset}_${chain}_${dateStr}`;
-        const v = await idb.get(k);
+        const v = await idb.get(_key(asset, chain, dateStr, priceId));
         return (v && typeof v.usd === 'number') ? v.usd : null;
       } catch (e) { return null; }
     },
-    async setPriceUSD(asset, chain, dateStr, usd) {
+    async setPriceUSD(asset, chain, dateStr, usd, priceId) {
       try {
-        const k = `${PRICE_IDB_STORE_KEY_PREFIX}${asset}_${chain}_${dateStr}`;
-        await idb.set(k, { usd, fetchedAt: Date.now() });
+        await idb.set(_key(asset, chain, dateStr, priceId), { usd, fetchedAt: Date.now() });
       } catch (e) { /* ignore */ }
     },
     async getRate(dateStr) {
@@ -6412,20 +6418,23 @@ const priceOracle = (() => {
 
   // Get USD price (1 token = X USD) at given date
   async function getPriceUSD(asset, chain, contract, dateStr, timestamp) {
-    // 1. Try cache
-    const cached = await priceCache.getPriceUSD(asset, chain, dateStr);
+    // Resolve o coinId primeiro — usado como chave do cache (inclui o contract,
+    // evita colisões entre tokens com o mesmo símbolo).
+    const coinId = resolveCoinId(asset, chain, contract);
+
+    // 1. Try cache (chaveado por coinId quando disponível)
+    const cached = await priceCache.getPriceUSD(asset, chain, dateStr, coinId);
     if (cached !== null) return cached;
 
-    // 2. Resolve to DefiLlama coin ID
-    const coinId = resolveCoinId(asset, chain, contract);
+    // 2. Sem coinId não há como buscar
     if (!coinId) return null;
 
     // 3. Fetch from DefiLlama
     const r = await defiLlamaAdapter.getHistoricalPrice(coinId, timestamp);
     if (!r || typeof r.price !== 'number') return null;
 
-    // 4. Persist to cache
-    await priceCache.setPriceUSD(asset, chain, dateStr, r.price);
+    // 4. Persist to cache (mesma chave por coinId)
+    await priceCache.setPriceUSD(asset, chain, dateStr, r.price, coinId);
     return r.price;
   }
 
@@ -6521,9 +6530,9 @@ const priceOracle = (() => {
     const stillToFetch = new Map();     // "coinId:dayTs" → { coinId, timestamp }
 
     for (const item of eventsToPrice) {
-      const cacheKey = `${item.event.asset}:${item.event.chain}:${item.dateStr}`;
+      const cacheKey = `${item.coinId || item.event.asset}:${item.event.chain}:${item.dateStr}`;
       if (usdCache.has(cacheKey)) continue;
-      const cached = await priceCache.getPriceUSD(item.event.asset, item.event.chain, item.dateStr);
+      const cached = await priceCache.getPriceUSD(item.event.asset, item.event.chain, item.dateStr, item.coinId);
       if (typeof cached === 'number') {
         usdCache.set(cacheKey, cached);
       } else {
@@ -6604,7 +6613,7 @@ const priceOracle = (() => {
     for (const { event, coinId, dayTs, dateStr } of eventsToPrice) {
       if (opts.signal?.aborted) break;
       i++;
-      const cacheKey = `${event.asset}:${event.chain}:${dateStr}`;
+      const cacheKey = `${coinId || event.asset}:${event.chain}:${dateStr}`;
       let usd = null;
       let priceNote = null;
 
@@ -6618,7 +6627,7 @@ const priceOracle = (() => {
           } else {
             usd = r.price;
             try {
-              await priceCache.setPriceUSD(event.asset, event.chain, dateStr, usd);
+              await priceCache.setPriceUSD(event.asset, event.chain, dateStr, usd, coinId);
               usdCache.set(cacheKey, usd);
             } catch (err) {
               errorLogger.warn(`priceCache.setPriceUSD: ${err.message}`,
@@ -7269,29 +7278,47 @@ const fifoEngine = (() => {
         // Don't treat self-transfers or pure receives as swaps
         && txType !== 'self_transfer';
       if ((isExplicitSwap || isImplicitSwap) && !isLendingTx && ins.length > 0 && outs.length > 0) {
-        const swapIn = ins[0];   // simple case: 1-in 1-out (multi-leg handled below)
+        const swapIn = ins[0];   // representativo (multi-leg tratado abaixo)
         const swapOut = outs[0];
 
         const cryptoToCrypto = _isCryptoToCryptoSwap(swapOut, swapIn);
 
         if (swapMode === 'permuta' && cryptoToCrypto) {
-          // Permuta (Art. 10 nº6 c): crypto↔crypto swap is NOT an alienation. Carry the
-          // outgoing asset's basis to the incoming lot. For airdrops (basis €0), the zero
-          // basis carries forward — per OCC parecer PT28627, the gain is realised only when
-          // finally converted to FIAT (EUR/USD), not on intermediate crypto↔crypto swaps.
-          const consumeOut = _consumeFifo(swapOut.asset, swapOut.chain, swapOut.amount, swapOut.timestamp);
-          const basisPerUnit = swapIn.amount > 0 ? consumeOut.totalBasis / swapIn.amount : 0;
-          _openLot(swapIn, swapIn.amount, basisPerUnit, 'swap_in', swapOut.asset);
+          // Permuta (Art. 10 nº6 c): crypto↔crypto swap NÃO é alienação. Carrega o basis
+          // dos ativos de saída para os lotes de entrada. MULTI-LEG: agregadores (1inch,
+          // Jupiter, CowSwap) podem ter vários outs e/ou vários ins. Consumimos o basis de
+          // TODOS os outs e distribuímo-lo por TODOS os ins (proporcional ao valor de
+          // mercado de cada in; por quantidade se não houver preço). Antes só ins[0]/outs[0]
+          // eram processados → basis perdido nos legs extra (achado A2 da auditoria).
+          let totalBasisOut = 0, totalShortfall = 0;
+          for (const o of outs) {
+            const c = _consumeFifo(o.asset, o.chain, o.amount, o.timestamp);
+            totalBasisOut += c.totalBasis;
+            totalShortfall += c.qtyShortfall;
+          }
+          // Peso de cada in: valor de mercado (priceEUR*amount) se disponível, senão a qty.
+          const inWeights = ins.map(inLeg => {
+            const val = (typeof inLeg.priceEUR === 'number' && inLeg.amount > 0)
+              ? inLeg.priceEUR * inLeg.amount : null;
+            return { leg: inLeg, weight: val != null ? val : inLeg.amount };
+          });
+          const totalWeight = inWeights.reduce((s, w) => s + (w.weight || 0), 0);
+          for (const { leg, weight } of inWeights) {
+            const share = totalWeight > 0 ? (weight / totalWeight) : (1 / inWeights.length);
+            const basisForLeg = totalBasisOut * share;
+            const basisPerUnit = leg.amount > 0 ? basisForLeg / leg.amount : 0;
+            _openLot(leg, leg.amount, basisPerUnit, 'swap_in', swapOut.asset);
+          }
 
           // Record meta only (no disposal entered)
-          if (consumeOut.qtyShortfall > 1e-9) {
+          if (totalShortfall > 1e-9) {
             warnings.push({
               type: 'swap_shortfall',
               eventId: swapOut.id || swapOut.txHash,
               asset: swapOut.asset,
               chain: swapOut.chain,
-              shortfall: consumeOut.qtyShortfall,
-              message: `Swap ${swapOut.amount} ${swapOut.asset} → ${swapIn.amount} ${swapIn.asset} mas falta basis para ${consumeOut.qtyShortfall.toFixed(8)}. Lot novo com basis 0 nessa parte.`,
+              shortfall: totalShortfall,
+              message: `Swap ${outs.map(o=>o.asset).join('+')} → ${ins.map(i=>i.asset).join('+')} mas falta basis para ${totalShortfall.toFixed(8)}. Lot novo com basis 0 nessa parte.`,
             });
           }
         } else {
@@ -7317,11 +7344,13 @@ const fifoEngine = (() => {
         if (klass === 'skip') continue;
 
         // ── Gas / dust filter ──────────────────────────────
-        // Native-asset (ETH) outflows below a dust threshold are overwhelmingly gas fees or
+        // Native-asset outflows below a dust threshold are overwhelmingly gas fees or
         // dust, not fiscal alienations. In PT, transaction fees are costs, not taxable
         // disposals. We saw 1010 such micro-ETH events with no acquisition lot, producing
         // noise warnings. Skip them: tiny native outflows are treated as non-taxable costs.
-        const NATIVE_ASSETS = new Set(['ETH', 'BNB', 'MATIC', 'POL', 'AVAX']);
+        // Inclui SOL (fees Solana são frequentes e ínfimas, ex: 0.000005 SOL) e os
+        // nativos das principais chains EVM.
+        const NATIVE_ASSETS = new Set(['ETH', 'BNB', 'MATIC', 'POL', 'AVAX', 'SOL', 'FTM', 'CRO', 'ONE']);
         if ((klass === 'disposal' || klass === 'swap_sell')
             && NATIVE_ASSETS.has((e.asset || '').toUpperCase())
             && e.amount < 0.001) {
@@ -7646,7 +7675,14 @@ const aurumCexImport = (() => {
     if(fmt==='YY-MM-DD'){const m=s.match(/^(\d{2})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);if(m){const d=new Date(`20${m[1]}-${m[2]}-${m[3]}T${m[4]}Z`);if(!isNaN(d))return Math.floor(d.getTime()/1000);}}
     if(/^\d{13}$/.test(s))return Math.floor(Number(s)/1000); if(/^\d{10}$/.test(s))return Number(s);
     let iso=s; const m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})[ T](\d{2}:\d{2}(?::\d{2})?)/);
-    if(m)iso=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}T${m[4]}Z`;
+    if(m){
+      // Desambiguar DD/MM vs MM/DD: componente >12 só pode ser dia. Ambas <=12 → ambíguo
+      // (usa fmt US se indicado, senão DD/MM europeu) e conta para aviso.
+      let a=parseInt(m[1],10), b=parseInt(m[2],10), day, month;
+      if(a>12){day=a;month=b;} else if(b>12){day=b;month=a;}
+      else { const us=/^(MM|M)[\/\-.]/.test(fmt||'')||/US|en-US/i.test(fmt||''); if(us){month=a;day=b;}else{day=a;month=b;} toUnix._ambiguousDates=(toUnix._ambiguousDates||0)+1; }
+      iso=`${m[3]}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${m[4]}Z`;
+    }
     const d=new Date(iso); if(!isNaN(d))return Math.floor(d.getTime()/1000);
     const dOnly=normalizeDate(s,fmt); return dOnly?Math.floor(new Date(dOnly+'T00:00:00Z').getTime()/1000):null;
   }
@@ -14583,7 +14619,9 @@ async function reapplyPricesFromCache() {
     if (!dateStr) { misses++; continue; }
 
     try {
-      const usd = await priceCache.getPriceUSD(e.asset, e.chain, dateStr);
+      const _coinId = (typeof resolveCoinId === 'function')
+        ? resolveCoinId(e.asset, e.chain, e.assetContract) : null;
+      const usd = await priceCache.getPriceUSD(e.asset, e.chain, dateStr, _coinId);
       if (typeof usd !== 'number') { misses++; continue; }
       const rate = await priceCache.getRate(dateStr);
       if (typeof rate !== 'number') { misses++; continue; }
