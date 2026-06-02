@@ -12893,8 +12893,14 @@ function renderMorphoMarketCard(m) {
   return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
       <div>
-        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${m.colSym} → ${m.loanSym}</div>
-        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.12em;margin-top:0.15rem">${m.chain.toUpperCase()} · ${m.marketKey}</div>
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div style="display:flex;align-items:center">
+            ${typeof tokenLogo==='function' ? tokenLogo(m.colSym, m.chain, m.colAddr||'', 26) : ''}
+            <div style="margin-left:-8px;display:flex">${typeof tokenLogo==='function' ? tokenLogo(m.loanSym, m.chain, m.loanAddr||'', 26) : ''}</div>
+          </div>
+          <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${m.colSym} → ${m.loanSym}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.12em;margin-top:0.3rem">${m.chain.toUpperCase()} · ${m.marketKey}</div>
       </div>
       <div style="text-align:right">
         <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:${hfColor};line-height:1">${m.hf?m.hf.toFixed(3):'—'}</div>
