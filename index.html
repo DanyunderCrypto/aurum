@@ -11803,11 +11803,14 @@ function renderDefiPositions(w) {
     });
   }
 
-  const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR + solDefiEUR;
+  // NOTA: solDefiEUR NÃO entra no grandTotalEUR aqui. As posições DeFi Solana são somadas
+  // ao total em renderPortfolioCharts (que corre no Dashboard; esta função só corre na aba
+  // Posições). Aqui só as mostramos na lista. Somá-las aqui causaria dupla contagem.
+  const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
   // Expor o total DeFi (pools + vaults + lend/borrow líquido) para o hero somar
   // ao património total. Sem isto, o "Património total" mostrava só os tokens soltos.
   try { window['_defiTotal_' + w.id] = { eur: grandTotalEUR, ts: Date.now() }; } catch(_){}
-  if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0) return '';
+  if (rows.length === 0 && vaultRows.length === 0 && lpRows.length === 0 && _solDefi.length === 0) return '';
 
   // Donut das posições DeFi por categoria (gémeo visual do donut dos tokens, mas
   // próprio — a renderDonutSVG é específica para tokens, com legenda de logos/PnL
@@ -11816,6 +11819,15 @@ function renderDefiPositions(w) {
   if (lendNetEUR > 0.01) defiSlices.push(['Lend / Borrow', lendNetEUR]);
   if (totalLpEUR > 0.01) defiSlices.push(['Pools de Liquidez', totalLpEUR]);
   if (totalVaultEUR > 0.01) defiSlices.push(['Vaults', totalVaultEUR]);
+  // Posições DeFi Solana (Mobula), agregadas por categoria.
+  if (solDefiEUR > 0.01) {
+    const _byCat = {};
+    for (const p of _solDefi) {
+      const cm = _catMeta[p.category] || { label: 'DeFi Solana' };
+      _byCat[cm.label] = (_byCat[cm.label] || 0) + (p.valueUSD || 0) * eurRate;
+    }
+    for (const [label, val] of Object.entries(_byCat)) if (val > 0.01) defiSlices.push([label, val]);
+  }
   defiSlices.sort((a, b) => b[1] - a[1]);
   const _defiColors = ['#D4AF7A', '#5DCAA5', '#378ADD', '#E8C895', '#7B6FFF'];
   let defiDonutHtml = '';
@@ -12159,10 +12171,19 @@ function renderPortfolioCharts(w) {
     }
   }
 
+  // Somar as POSIÇÕES DeFi Solana (Mobula: staking, pools, lending, perps) ao total.
+  // Esta função corre no Dashboard (a renderProtocols só corre na aba Posições), por isso
+  // é AQUI que as posições Solana têm de entrar no total. Vêm em USD → EUR. Não duplicam
+  // os tokens soltos (estão DENTRO dos protocolos) nem as posições EVM (_defiTotal_).
+  const _solDefiPositions = window['_balCache_' + w.id]?.solDefiPositions || [];
+  let _solDefiEUR = 0;
+  if (_solDefiPositions.length) {
+    const _eurRate = (window._lastEurUsdRate || 0.86);
+    for (const p of _solDefiPositions) _solDefiEUR += (p.valueUSD || 0) * _eurRate;
+    totalPortfolio += _solDefiEUR;
+  }
+
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
-  // NOTA: as posições DeFi Solana (Mobula) entram via _defiTotal_ (calculado em
-  // renderProtocols/tabela unificada), tal como as outras posições DeFi — não somar aqui
-  // para evitar dupla contagem.
   // O hero renderiza antes desta função; lê este valor no re-render seguinte.
   try {
     const prev = window['_portfolioTotal_' + w.id];
