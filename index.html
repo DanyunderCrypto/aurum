@@ -22,12 +22,12 @@
   /* NOTA: nomes de variáveis mantidos (--gold etc., usados ~184x) para não partir 184
      sítios; só os VALORES mudaram de dourado→azul. O nome é interno/invisível. */
   /* Surfaces — escuro profundo quase carvão (Ember-style), profundidade vem da luz */
-  --bg:           #030305;      /* fundo quase preto */
-  --bg1:          #07080C;
-  --bg2:          #0B0C12;
-  --bg3:          #0F1118;
-  --surface:      #070809;
-  --surface-elev: #0E0F15;
+  --bg:           #08080A;      /* cinza-neutro quase preto (sem azul) */
+  --bg1:          #0C0C0E;
+  --bg2:          #101012;
+  --bg3:          #161618;
+  --surface:      #0A0A0C;
+  --surface-elev: #141416;
   --surface-soft: rgba(59,130,246,0.05);
 
   /* Brand palette — azul confiança (era dourado champagne) */
@@ -209,7 +209,7 @@ html { font-size: 15px; scroll-behavior: smooth; }
 body {
   font-family: var(--body);
   background:
-    linear-gradient(180deg, #070809 0%, #030305 60%),
+    linear-gradient(180deg, #0C0C0E 0%, #08080A 60%),
     var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -1281,9 +1281,9 @@ td.muted  { color:var(--muted); }
   position: absolute;
   inset: -10%;
   background:
-    radial-gradient(ellipse 800px 600px at 20% 30%, rgba(59,130,246,0.10), transparent 50%),
-    radial-gradient(ellipse 700px 500px at 80% 70%, rgba(255,255,255,0.04), transparent 50%),
-    radial-gradient(ellipse 600px 400px at 50% 90%, rgba(52,211,153,0.04), transparent 50%);
+    radial-gradient(ellipse 800px 600px at 20% 30%, rgba(255,255,255,0.055), transparent 50%),
+    radial-gradient(ellipse 700px 500px at 80% 70%, rgba(255,255,255,0.035), transparent 50%),
+    radial-gradient(ellipse 600px 400px at 50% 90%, rgba(59,130,246,0.05), transparent 50%);
   animation: auroraBreathe 24s ease-in-out infinite;
 }
 
@@ -11962,7 +11962,30 @@ function renderDefiPositions(w) {
 
   // Tabela unificada: UMA linha por posição (pool/lend/vault), cada uma expansível.
   window._expandedUni = window._expandedUni || new Set();
-  const uniTable = _unifiedRows.map((r, idx) => {
+  // Mapa de tipos → categoria de aba (agrupa as variantes Solana nas categorias gerais).
+  const _kindToTab = {
+    lend: 'lending', lending: 'lending', borrow: 'lending',
+    pool: 'pools', lp: 'pools',
+    vault: 'vaults',
+    'native-staking': 'staking', 'liquid-staking': 'staking', staking: 'staking',
+    perps: 'perps',
+  };
+  const _tabMeta = {
+    lending: { label: 'Lending / Borrow', icon: '🏦' },
+    pools:   { label: 'Pools', icon: '💧' },
+    vaults:  { label: 'Vaults', icon: '🔒' },
+    staking: { label: 'Staking', icon: '⚡' },
+    perps:   { label: 'Perps', icon: '📈' },
+  };
+  // Construir as linhas com a sua aba e contar por aba.
+  const _rowsWithTab = _unifiedRows.map((r, idx) => ({ r, idx, tab: _kindToTab[r.kind] || 'pools' }));
+  const _tabCounts = {};
+  _rowsWithTab.forEach(({ tab }) => { _tabCounts[tab] = (_tabCounts[tab] || 0) + 1; });
+  const _activeTabs = Object.keys(_tabMeta).filter(tk => _tabCounts[tk] > 0);
+  // Aba ativa (default: a primeira com posições).
+  if (!window._posActiveTab || !_tabCounts[window._posActiveTab]) window._posActiveTab = _activeTabs[0] || 'lending';
+  const _curTab = window._posActiveTab;
+  const uniTable = _rowsWithTab.filter(({ tab }) => tab === _curTab).map(({ r, idx }) => {
     const rid = `uni_${idx}`;
     const open = window._expandedUni.has(rid);
     const kindBadge = { pool: 'Pool', lend: 'Lend/Borrow', vault: 'Vault' }[r.kind] || '';
@@ -12011,6 +12034,13 @@ function renderDefiPositions(w) {
         <span class="panel-title">Posições</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">${_unifiedRows.length} ${_unifiedRows.length === 1 ? 'posição' : 'posições'} · €${fmt(grandTotalWithMoralis)}</span>
       </div>
+      ${_activeTabs.length > 1 ? `
+      <div style="display:flex;gap:0.4rem;padding:0 var(--space-md);flex-wrap:wrap;border-bottom:1px solid var(--border-soft)">
+        ${_activeTabs.map(tk => `
+          <button onclick="window._posActiveTab='${tk}';render()" style="background:none;border:none;cursor:pointer;padding:0.7rem 0.3rem;margin-right:0.6rem;font-family:var(--body);font-size:0.82rem;font-weight:${_curTab===tk?'600':'400'};color:${_curTab===tk?'var(--text)':'var(--text-muted)'};border-bottom:2px solid ${_curTab===tk?'var(--gold)':'transparent'};transition:all 0.15s">
+            ${_tabMeta[tk].icon} ${_tabMeta[tk].label} <span style="font-family:var(--mono);font-size:0.72rem;opacity:0.7">${_tabCounts[tk]}</span>
+          </button>`).join('')}
+      </div>` : ''}
       <div class="panel-body">
         ${uniTable}
         ${(totalLpFeesEUR > 0.01) ? `
@@ -14241,7 +14271,7 @@ function renderStrategy(w) {
           <div class="mempool-pills">
             <button class="mempool-pill ${filt==='all'?'active':''}" onclick="setMempoolFilter('all')">Todos<span class="count">${counts.all}</span></button>
             <button class="mempool-pill ${filt==='exempt'?'active':''}" onclick="setMempoolFilter('exempt')">Isentos<span class="count">${counts.exempt}</span></button>
-            <button class="mempool-pill ${filt==='imminent'?'active':''}" onclick="setMempoolFilter('imminent')">Urgentes<span class="count">${counts.imminent}</span></button>
+            <button class="mempool-pill ${filt==='imminent'?'active':''}" onclick="setMempoolFilter('imminent')">Iminentes<span class="count">${counts.imminent}</span></button>
             <button class="mempool-pill ${filt==='maturing'?'active':''}" onclick="setMempoolFilter('maturing')">A amadurecer<span class="count">${counts.maturing}</span></button>
             <button class="mempool-pill ${filt==='aging'?'active':''}" onclick="setMempoolFilter('aging')">A envelhecer<span class="count">${counts.aging}</span></button>
             <button class="mempool-pill ${filt==='fresh'?'active':''}" onclick="setMempoolFilter('fresh')">Recentes<span class="count">${counts.fresh}</span></button>
