@@ -11768,7 +11768,42 @@ function renderDefiPositions(w) {
     });
   }
   const lendNetEUR = totalNetUSD * eurRate;
-  const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR;
+
+  // ── Posições DeFi Solana (Mobula): staking nativo, LP pools, lending, perps ──
+  // Adiciona-as à tabela unificada para aparecerem na aba Posições e contarem no total.
+  const _solDefi = window['_balCache_' + w.id]?.solDefiPositions || [];
+  let solDefiEUR = 0;
+  const _catMeta = {
+    'native-staking': { color: '#9945FF', icon: 'S', label: 'Staking nativo' },
+    'liquid-staking': { color: '#14F195', icon: 'L', label: 'Liquid staking' },
+    'lp':             { color: '#FF7AC6', icon: 'P', label: 'Pool de liquidez' },
+    'lending':        { color: '#378ADD', icon: 'B', label: 'Lending' },
+    'perps':          { color: '#F0B90B', icon: 'F', label: 'Perps' },
+  };
+  for (const p of _solDefi) {
+    const valueEUR = (p.valueUSD || 0) * eurRate;
+    if (valueEUR < 0.01) continue;
+    solDefiEUR += valueEUR;
+    const cm = _catMeta[p.category] || { color: '#888', icon: 'D', label: 'DeFi' };
+    // Detalhe: tokens da posição + metadata relevante (APY, health factor, in-range, leverage)
+    const tokensHtml = (p.tokens || []).filter(t => t.symbol).map(t =>
+      `${fmt(t.amount)} ${t.symbol}${t.valueUSD ? ` ($${(t.valueUSD).toFixed(2)})` : ''}`).join(' + ');
+    let metaHtml = '';
+    const md = p.metadata || {};
+    if (md.apy) metaHtml += ` · APY ${(parseFloat(md.apy) * (parseFloat(md.apy) < 1 ? 100 : 1)).toFixed(2)}%`;
+    if (md.healthFactor) metaHtml += ` · HF ${parseFloat(md.healthFactor).toFixed(2)}`;
+    if (md.inRange !== undefined) metaHtml += md.inRange ? ' · 🟢 in-range' : ' · 🔴 out-of-range';
+    if (md.currentLeverage) metaHtml += ` · ${md.currentLeverage}x`;
+    if (md.side) metaHtml += ` · ${md.side === 'BUY' ? 'LONG' : 'SHORT'}`;
+    _unifiedRows.push({
+      kind: p.category, name: p.name, sub: `${p.protocol} · Solana${metaHtml}`,
+      chain: 'Solana', chainColor: '#9945FF',
+      color: cm.color, icon: cm.icon, valueEUR, status: '',
+      detailHTML: tokensHtml ? `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">${tokensHtml}</div>` : '',
+    });
+  }
+
+  const grandTotalEUR = lendNetEUR + totalVaultEUR + totalLpEUR + solDefiEUR;
   // Expor o total DeFi (pools + vaults + lend/borrow líquido) para o hero somar
   // ao património total. Sem isto, o "Património total" mostrava só os tokens soltos.
   try { window['_defiTotal_' + w.id] = { eur: grandTotalEUR, ts: Date.now() }; } catch(_){}
@@ -12124,21 +12159,10 @@ function renderPortfolioCharts(w) {
     }
   }
 
-  // Somar as POSIÇÕES DeFi Solana (Mobula: staking, pools, lending, perps) ao total.
-  // Vêm em USD; converter para EUR. Não duplicam os tokens soltos (estão DENTRO dos
-  // protocolos). Guardadas no cache por fetchRealBalances.
-  const _solDefiPositions = window['_balCache_' + w.id]?.solDefiPositions || [];
-  if (_solDefiPositions.length) {
-    const eurRate = (window._lastEurUsdRate || 0.92);
-    let solDefiEUR = 0;
-    for (const p of _solDefiPositions) {
-      // Perps: contar o valor líquido da posição (equity), não o tamanho alavancado.
-      solDefiEUR += (p.valueUSD || 0) * eurRate;
-    }
-    totalPortfolio += solDefiEUR;
-  }
-
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
+  // NOTA: as posições DeFi Solana (Mobula) entram via _defiTotal_ (calculado em
+  // renderProtocols/tabela unificada), tal como as outras posições DeFi — não somar aqui
+  // para evitar dupla contagem.
   // O hero renderiza antes desta função; lê este valor no re-render seguinte.
   try {
     const prev = window['_portfolioTotal_' + w.id];
