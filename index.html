@@ -789,16 +789,48 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   margin-bottom: 0.35rem;
 }
 .lot-card-prog {
-  height: 7px;
-  background: var(--bg2, rgba(255,255,255,0.05));
-  border-radius: 4px;
+  position: relative;
+  height: 11px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.4rem;
 }
 .lot-card-prog-bar {
+  position: relative;
   height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
+  border-radius: 6px;
+  transition: width 0.5s cubic-bezier(0.4,0,0.2,1);
+  overflow: hidden;
+}
+/* Brilho a percorrer a barra (esquerda→direita) — só nas que estão em progresso */
+.lot-card-prog-bar.in-progress::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  animation: progShimmer 2.4s ease-in-out infinite;
+}
+@keyframes progShimmer {
+  0%   { transform: translateX(-120%); }
+  60%  { transform: translateX(320%); }
+  100% { transform: translateX(320%); }
+}
+/* Marcador do objetivo (365 dias) no fim da barra */
+.lot-card-prog::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: 2px;
+  height: calc(100% + 4px);
+  background: rgba(255,255,255,0.25);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lot-card-prog-bar.in-progress::after { animation: none; display: none; }
 }
 .lot-card-sub {
   font-size: 0.68rem;
@@ -13960,7 +13992,7 @@ function mempoolBlockColors(status) {
   switch(status) {
     case 'exempt':   return { top:'#34D399', side:'#059669' };
     case 'imminent': return { top:'#FF7A4D', side:'#A0492C' };
-    case 'maturing': return { top:'#3B82F6', side:'#8E7548' };
+    case 'maturing': return { top:'#3B82F6', side:'#1E4E8C' };
     case 'aging':    return { top:'#7B6FFF', side:'#4A3FA8' };
     case 'fresh':    return { top:'#5EB8FF', side:'#2D6FA8' };
   }
@@ -14186,7 +14218,8 @@ function renderStrategy(w) {
         else { const left=365-h; if(left<=90) buckets['<3m']+=eur; else if(left<=180) buckets['3-6m']+=eur; else if(left<=270) buckets['6-9m']+=eur; else buckets['9-12m']+=eur; }
       });
 
-      const view = state.lotView || 'buckets';
+      let view = state.lotView || 'buckets';
+      if (view === 'mempool') view = 'buckets'; // vista de cubos removida — cai nos buckets
 
       // Store displayCols globally so drill-down modal can find lots by id
       window._lastStrategyDisplayCols = displayCols;
@@ -14198,7 +14231,6 @@ function renderStrategy(w) {
           <div style="display:inline-flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden">
             <button class="btn-view ${view==='buckets'?'active':''}" onclick="state.lotView='buckets';saveState();render()" title="${(state.lang||'pt')==='en'?'Buckets by urgency (recommended)':'Buckets por urgência (recomendado)'}">${t('lot.viewBuckets')}</button>
             <button class="btn-view ${view==='list'?'active':''}" onclick="state.lotView='list';saveState();render()" title="${(state.lang||'pt')==='en'?'Dense list (power users)':'Lista densa (power users)'}">${t('lot.viewList')}</button>
-            <button class="btn-view ${view==='mempool'?'active':''}" onclick="state.lotView='mempool';saveState();render()" title="${(state.lang||'pt')==='en'?'Mempool blocks (original visual view)':'Mempool blocks (vista visual original)'}">${t('lot.viewMempool')}</button>
           </div>
           <div class="mempool-pills">
             <button class="mempool-pill ${filt==='all'?'active':''}" onclick="setMempoolFilter('all')">Todos<span class="count">${counts.all}</span></button>
@@ -14260,7 +14292,7 @@ function renderStrategy(w) {
                   <span style="margin-left:auto;color:${isento?'#3B6D11':colors.top};font-weight:500">${isento ? '✓ Isento (G1)' : `faltam ${left} dias`}</span>
                 </div>
                 <div class="lot-card-prog">
-                  <div class="lot-card-prog-bar" style="width:${pct}%;background:${colors.top}"></div>
+                  <div class="lot-card-prog-bar${isento ? '' : ' in-progress'}" style="width:${pct}%;background:linear-gradient(90deg,${colors.side},${colors.top})"></div>
                 </div>
                 <div class="lot-card-sub">
                   ${isento ? `Isento desde ${exemptDateStr}` : `Será isento em ${exemptDateStr}`}
