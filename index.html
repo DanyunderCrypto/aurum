@@ -10606,6 +10606,54 @@ async function fetchSolanaBalancesZerion(solAddr) {
 }
 window.fetchSolanaBalancesZerion = fetchSolanaBalancesZerion;
 
+// Busca as POSIÇÕES DeFi da Solana via Mobula v2 (staking nativo, LP pools, lending, perps).
+// A Mobula é a ÚNICA fonte gratuita que preça estas posições (Native Staking, Raydium,
+// Kamino, Orca, Meteora, Jito, Marinade, Drift...) — coisa que Zerion/Helius/CoinStats/
+// DefiLlama não fazem. Complementa a Zerion: Zerion = tokens soltos na wallet; Mobula =
+// posições DENTRO dos protocolos. Não duplica (um token numa pool não está na wallet).
+// Cobre os protocolos principais; nicho (ex: PiggyBank, Byreal) podem não vir — aceite.
+// Devolve holdings sintéticos no formato do portfólio, marcados _defiPosition para a UI.
+async function fetchSolanaDefiMobula(solAddr) {
+  if (!solAddr || !_proxyActive()) return null;
+  try {
+    let res = null, delay = 600;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      res = await fetch(`${PROXY_BASE}/mobula/2/wallet/defi-positions?wallet=${solAddr}&blockchains=solana`);
+      if (res.status !== 429) break;
+      if (attempt < 3) { await new Promise(r => setTimeout(r, delay)); delay = Math.min(delay * 2, 5000); }
+    }
+    if (!res || !res.ok) return null;
+    const d = await res.json();
+    const protocols = (d.data || d)?.protocols || (Array.isArray(d.data) ? d.data : []);
+    if (!Array.isArray(protocols) || !protocols.length) return { positions: [], totalUSD: 0 };
+    const positions = [];
+    let totalUSD = 0;
+    for (const proto of protocols) {
+      const pname = proto.protocol?.name || '?';
+      const category = proto.protocol?.category || 'defi';
+      for (const pos of (proto.positions || [])) {
+        const valueUSD = pos.valueUSD || 0;
+        if (valueUSD < 0.01) continue; // ignora pó
+        totalUSD += valueUSD;
+        positions.push({
+          protocol: pname,
+          category,                       // native-staking | lp | lending | liquid-staking | perps
+          name: pos.name || pname,
+          type: pos.type,                 // stake | liquidity | deposit | leverage
+          valueUSD,
+          tokens: (pos.tokens || []).map(t => ({ symbol: t.symbol, amount: t.amountFormatted, valueUSD: t.valueUSD })),
+          metadata: pos.metadata || null, // health factor, APY, inRange, leverage, etc.
+          _source: 'mobula',
+        });
+      }
+    }
+    return { positions, totalUSD };
+  } catch (_) {
+    return null;
+  }
+}
+window.fetchSolanaDefiMobula = fetchSolanaDefiMobula;
+
 // ============================================================================
 // ADAPTADOR SOLANA ON-CHAIN — histórico de transações para o fiscal.
 // Lê transações via RPC (getSignaturesForAddress + getTransaction jsonParsed),
@@ -10822,6 +10870,8 @@ async function fetchRealBalances(w, { force = false } = {}) {
         return fetchSolanaBalances(solAddr, key).catch(() => null);
       })()
     : Promise.resolve(null);
+  // Posições DeFi Solana via Mobula (staking, pools, lending, perps) — em paralelo.
+  const _solDefiPromise = solAddr ? fetchSolanaDefiMobula(solAddr).catch(() => null) : Promise.resolve(null);
 
   // ── CAMINHO RÁPIDO: Portfolio API (1 chamada multi-chain) ──────────────────
   // Substitui o loop de milhares de pedidos. Traz saldos + metadata + preços de
@@ -10918,8 +10968,13 @@ async function fetchRealBalances(w, { force = false } = {}) {
       }
     } catch (e) { /* non-fatal */ }
 
-    const result = { holdings, vaults, lpPositions, prices: _portfolioPrices };
-    window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices };
+    // Posições DeFi Solana (Mobula): staking, pools, lending, perps. Guardadas à parte
+    // para a renderização as somar ao total e mostrar na aba Posições.
+    const _solDefi = await _solDefiPromise.catch(() => null);
+    const solDefiPositions = (_solDefi && _solDefi.positions) || [];
+
+    const result = { holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions };
+    window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions };
     return result;
   }
   // ── FIM CAMINHO RÁPIDO — se chegou aqui, o Portfolio API falhou: método antigo ──
@@ -12067,6 +12122,20 @@ function renderPortfolioCharts(w) {
         if (h && h.length > 0) renderDebounced();
       }).catch(() => {});
     }
+  }
+
+  // Somar as POSIÇÕES DeFi Solana (Mobula: staking, pools, lending, perps) ao total.
+  // Vêm em USD; converter para EUR. Não duplicam os tokens soltos (estão DENTRO dos
+  // protocolos). Guardadas no cache por fetchRealBalances.
+  const _solDefiPositions = window['_balCache_' + w.id]?.solDefiPositions || [];
+  if (_solDefiPositions.length) {
+    const eurRate = (window._lastEurUsdRate || 0.92);
+    let solDefiEUR = 0;
+    for (const p of _solDefiPositions) {
+      // Perps: contar o valor líquido da posição (equity), não o tamanho alavancado.
+      solDefiEUR += (p.valueUSD || 0) * eurRate;
+    }
+    totalPortfolio += solDefiEUR;
   }
 
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
