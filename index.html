@@ -6287,26 +6287,55 @@ const defiLlamaAdapter = (() => {
   }
 
   // Single historical lookup
+  // Fallback Mobula: quando o DefiLlama não tem o preço histórico de um token (devolve
+  // null), tenta a Mobula (motor Octopus, lê pools on-chain — pode ter tokens de cauda
+  // longa que o DefiLlama não cobre). coinId vem como "<chain>:<address>".
+  async function _mobulaHistoricalPrice(coinId, timestamp) {
+    try {
+      if (!coinId || !timestamp || typeof PROXY_BASE === 'undefined' || !PROXY_BASE) return null;
+      const idx = coinId.indexOf(':');
+      if (idx < 0) return null;
+      const chain = coinId.slice(0, idx);
+      const address = coinId.slice(idx + 1);
+      // Mapear nomes de chain do DefiLlama para os da Mobula (a maioria coincide).
+      const blockchain = chain;
+      const res = await fetch(`${PROXY_BASE}/mobula/2/token/price-at`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [{ address, blockchain, timestamp }] }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const p = (data.payload || [])[0];
+      if (!p || typeof p.priceUSD !== 'number' || p.error) return null;
+      return { price: p.priceUSD, confidence: 0.8, symbol: p.symbol || null, timestamp, _source: 'mobula' };
+    } catch (_) { return null; }
+  }
+
   async function getHistoricalPrice(coinId, timestamp) {
     if (!coinId || !timestamp) return null;
     await _throttle();
     try {
       const url = `${DEFILLAMA_BASE}/prices/historical/${timestamp}/${encodeURIComponent(coinId)}`;
       const res = await safeFetch(url, { timeout: 20000 }, 'defillama');
-      if (!res.ok) return null;
-      const data = await res.json();
-      const coinData = data?.coins?.[coinId];
-      if (!coinData || typeof coinData.price !== 'number') return null;
-      return {
-        price: coinData.price,
-        confidence: coinData.confidence ?? 0,
-        symbol: coinData.symbol,
-        timestamp: coinData.timestamp,
-      };
+      if (res.ok) {
+        const data = await res.json();
+        const coinData = data?.coins?.[coinId];
+        if (coinData && typeof coinData.price === 'number') {
+          return {
+            price: coinData.price,
+            confidence: coinData.confidence ?? 0,
+            symbol: coinData.symbol,
+            timestamp: coinData.timestamp,
+          };
+        }
+      }
+      // DefiLlama não tem → tentar Mobula como fallback (cauda longa).
+      return await _mobulaHistoricalPrice(coinId, timestamp);
     } catch (err) {
       errorLogger.warn(`defillama.getHistoricalPrice: ${err.message}`,
                        { coin: coinId, ts: timestamp });
-      return null;
+      // Em erro do DefiLlama, ainda tentar a Mobula antes de desistir.
+      return await _mobulaHistoricalPrice(coinId, timestamp);
     }
   }
 
