@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<title>⬡ DeFi Ghost Tracker v2</title>
+<title>Taxesly · Crypto taxes, done right.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Bebas+Neue&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -327,7 +327,7 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   box-shadow:0 2px 30px rgba(0,0,0,0.5);
 }
 .brand { display:flex; align-items:center; gap:0.75rem; text-decoration:none; }
-/* .brand-avatar removed — Aurum uses inline SVG */
+/* .brand-avatar removed — Taxesly uses inline SVG */
 
 
 .brand-avatar.pulse img { animation:avatarPulse 1s ease-in-out infinite alternate; }
@@ -2680,8 +2680,8 @@ body.stealth-mode .stealth-badge {
       </svg>
     </div>
     <div>
-      <div class="brand-name">AURUM</div>
-      <div class="brand-version">YOUR DEFI · REFINED</div>
+      <div class="brand-name">TAXESLY</div>
+      <div class="brand-version">CRYPTO TAXES · DONE RIGHT</div>
     </div>
   </div>
   </div>
@@ -2748,7 +2748,7 @@ body.stealth-mode .stealth-badge {
           <ol style="margin:0.6rem 0 0;padding-left:1.2rem;line-height:1.7;color:var(--text-muted,#aaa)">
             <li>Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> e cria conta grátis (Google/email).</li>
             <li>No dashboard, clica <strong>Create new app</strong> (ou "Apps" → "+ Create app").</li>
-            <li>Dá um nome qualquer (ex: "Aurum") e cria.</li>
+            <li>Dá um nome qualquer (ex: "Taxesly") e cria.</li>
             <li>Abre a app → botão <strong>API Key</strong> (canto superior direito).</li>
             <li>Copia a <strong>API Key</strong> e cola aqui em cima.</li>
           </ol>
@@ -3002,7 +3002,7 @@ body.stealth-mode .stealth-badge {
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div>
         <div style="font-family:var(--display,serif);font-size:1.2rem;font-weight:600;color:var(--text,#f0e9dd)">Como podemos ajudar?</div>
-        <div style="font-size:0.78rem;color:var(--text-muted,#aaa);margin-top:0.2rem">Aurum · centro de ajuda</div>
+        <div style="font-size:0.78rem;color:var(--text-muted,#aaa);margin-top:0.2rem">Taxesly · centro de ajuda</div>
       </div>
       <button onclick="toggleHelpCenter()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem;line-height:1">✕</button>
     </div>
@@ -3031,13 +3031,13 @@ body.stealth-mode .stealth-badge {
 // ══════════════════════════════════════════════════════════
 const HELP_FAQS = [
   { q: 'Como adiciono uma carteira?', a: 'Vai a Wallets → Registar Wallet. Podes ligar endereços EVM (0x...), Solana e Bitcoin na mesma carteira. Os dados on-chain são buscados automaticamente — não precisas de chaves nem configuração.' },
-  { q: 'Preciso de uma API key (Alchemy)?', a: 'Não. A Aurum trata do acesso aos dados on-chain por ti. Basta indicares o endereço da carteira.' },
+  { q: 'Preciso de uma API key (Alchemy)?', a: 'Não. A Taxesly trata do acesso aos dados on-chain por ti. Basta indicares o endereço da carteira.' },
   { q: 'Os meus dados são privados?', a: 'Sim. Os teus dados (carteiras, transações, lotes) ficam guardados apenas no teu browser (IndexedDB). Nada é enviado nem guardado em servidores. Faz backup regularmente em Config → Exportar.' },
-  { q: 'Como funciona a regra dos 365 dias?', a: 'Em Portugal, mais-valias de cripto detidas há 365 dias ou mais são isentas de IRS (Anexo G1, taxa 0%). Abaixo de 365 dias, são tributadas a 28% (Anexo G). A Aurum calcula isto automaticamente por lote (FIFO) e mostra-te quando cada lote atinge a isenção em Planeamento.' },
+  { q: 'Como funciona a regra dos 365 dias?', a: 'Em Portugal, mais-valias de cripto detidas há 365 dias ou mais são isentas de IRS (Anexo G1, taxa 0%). Abaixo de 365 dias, são tributadas a 28% (Anexo G). A Taxesly calcula isto automaticamente por lote (FIFO) e mostra-te quando cada lote atinge a isenção em Planeamento.' },
   { q: 'Trocar uma cripto por outra paga imposto?', a: 'Não. Em Portugal, trocar cripto por cripto (incluindo stablecoins) é uma permuta e não é tributável — o custo de aquisição transita para o novo ativo. Só a venda para moeda fiduciária (EUR, USD) realiza a mais-valia.' },
-  { q: 'Porque é que algumas posições Solana mostram valor aproximado?', a: 'Alguns tokens de protocolos DeFi (receipt tokens, ex: PiggyBank) não têm preço de mercado público. A Aurum estima o valor a partir do ativo subjacente, de forma conservadora. O valor real pode ser ligeiramente superior.' },
+  { q: 'Porque é que algumas posições Solana mostram valor aproximado?', a: 'Alguns tokens de protocolos DeFi (receipt tokens, ex: PiggyBank) não têm preço de mercado público. A Taxesly estima o valor a partir do ativo subjacente, de forma conservadora. O valor real pode ser ligeiramente superior.' },
   { q: 'O que é o indexador?', a: 'É o motor que lê o histórico de transações on-chain das tuas carteiras (em Histórico → Indexador). Corre uma vez para o histórico completo e depois atualiza só o que é novo. É essencial para o cálculo fiscal correto.' },
-  { q: 'A app substitui um contabilista?', a: 'Não. A Aurum é uma ferramenta de apoio que organiza e calcula com base nas regras fiscais portuguesas. Confirma sempre com um contabilista certificado (TOC) especializado em cripto antes de submeter a tua declaração.' },
+  { q: 'A app substitui um contabilista?', a: 'Não. A Taxesly é uma ferramenta de apoio que organiza e calcula com base nas regras fiscais portuguesas. Confirma sempre com um contabilista certificado (TOC) especializado em cripto antes de submeter a tua declaração.' },
   { q: 'Como faço backup dos meus dados?', a: 'Vai a Config → Exportar dados. Guarda o ficheiro num sítio seguro. Para restaurar, usa Config → Importar. Recomendamos backup antes de cada atualização da app.' },
   { q: 'Que ecossistemas são suportados?', a: 'EVM (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB e mais), Solana e Bitcoin. A maioria dos protocolos DeFi populares (Aave, Morpho, Uniswap, etc.) é detetada automaticamente.' },
 ];
@@ -5233,7 +5233,7 @@ const errorLogger = (() => {
     buildReport() {
       const fmtTime = (t) => new Date(t).toISOString();
       const lines = [];
-      lines.push(`AURUM DIAGNOSTIC REPORT`);
+      lines.push(`TAXESLY DIAGNOSTIC REPORT`);
       lines.push(`Generated: ${new Date().toISOString()}`);
       lines.push(`App version: ${APP_VERSION}`);
       lines.push(`Browser: ${(navigator.userAgent || '').slice(0, 120)}`);
@@ -9304,8 +9304,8 @@ function renderSetup() {
       </svg>
     </div>
     <div>
-      <div class="setup-title" style="font-family:var(--display);letter-spacing:0.08em;font-weight:600">AURUM</div>
-      <div style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.3em;color:var(--gold);opacity:0.7;margin-top:0.5rem;text-transform:uppercase">Your DeFi · Refined</div>
+      <div class="setup-title" style="font-family:var(--display);letter-spacing:0.08em;font-weight:600">TAXESLY</div>
+      <div style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.3em;color:var(--gold);opacity:0.7;margin-top:0.5rem;text-transform:uppercase">Crypto taxes · Done right</div>
       <p class="setup-sub" style="margin-top:1.25rem;text-align:center">Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam no teu browser — nada é guardado em servidores.</p>
     </div>
     <div class="setup-steps"><span>01</span> Regista a wallet → <span>02</span> A app busca os dados → <span>03</span> Monitoriza tudo</div>
@@ -12492,7 +12492,7 @@ function portfolioSparkline(wid, width = 260, height = 56) {
   const line = pts.join(' ');
   const area = `${line} ${width},${height} 0,${height}`;
   const up = vals[vals.length - 1] >= vals[0];
-  const col = '#D4AF7A'; // dourado (identidade Aurum, em vez do verde genérico)
+  const col = '#D4AF7A'; // dourado (identidade visual atual, muda na fase de redesign)
   return `
     <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" style="display:block">
       <polyline points="${area}" fill="rgba(212,175,122,0.08)" stroke="none"/>
@@ -12670,7 +12670,7 @@ function renderDashboard(w) {
 
     ${renderDefiPositions(w)}
 
-    <!-- FISCAL HERO — Aurum's signature, prominent but after the portfolio snapshot -->
+    <!-- FISCAL HERO — Taxesly's signature, prominent but after the portfolio snapshot -->
     ${renderDashboardFiscalHero(w)}
 
     ${renderTaxLossHarvest(w)}
@@ -17325,7 +17325,7 @@ window.importFullBackup = importFullBackup;
 function renderSettings(w) {
   return `
     <div class="section-row" style="margin-bottom:1.5rem">
-      <div class="section-label">Configurações Aurum</div>
+      <div class="section-label">Configurações Taxesly</div>
     </div>
 
     <!-- ── Tratamento Fiscal — Rendimentos DeFi ── -->
@@ -17379,7 +17379,7 @@ function renderSettings(w) {
       <div class="panel-body">
         ${_companyKeyActive() ? `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>✓</span>
-          <div><strong>Já está tudo a funcionar</strong> — a app usa a chave da Aurum por defeito, não precisas de criar nada.<br>
+          <div><strong>Já está tudo a funcionar</strong> — a app usa a chave da Taxesly por defeito, não precisas de criar nada.<br>
           <span style="color:var(--text-muted)">Opcional: se quiseres usar a tua própria chave Alchemy (para não partilhares a quota partilhada), cola-a abaixo.</span></div>
         </div>` : `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>⭐</span>
@@ -17571,7 +17571,7 @@ function renderSettings(w) {
 
     <!-- ── Sobre ── -->
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">ℹ️ Sobre o Aurum</span></div>
+      <div class="panel-head"><span class="panel-title">ℹ️ Sobre o Taxesly</span></div>
       <div class="panel-body">
         <div style="display:flex;align-items:center;gap:1.2rem;margin-bottom:1rem">
           <svg viewBox="0 0 100 100" width="56" height="56" xmlns="http://www.w3.org/2000/svg">
@@ -17592,8 +17592,8 @@ function renderSettings(w) {
             </g>
           </svg>
           <div>
-            <div style="font-family:var(--display);font-size:1.3rem;font-weight:600;color:var(--gold);letter-spacing:0.06em">AURUM</div>
-            <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.25em;color:var(--text-muted);margin-top:0.2rem">YOUR DEFI · REFINED</div>
+            <div style="font-family:var(--display);font-size:1.3rem;font-weight:600;color:var(--gold);letter-spacing:0.06em">TAXESLY</div>
+            <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.25em;color:var(--text-muted);margin-top:0.2rem">CRYPTO TAXES · DONE RIGHT</div>
             <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.6rem">v0.9.0 · Sprint 9.0 · Schema v${state._schemaVersion||7}</div>
           </div>
         </div>
@@ -17610,7 +17610,7 @@ function renderSettings(w) {
         <div class="alert alert-info" style="font-size:0.75rem">
           <span>⚖️</span>
           <div>
-            <strong>Disclaimer fiscal.</strong> Aurum é uma ferramenta informativa. Não constitui aconselhamento fiscal.
+            <strong>Disclaimer fiscal.</strong> Taxesly é uma ferramenta informativa. Não constitui aconselhamento fiscal.
             Os cálculos seguem a interpretação dos autores da Lei 24-D/2022 e OE/2023, mas <strong>devem ser validados por um TOC certificado</strong> antes de submeter o IRS. Os autores não se responsabilizam por divergências com a AT.
           </div>
         </div>
@@ -21175,7 +21175,7 @@ function exportFiscalReport() {
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Relatório Fiscal Aurum ${fiscalYear} - ${w.name}</title>
+<title>Relatório Fiscal Taxesly ${fiscalYear} - ${w.name}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 920px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.6; }
@@ -21203,7 +21203,7 @@ function exportFiscalReport() {
 
 <button class="print-btn no-print" onclick="window.print()" style="float:right">🖨 Imprimir / PDF</button>
 
-<h1>AURUM · Relatório Fiscal</h1>
+<h1>TAXESLY · Relatório Fiscal</h1>
 <div class="subtitle">Categoria G — Mais-Valias de Criptoativos</div>
 <div class="meta">
   Wallet: <strong>${w.name}</strong> · ${w.evm || w.solana || ''}<br>
@@ -21294,7 +21294,7 @@ ${lots.length === 0 ? '<p style="color:#666">Sem dados.</p>' : `
 `}
 
 <div class="footer">
-  Gerado por <strong>AURUM</strong> — Your DeFi, refined<br>
+  Gerado por <strong>TAXESLY</strong> — Crypto taxes, done right.<br>
   Este relatório é meramente informativo. Confirma com contabilista especializado em cripto antes de submeter Modelo 3.
 </div>
 
@@ -21386,7 +21386,7 @@ function exportAuditReport() {
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Aurum · Relatório de Auditoria ${fiscalYear} — ${w.name}</title>
+<title>Taxesly · Relatório de Auditoria ${fiscalYear} — ${w.name}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.55; }
@@ -21414,7 +21414,7 @@ function exportAuditReport() {
 <body>
 <button class="print-btn no-print" onclick="window.print()" style="float:right">🖨 Imprimir / PDF</button>
 
-<h1>AURUM · Relatório de Auditoria</h1>
+<h1>TAXESLY · Relatório de Auditoria</h1>
 <div class="subtitle">Reconciliação e trilho de cálculo — Categoria G / G1 (mais-valias de criptoativos)</div>
 <div class="meta">
   Wallet: <strong>${w.name}</strong> · <code>${(w.evm || w.addr || w.solana || '').slice(0, 20)}…</code><br>
@@ -21422,7 +21422,7 @@ function exportAuditReport() {
 </div>
 
 <div class="note">
-  <strong>O que é este relatório.</strong> Documenta de forma transparente como o motor fiscal do Aurum chegou aos valores: quantos eventos on-chain entraram, como cada um foi classificado, que preços foram usados (e a origem), e quais os limites conhecidos. Serve para o contribuinte e o seu TOC validarem a integridade do apuramento.
+  <strong>O que é este relatório.</strong> Documenta de forma transparente como o motor fiscal do Taxesly chegou aos valores: quantos eventos on-chain entraram, como cada um foi classificado, que preços foram usados (e a origem), e quais os limites conhecidos. Serve para o contribuinte e o seu TOC validarem a integridade do apuramento.
 </div>
 
 <h2>1. Resumo fiscal — ${fiscalYear}</h2>
@@ -21504,7 +21504,7 @@ ${realDisp.length === 0 ? '<p class="muted">Sem alienações tributáveis neste 
 </div>
 
 <div class="footer">
-  Gerado por <strong>AURUM</strong> — Your DeFi, refined · Fingerprint <code>${dataHash}</code><br>
+  Gerado por <strong>TAXESLY</strong> — Crypto taxes, done right. · Fingerprint <code>${dataHash}</code><br>
   Relatório informativo. Não substitui aconselhamento profissional. Confirma com um TOC certificado antes de submeter o Modelo 3.
 </div>
 
