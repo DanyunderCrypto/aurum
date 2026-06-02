@@ -3046,7 +3046,7 @@ body.stealth-mode .stealth-badge {
     <input id="helpSearch" oninput="filterHelpFaqs(this.value)" placeholder="🔍 Procurar ajuda..." style="width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid var(--border,rgba(59,130,246,0.2));background:var(--bg,#030305);color:var(--text,#EDF1F7);font-size:0.85rem;box-sizing:border-box">
   </div>
   <!-- Lista de FAQs -->
-  <div id="helpFaqList" style="overflow-y:auto;padding:0.5rem 1.3rem 1rem;flex:1"></div>
+  <div id="helpFaqList" style="overflow-y:auto;overflow-x:hidden;padding:0.5rem 1.3rem 1rem;flex:1;word-break:break-word;overflow-wrap:break-word"></div>
   <!-- Rodapé / contacto -->
   <div style="padding:0.9rem 1.3rem;border-top:1px solid var(--border,rgba(59,130,246,0.15));background:rgba(59,130,246,0.03)">
     <a href="mailto:support@taxesly.com?subject=Ajuda%20Taxesly" style="display:flex;align-items:center;gap:0.5rem;color:var(--gold,#3B82F6);text-decoration:none;font-size:0.85rem;font-weight:600">
@@ -3099,9 +3099,9 @@ function renderHelpFaqs(faqs) {
   list.innerHTML = faqs.map((f, i) => `
     <div style="border-bottom:1px solid var(--border,rgba(59,130,246,0.1))">
       <button onclick="(function(){const b=document.getElementById('hfaq${i}');b.style.display=b.style.display==='block'?'none':'block';})()" style="width:100%;text-align:left;background:none;border:none;color:var(--text,#EDF1F7);cursor:pointer;padding:0.7rem 0;font-size:0.85rem;font-weight:500;display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start">
-        <span style="flex:1;min-width:0;word-wrap:break-word;overflow-wrap:break-word">${f.q}</span><span style="color:var(--gold);flex-shrink:0">›</span>
+        <span style="flex:1 1 auto;min-width:0;white-space:normal;word-break:break-word;overflow-wrap:anywhere">${f.q}</span><span style="color:var(--gold);flex:0 0 auto">›</span>
       </button>
-      <div id="hfaq${i}" style="display:none;padding:0 0 0.8rem;font-size:0.8rem;line-height:1.6;color:var(--text-muted,#bbb)">${f.a}</div>
+      <div id="hfaq${i}" style="display:none;padding:0 0 0.8rem;font-size:0.8rem;line-height:1.6;color:var(--text-muted,#bbb);word-break:break-word;overflow-wrap:break-word">${f.a}</div>
     </div>`).join('');
 }
 function filterHelpFaqs(query) {
