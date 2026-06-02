@@ -3221,7 +3221,7 @@ const I18N = {
     // Toolbar pills
     'pill.all': 'Todos',
     'pill.exempt': 'Isentos',
-    'pill.urgent': 'Urgentes',
+    'pill.urgent': 'Iminentes',
     'pill.maturing': 'A amadurecer',
     'pill.aging': 'A envelhecer',
     'pill.fresh': 'Recentes',
@@ -14005,7 +14005,7 @@ function mempoolBlockColors(status) {
 }
 
 function mempoolStatusLabel(status) {
-  return { exempt:'Isento', imminent:'Urgente', maturing:'A amadurecer', aging:'A envelhecer', fresh:'Recente' }[status];
+  return { exempt:'Isento', imminent:'Iminente', maturing:'A amadurecer', aging:'A envelhecer', fresh:'Recente' }[status];
 }
 
 function mempoolShowTooltip(e, lot) {
@@ -14265,8 +14265,8 @@ function renderStrategy(w) {
           exempt: displayCols.filter(c=>c._status==='exempt'),
         };
         const bucketsMeta = [
-          { key:'imminent', icon:'⚡', label:(state.lang||'pt')==='en'?'Imminent':'Imminentes', sub:t('lot.imminentSub'), color:'#FF7A4D', defaultOpen:true },
-          { key:'maturing', icon:'🌱', label:(state.lang||'pt')==='en'?'Maturing':'A Amadurecer', sub:t('lot.maturingSub'), color:'#3B82F6', defaultOpen:true },
+          { key:'imminent', icon:'⚡', label:(state.lang||'pt')==='en'?'Imminent':'Iminentes', sub:t('lot.imminentSub'), color:'#FF7A4D', defaultOpen:true },
+          { key:'maturing', icon:'🌱', label:(state.lang||'pt')==='en'?'Maturing':'A amadurecer', sub:t('lot.maturingSub'), color:'#3B82F6', defaultOpen:true },
           { key:'fresh',    icon:'🆕', label:(state.lang||'pt')==='en'?'Fresh':'Recentes',    sub:t('lot.freshSub'), color:'#5EB8FF', defaultOpen:false },
           { key:'exempt',   icon:'✓',  label:(state.lang||'pt')==='en'?'Exempt':'Isentos',     sub:t('lot.exemptSub'), color:'#34D399', defaultOpen:false },
         ];
@@ -14314,8 +14314,12 @@ function renderStrategy(w) {
         };
 
         const renderBucket = (meta) => {
-          const items = groups[meta.key] || [];
+          let items = (groups[meta.key] || []).slice();
           if (items.length === 0) return '';
+          // Ordenação explícita dentro do bucket (urgência/valor/data) — garante efeito visível.
+          if (sortMode === 'value') items.sort((a,b)=>(+b.eur||0)-(+a.eur||0));
+          else if (sortMode === 'date') items.sort((a,b)=>(a.acqDate||'').localeCompare(b.acqDate||''));
+          else items.sort((a,b)=>(a._held||0)-(b._held||0)); // urgência: menos dias detidos primeiro
           const total = items.reduce((s,c)=>s+(+c.eur||0), 0);
           const openKey = `_lotBucketOpen_${meta.key}`;
           const isOpen = window[openKey] === undefined ? meta.defaultOpen : window[openKey];
