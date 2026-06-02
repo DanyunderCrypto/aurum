@@ -11791,7 +11791,7 @@ function renderDefiPositions(w) {
       `${fmt(t.amount)} ${t.symbol}${t.valueUSD ? ` ($${(t.valueUSD).toFixed(2)})` : ''}`).join(' + ');
     let metaHtml = '';
     const md = p.metadata || {};
-    if (md.apy) metaHtml += ` · APY ${(parseFloat(md.apy) * (parseFloat(md.apy) < 1 ? 100 : 1)).toFixed(2)}%`;
+    if (md.apy && parseFloat(md.apy) > 0) { const a = parseFloat(md.apy); metaHtml += ` · APY ${(a < 1 ? a * 100 : a).toFixed(2)}%`; }
     if (md.healthFactor) metaHtml += ` · HF ${parseFloat(md.healthFactor).toFixed(2)}`;
     if (md.inRange !== undefined) metaHtml += md.inRange ? ' · 🟢 in-range' : ' · 🔴 out-of-range';
     if (md.currentLeverage) metaHtml += ` · ${md.currentLeverage}x`;
@@ -11832,11 +11832,14 @@ function renderDefiPositions(w) {
   defiSlices.sort((a, b) => b[1] - a[1]);
   const _defiColors = ['#D4AF7A', '#5DCAA5', '#378ADD', '#E8C895', '#7B6FFF'];
   let defiDonutHtml = '';
-  if (defiSlices.length && grandTotalEUR > 0.01) {
+  // Total para o donut = soma das fatias (inclui Solana, que não está no grandTotalEUR
+  // para evitar dupla contagem no património, mas DEVE aparecer no donut DeFi).
+  const _donutTotalEUR = defiSlices.reduce((s, [, v]) => s + v, 0);
+  if (defiSlices.length && _donutTotalEUR > 0.01) {
     const _ds = 130, _sw = 22, _r = (_ds / 2) - (_sw / 2), _circ = 2 * Math.PI * _r, _c = _ds / 2;
     let _cum = 0;
     const arcs = defiSlices.map(([label, value], i) => {
-      const pct = value / grandTotalEUR;
+      const pct = value / _donutTotalEUR;
       const dash = `${pct * _circ} ${_circ}`;
       const rot = _cum * 360 - 90;
       _cum += pct;
@@ -11846,14 +11849,14 @@ function renderDefiPositions(w) {
       <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;justify-content:center">
         <svg viewBox="0 0 ${_ds} ${_ds}" width="${_ds}" height="${_ds}" style="flex-shrink:0">
           ${arcs}
-          <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:14px;font-weight:700;fill:var(--text)">€${fmt(grandTotalEUR)}</text>
+          <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:14px;font-weight:700;fill:var(--text)">€${fmt(_donutTotalEUR)}</text>
           <text x="${_c}" y="${_c + 13}" text-anchor="middle" style="font-size:8px;fill:var(--text-muted);letter-spacing:0.1em">DEFI</text>
         </svg>
         <div style="flex:1;min-width:240px;max-width:420px">
           ${defiSlices.map((s, i) => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.55rem 0;border-bottom:1px solid var(--border-soft)">
               <span style="font-size:0.85rem;color:var(--text)"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:10px"></span>${s[0]}</span>
-              <span style="font-size:0.85rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} <span style="color:var(--text-muted)">· ${(s[1] / grandTotalEUR * 100).toFixed(0)}%</span></span>
+              <span style="font-size:0.85rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} <span style="color:var(--text-muted)">· ${(s[1] / _donutTotalEUR * 100).toFixed(0)}%</span></span>
             </div>
           `).join('')}
         </div>
