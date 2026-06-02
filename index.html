@@ -11759,6 +11759,14 @@ function renderDefiPositions(w) {
       health: { type: 'range', inRange: !!lp.inRange,
         label: lp.inRange ? 'In range' : 'Out of range',
         color: lp.inRange ? 'var(--green)' : 'var(--gold)' },
+      cardData: {
+        type: 'pool',
+        protocol: lp.protocol, chainName, feeTier: lp.feeTier,
+        chainKey: lp.chain, inRange: !!lp.inRange, staked: !!lp.staked,
+        token0: { symbol: lp.token0.symbol, amount: lp.token0.amount, addr: lp.token0.address || lp.token0.contract || '', valueUSD: (lp.token0.amount||0) * (p0||0) },
+        token1: { symbol: lp.token1.symbol, amount: lp.token1.amount, addr: lp.token1.address || lp.token1.contract || '', valueUSD: (lp.token1.amount||0) * (p1||0) },
+        metricsLine,
+      },
       detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${lp.token0.symbol}: ${(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
     });
   }
@@ -11828,6 +11836,11 @@ function renderDefiPositions(w) {
       kind: 'vault', name: v.asset, sub: `Vault · ${CHAINS[v.chain]?.name||v.chain}`,
       chain: CHAINS[v.chain]?.name||v.chain, chainColor: CHAINS[v.chain]?.color||'#888',
       color: '#378ADD', icon: 'V', valueEUR: valueEUR, status: '',
+      cardData: {
+        type: 'vault', asset: v.asset, chainKey: v.chain, chainName: CHAINS[v.chain]?.name||v.chain,
+        addr: v.address || v.contract || '', assetsQty, valueUSD: valueEUR / eurRate,
+        apy: (v.apy != null ? v.apy : (v.apr != null ? v.apr : null)),
+      },
       detailHTML: `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unidades do subjacente</div>`,
     });
   }
@@ -12005,6 +12018,71 @@ function renderDefiPositions(w) {
     // (tem os cards AAVE/Morpho próprios mais abaixo).
     const isDedicatedCard = (_curTab === 'pools' || _curTab === 'vaults' || _curTab === 'staking');
     if (isDedicatedCard) {
+      const cd = r.cardData;
+      // Pools: card completo estilo-Morpho com logos do par + blocos por token.
+      if (cd && cd.type === 'pool') {
+        const logo0 = typeof tokenLogo==='function' ? tokenLogo(cd.token0.symbol, cd.chainKey, cd.token0.addr||'', 28) : '';
+        const logo1 = typeof tokenLogo==='function' ? tokenLogo(cd.token1.symbol, cd.chainKey, cd.token1.addr||'', 28) : '';
+        const rangeColor = cd.inRange ? 'var(--green)' : 'var(--gold)';
+        return `
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem;margin-bottom:0.9rem">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
+              <div>
+                <div style="display:flex;align-items:center;gap:0.55rem">
+                  <div style="display:flex;align-items:center">
+                    ${logo0}<div style="margin-left:-8px;display:flex">${logo1}</div>
+                  </div>
+                  <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${cd.token0.symbol} / ${cd.token1.symbol}</div>
+                  ${cd.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
+                </div>
+                <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.1em;margin-top:0.3rem">${cd.protocol.toUpperCase()} · ${cd.chainName.toUpperCase()} · ${cd.feeTier}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:var(--text);line-height:1">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
+                <div style="font-size:0.66rem;color:${rangeColor};margin-top:0.3rem">${cd.inRange ? '● In range' : '○ Out of range'}</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+              <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token0.symbol}</span></div>
+                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${(cd.token0.amount||0).toFixed(4)}</div>
+                <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token0.valueUSD)}</div>
+              </div>
+              <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token1.symbol}</span></div>
+                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${(cd.token1.amount||0).toFixed(4)}</div>
+                <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token1.valueUSD)}</div>
+              </div>
+            </div>
+            ${cd.metricsLine ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07)">${cd.metricsLine}</div>` : ''}
+          </div>`;
+      }
+      // Vaults: card com logo do subjacente + bloco de posição.
+      if (cd && cd.type === 'vault') {
+        const vlogo = typeof tokenLogo==='function' ? tokenLogo(cd.asset, cd.chainKey, cd.addr||'', 28) : '';
+        return `
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem;margin-bottom:0.9rem">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
+              <div style="display:flex;align-items:center;gap:0.55rem">
+                ${vlogo}
+                <div>
+                  <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${cd.asset}</div>
+                  <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.1em;margin-top:0.3rem">VAULT · ${cd.chainName.toUpperCase()}</div>
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:var(--text);line-height:1">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
+                ${cd.apy != null ? `<div style="font-size:0.66rem;color:var(--green);margin-top:0.3rem">APY ${(cd.apy*100).toFixed(2)}%</div>` : ''}
+              </div>
+            </div>
+            <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+              <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Subjacente</div>
+              <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(cd.assetsQty)} ${cd.asset}</div>
+              <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.valueUSD)}</div>
+            </div>
+          </div>`;
+      }
+      // Vaults/staking (sem cardData estruturado ainda): card simples mas arejado.
       return `
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.3rem;margin-bottom:0.9rem">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:0.9rem">
