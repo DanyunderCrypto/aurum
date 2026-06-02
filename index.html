@@ -13253,20 +13253,22 @@ function renderProtocols(w) {
 
     ${renderDefiPositions(w)}
 
-    ${activeProtos.length === 0 ? `<div class="alert alert-info" style="margin-top:1.5rem"><span>ℹ</span><div>Nenhuma posição de lend/borrow activa nos protocolos abaixo. As pools de liquidez e vaults aparecem no painel acima.</div></div>` : ''}
+    ${(window._posActiveTab === 'lending' || !window._posActiveTab) ? `
+      ${activeProtos.length === 0 ? `<div class="alert alert-info" style="margin-top:1.5rem"><span>ℹ</span><div>Nenhuma posição de lend/borrow activa nos protocolos abaixo.</div></div>` : ''}
 
-    ${activeProtos.map(({key,proto})=>renderProtoFullDetail(key, proto, w)).join('')}
+      ${activeProtos.map(({key,proto})=>renderProtoFullDetail(key, proto, w)).join('')}
 
-    ${inactiveProtos.length > 0 ? `<div class="panel" style="margin-top:1.5rem;border-color:rgba(59,130,246,0.08)">
-      <div class="panel-head"><span class="panel-title" style="color:var(--muted)">⬡ Sem posição activa</span></div>
-      <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem">
-        ${inactiveProtos.map(({key,proto})=>`<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.8rem;background:var(--bg2);border-radius:var(--radius);opacity:0.6">
-          ${protocolLogo(key, proto, 20)}
-          <span style="font-size:0.85rem">${proto.name}</span>
-          <span style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">${proto.chains.filter(c=>c!=='solana').map(c=>CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join('·')}</span>
-        </div>`).join('')}
-      </div>
-    </div>` : ''}
+      ${inactiveProtos.length > 0 ? `<div class="panel" style="margin-top:1.5rem;border-color:rgba(59,130,246,0.08)">
+        <div class="panel-head"><span class="panel-title" style="color:var(--muted)">⬡ Sem posição activa</span></div>
+        <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem">
+          ${inactiveProtos.map(({key,proto})=>`<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.8rem;background:var(--bg2);border-radius:var(--radius);opacity:0.6">
+            ${protocolLogo(key, proto, 20)}
+            <span style="font-size:0.85rem">${proto.name}</span>
+            <span style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">${proto.chains.filter(c=>c!=='solana').map(c=>CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join('·')}</span>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+    ` : ''}
 
     <details style="margin-top:1.5rem">
       <summary style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);cursor:pointer;padding:0.75rem 0;border-top:1px solid var(--border);outline:none">
