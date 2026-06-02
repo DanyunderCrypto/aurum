@@ -3098,8 +3098,8 @@ function renderHelpFaqs(faqs) {
   }
   list.innerHTML = faqs.map((f, i) => `
     <div style="border-bottom:1px solid var(--border,rgba(59,130,246,0.1))">
-      <button onclick="(function(){const b=document.getElementById('hfaq${i}');b.style.display=b.style.display==='block'?'none':'block';})()" style="width:100%;text-align:left;background:none;border:none;color:var(--text,#EDF1F7);cursor:pointer;padding:0.7rem 0;font-size:0.85rem;font-weight:500;display:flex;justify-content:space-between;gap:0.5rem">
-        <span>${f.q}</span><span style="color:var(--gold);flex-shrink:0">›</span>
+      <button onclick="(function(){const b=document.getElementById('hfaq${i}');b.style.display=b.style.display==='block'?'none':'block';})()" style="width:100%;text-align:left;background:none;border:none;color:var(--text,#EDF1F7);cursor:pointer;padding:0.7rem 0;font-size:0.85rem;font-weight:500;display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-start">
+        <span style="flex:1;min-width:0;word-wrap:break-word;overflow-wrap:break-word">${f.q}</span><span style="color:var(--gold);flex-shrink:0">›</span>
       </button>
       <div id="hfaq${i}" style="display:none;padding:0 0 0.8rem;font-size:0.8rem;line-height:1.6;color:var(--text-muted,#bbb)">${f.a}</div>
     </div>`).join('');
@@ -14898,36 +14898,64 @@ function stopInterestTicker() {
 // WALLETS TAB
 // ══════════════════════════════════════════════════════════
 function renderWallets() {
+  // Classificar cada wallet por tipo, para agrupar.
+  const classify = (w) => {
+    if (w.kind === 'cex') return 'cex';
+    if (w.bitcoinXpub || w.bitcoinAddress) return 'btc';
+    if (w.addr && /^0x[a-fA-F0-9]{40}$/.test(w.addr)) return 'evm';
+    if (w.sol && !w.addr) return 'svm';
+    if (w.addr) return 'evm';
+    if (w.sol) return 'svm';
+    return 'other';
+  };
+  const groupsMeta = [
+    { key: 'evm',   label: 'EVM (Ethereum, Base, Polygon…)', icon: '⬨', color: 'var(--gold)' },
+    { key: 'svm',   label: 'Solana', icon: '◎', color: '#9945FF' },
+    { key: 'btc',   label: 'Bitcoin', icon: '₿', color: '#F7931A' },
+    { key: 'cex',   label: 'Exchanges (CEX)', icon: '⇄', color: 'var(--cyan)' },
+    { key: 'other', label: 'Outras', icon: '•', color: 'var(--text-muted)' },
+  ];
+  const byGroup = {};
+  (state.wallets || []).forEach(w => { const g = classify(w); (byGroup[g] = byGroup[g] || []).push(w); });
+
+  const walletCard = (w) => {
+    const isActive = w.id === state.activeWId;
+    const hasApiKey = !!w.apiKey;
+    return `<div class="panel" style="margin-bottom:0;border-color:${isActive?'var(--gold)':'var(--border)'}">
+      <div class="panel-body" style="padding:1rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.6rem;margin-bottom:0.5rem">
+          <div style="font-weight:600;font-size:0.95rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.name}</div>
+          ${isActive?'<span class="badge badge-gold" style="flex-shrink:0">Activa</span>':''}
+        </div>
+        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--text-muted);margin-bottom:0.5rem;word-break:break-all">${w.kind==='cex'?('Exchange · '+(w.addr||'').replace(/^cex:/,'')):(w.addr? (w.addr.slice(0,14)+'…'+w.addr.slice(-6)) :'—')}</div>
+        ${w.bitcoinXpub ? `<div style="font-family:var(--mono);font-size:0.66rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinXpub.slice(0,10)}…${w.bitcoinXpub.slice(-6)} <span style="opacity:0.6">(xpub)</span></div>` : ''}
+        ${w.bitcoinAddress ? `<div style="font-family:var(--mono);font-size:0.66rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinAddress.slice(0,10)}…${w.bitcoinAddress.slice(-6)}</div>` : ''}
+        ${w.sol?`<div style="font-family:var(--mono);font-size:0.66rem;color:var(--blue);margin-bottom:0.2rem">◎ ${w.sol.slice(0,8)}...${w.sol.slice(-4)}</div>`:''}
+        ${w.notes?`<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem" title="${w.notes.replace(/"/g,'&quot;')}">📝 ${w.notes.slice(0,40)}${w.notes.length>40?'…':''}</div>`:''}
+        <div style="display:flex;gap:0.4rem;margin-top:0.7rem;flex-wrap:wrap">
+          ${!isActive?`<button class="btn btn-outline btn-sm" onclick="setActiveWallet('${w.id}')">Activar</button>`:''}
+          <button class="btn btn-outline btn-sm" onclick="editWallet('${w.id}')">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}')">✕</button>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const groupsHTML = groupsMeta.filter(g => (byGroup[g.key]||[]).length).map(g => `
+    <div style="margin-top:1.5rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+        <span style="color:${g.color};font-size:1rem">${g.icon}</span>
+        <span style="font-size:0.8rem;font-weight:600;color:var(--text);letter-spacing:0.02em">${g.label}</span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">${byGroup[g.key].length}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.75rem">
+        ${byGroup[g.key].map(walletCard).join('')}
+      </div>
+    </div>`).join('');
+
   return `
     <div class="section-row"><div class="section-label">Gestão de Wallets</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="openCexImportModal()">↑ Importar Exchange (CSV)</button><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">+ Adicionar Wallet</button></div></div>
-    <div style="display:flex;flex-direction:column;gap:0.75rem">
-      ${state.wallets.map(w=>{
-        const isActive = w.id===state.activeWId;
-        const hasApiKey = !!w.apiKey;
-        return `<div class="panel" style="border-color:${isActive?'var(--gold)':'var(--border)'}">
-          <div class="panel-body" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-            <div>
-              <div style="font-weight:700;font-size:1rem;margin-bottom:0.3rem">${w.name} ${isActive?'<span class="badge badge-gold" style="vertical-align:middle">Activa</span>':''} ${w.kind==='cex'?`<span class="badge badge-cyan" style="vertical-align:middle">⇄ ${(w.exchange||'CEX').toUpperCase()}</span>`:''}</div>
-              <div style="font-family:var(--mono);font-size:0.72rem;color:var(--gold);margin-bottom:0.3rem">${w.kind==='cex'?('Exchange · '+(w.addr||'').replace(/^cex:/,'')):(w.addr||'—')}</div>
-              ${w.bitcoinXpub ? `<div style="font-family:var(--mono);font-size:0.7rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinXpub.slice(0,10)}…${w.bitcoinXpub.slice(-6)} <span style="opacity:0.6">(xpub)</span></div>` : ''}
-              ${w.bitcoinAddress ? `<div style="font-family:var(--mono);font-size:0.7rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinAddress.slice(0,10)}…${w.bitcoinAddress.slice(-6)}</div>` : ''}
-              ${w.sol?`<div style="font-family:var(--mono);font-size:0.7rem;color:var(--blue)">SOL: ${w.sol.slice(0,8)}...${w.sol.slice(-4)}</div>`:''}
-              <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap">
-                <span class="badge ${w.alchemyKey?'badge-green':'badge-muted'}">${w.alchemyKey?'✓ Alchemy Key':'Sem Alchemy Key'}</span>
-              <span class="badge ${hasApiKey?'badge-cyan':'badge-muted'}" style="font-size:0.56rem">${hasApiKey?'✓ Etherscan':'Sem Etherscan'}</span>
-              ${w.notes?`<span class="badge badge-muted" title="${w.notes.replace(/"/g,'&quot;')}">📝 Notas</span>`:''}
-              </div>
-            </div>
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-              ${!isActive?`<button class="btn btn-outline btn-sm" onclick="setActiveWallet('${w.id}')">Activar</button>`:''}
-              <button class="btn btn-outline btn-sm" onclick="editWallet('${w.id}')">✏️ Editar</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}')">✕ Remover</button>
-            </div>
-          </div>
-        </div>`;
-      }).join('')}
-      ${!state.wallets.length?`<div class="empty"><span class="empty-icon">👻</span><p>Sem wallets registadas.</p></div>`:''}
-    </div>`;
+    ${state.wallets.length ? groupsHTML : `<div class="empty"><span class="empty-icon">👻</span><p>Sem wallets registadas.</p></div>`}`;
 }
 
 // ══════════════════════════════════════════════════════════
