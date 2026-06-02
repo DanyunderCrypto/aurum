@@ -11558,7 +11558,8 @@ function renderDefiPositions(w) {
   }
 
   const _lpForGuard = window['_balCache_' + w.id]?.lpPositions || [];
-  if (rows.length === 0 && !(window['_balCache_' + w.id]?.vaults?.length) && _lpForGuard.length === 0) return '';
+  const _hasSolDefi = (window['_balCache_' + w.id]?.solDefiPositions || []).length > 0;
+  if (rows.length === 0 && !(window['_balCache_' + w.id]?.vaults?.length) && _lpForGuard.length === 0 && !_hasSolDefi) return '';
 
   // ── Liquidity Pools (Uniswap V3 — ported from MyWalletPulse) ──
   // Price each leg via Chainlink (cached) → event price → DexScreener. Value = token0+token1.
