@@ -7,7 +7,7 @@
 <!-- R1: Premium typography -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <title>Taxesly · Crypto taxes, done right.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Bebas+Neue&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -63,8 +63,8 @@
 
   /* Typography */
   --mono:         'JetBrains Mono', ui-monospace, monospace;
-  --display:      'Playfair Display', Georgia, serif;
-  --body:         'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --display:      'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --body:         'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
 
   /* Spacing rhythm */
   --space-xs:     0.5rem;
@@ -446,15 +446,15 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
    CARDS / PANELS
 ══════════════════════════════════════════════════ */
 .panel {
-  background: linear-gradient(135deg, rgba(59,130,246,0.035), rgba(59,130,246,0.008));
-  border: 1px solid rgba(59,130,246,0.16);
-  border-radius: 16px;
-  margin-bottom: var(--space-md);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 18px;
+  margin-bottom: var(--space-lg);
   overflow: hidden;
   transition: var(--trans);
 }
 .panel:hover {
-  border-color: rgba(59,130,246,0.26);
+  border-color: rgba(255,255,255,0.12);
 }
 [data-theme="light"] .panel {
   background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
@@ -12829,7 +12829,7 @@ function renderUnifiedPositions() {
         row += `<tr><td colspan="8" style="padding:0;background:var(--bg2);border-top:1px solid var(--gold)">
           <div style="padding:1.2rem">
             <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:0.8rem">⬡ ${r.markets.length} Mercado${r.markets.length>1?'s':''} Morpho</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.25rem">
               ${r.markets.map(m=>renderMorphoMarketCard(m)).join('')}
             </div>
           </div>
@@ -12890,35 +12890,35 @@ function renderUnifiedPositions() {
 function renderMorphoMarketCard(m) {
   const hfColor = !m.hf ? 'var(--muted)' : m.hf<1.2 ? 'var(--red)' : m.hf<1.5 ? 'var(--gold)' : 'var(--green)';
   const utilColor = m.utilization>0.9 ? 'var(--red)' : m.utilization>0.7 ? 'var(--gold)' : 'var(--green)';
-  return `<div style="background:rgba(59,130,246,0.03);border:1px solid ${hfColor};border-radius:var(--radius);padding:1rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+  return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
       <div>
-        <div style="font-family:var(--display);font-size:1.1rem;color:var(--white)">${m.colSym} → ${m.loanSym}</div>
-        <div style="font-family:var(--mono);font-size:0.58rem;color:var(--muted);letter-spacing:0.15em">${m.chain.toUpperCase()} · ${m.marketKey}</div>
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${m.colSym} → ${m.loanSym}</div>
+        <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.12em;margin-top:0.15rem">${m.chain.toUpperCase()} · ${m.marketKey}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-family:var(--num);font-weight:700;font-size:1.4rem;color:${hfColor}">${m.hf?m.hf.toFixed(3):'—'}</div>
-        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">Health Factor</div>
+        <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:${hfColor};line-height:1">${m.hf?m.hf.toFixed(3):'—'}</div>
+        <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">Health Factor</div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
-      <div style="padding:0.5rem 0.6rem;background:rgba(59,130,246,0.025);border-radius:2px">
-        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div>
-        <div style="color:var(--gold);font-weight:600">${m.colAmt.toFixed(4)} ${m.colSym}</div>
-        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.collateralUsd)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.85rem">
+      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
+        <div style="color:var(--white);font-weight:600;font-size:0.95rem">${m.colAmt.toFixed(4)} ${m.colSym}</div>
+        <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.collateralUsd)}</div>
       </div>
-      <div style="padding:0.5rem 0.6rem;background:rgba(59,130,246,0.025);border-radius:2px">
-        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div>
-        <div style="color:var(--amber);font-weight:600">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
-        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted)">$${fmt(m.borrowUsd)}</div>
+      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
+        <div style="color:var(--amber);font-weight:600;font-size:0.95rem">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
+        <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.borrowUsd)}</div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;font-family:var(--mono);font-size:0.68rem">
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">LLTV</span><br><span style="color:var(--white)">${fmt(m.lltv,1)}%</span></div>
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">Borrow APR</span><br><span style="color:var(--red)">${(m.borrowApy*100).toFixed(2)}%</span></div>
-      <div><span style="color:var(--muted);text-transform:uppercase;font-size:0.7rem;letter-spacing:0.15em">Utilização</span><br><span style="color:${utilColor}">${(m.utilization*100).toFixed(1)}%</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+      <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LLTV</div><span style="font-family:var(--mono);color:var(--white);font-size:0.85rem">${fmt(m.lltv,1)}%</span></div>
+      <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Borrow APR</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(m.borrowApy*100).toFixed(2)}%</span></div>
+      <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Utilização</div><span style="font-family:var(--mono);color:${utilColor};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
     </div>
-    ${m.supplyUsd > 0 ? `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-family:var(--mono);font-size:0.7rem">Supply (yield): <span style="color:var(--gold)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>`:''}
+    ${m.supplyUsd > 0 ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07);font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">Supply (yield): <span style="color:var(--green)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>`:''}
   </div>`;
 }
 
