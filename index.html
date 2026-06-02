@@ -11950,10 +11950,20 @@ function renderDefiPositions(w) {
     _moralisTotalEUR += valueEUR;
     const isLend = mp.isDebt != null || /aave|compound|spark|venus|morpho|maker/i.test(mp.protocolId);
     const tokenSummary = (mp.tokens || []).map(t => t.symbol).filter(Boolean).slice(0, 3).join(' / ');
+    const _mTokens = (mp.tokens || []).filter(t => t.symbol);
+    // Se é uma pool com exatamente 2 tokens, montar cardData tipo-Morpho (par).
+    const _mPoolCard = (!isLend && _mTokens.length === 2) ? {
+      type: 'pool',
+      protocol: mp.protocol, chainName: (CHAINS[mp.chain]?.name) || mp.chain,
+      feeTier: mp.label || '', chainKey: mp.chain, inRange: true, staked: false,
+      token0: { symbol: _mTokens[0].symbol, amount: _mTokens[0].amount, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', valueUSD: _mTokens[0].usd || 0 },
+      token1: { symbol: _mTokens[1].symbol, amount: _mTokens[1].amount, addr: _mTokens[1].address || _mTokens[1].tokenAddress || '', valueUSD: _mTokens[1].usd || 0 },
+      metricsLine: mp.apy ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>${mp.unclaimedUSD>0?` · por reclamar $${fmt(mp.unclaimedUSD)}`:''}</div>` : '',
+    } : null;
     _unifiedRows.push({
       kind: isLend ? 'lend' : 'pool',
-      name: mp.protocol,
-      sub: `${(CHAINS[mp.chain]?.name) || mp.chain}${tokenSummary ? ' · ' + tokenSummary : ''}`,
+      name: _mPoolCard ? `${_mTokens[0].symbol}/${_mTokens[1].symbol}` : mp.protocol,
+      sub: `${mp.protocol} · ${(CHAINS[mp.chain]?.name) || mp.chain}${tokenSummary ? ' · ' + tokenSummary : ''}`,
       chain: (CHAINS[mp.chain]?.name) || mp.chain,
       chainColor: (CHAINS[mp.chain]?.color) || '#888',
       color: '#9B6FFF', // roxo: distingue posições vindas do Moralis
@@ -11961,6 +11971,7 @@ function renderDefiPositions(w) {
       valueEUR,
       status: mp.apy ? `<span style="color:var(--green)">APY ${mp.apy.toFixed(2)}%</span>` : (mp.label || ''),
       health: mp.apy ? { type: 'range', inRange: true, label: `APY ${mp.apy.toFixed(2)}%`, color: 'var(--green)' } : null,
+      cardData: _mPoolCard,
       detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` ($${fmt(t.usd)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: $${fmt(mp.unclaimedUSD)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
     });
   }
