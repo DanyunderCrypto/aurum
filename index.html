@@ -4568,6 +4568,12 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   // (exfiltração de dados, tracking). O browser tentaria buscá-los e um antivírus
   // bloqueia — pior, poderiam ser um vetor de ataque. Só permitimos CDNs conhecidos.
   if (logoUrl && _isTrustedLogoUrl(logoUrl)) urls.push(logoUrl);
+  // Mapa de logos conhecidos por símbolo — tokens recentes/DeFi que as bibliotecas
+  // genéricas (cryptocurrency-icons) ainda não têm. URLs de CDNs de confiança.
+  if (symbol) {
+    const known = _KNOWN_TOKEN_LOGOS[symbol.toLowerCase()];
+    if (known && _isTrustedLogoUrl(known)) urls.push(known);
+  }
   // DexScreener by contract — broadest coverage (2M+ tokens incl. DeFi/protocol tokens).
   const DS_CHAIN = { eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon', avalanche:'avalanche', bnb:'bsc' };
   const dsChain = DS_CHAIN[chain];
@@ -4582,6 +4588,19 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   if (urls.length === 0) return fallback;
   return _cascadingImg(urls, symbol, s, fallback, 'cover', 'var(--bg2)');
 }
+// Logos de tokens recentes que as libs genéricas não têm. Coingecko/CDNs de confiança.
+const _KNOWN_TOKEN_LOGOS = {
+  'cbbtc':  'https://assets.coingecko.com/coins/images/40143/small/cbbtc.webp',
+  'abasccbbtc': 'https://assets.coingecko.com/coins/images/40143/small/cbbtc.webp',
+  'cbeth':  'https://assets.coingecko.com/coins/images/27008/small/cbeth.png',
+  'eurc':   'https://assets.coingecko.com/coins/images/26045/small/euro.png',
+  'usdc':   'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
+  'usdt':   'https://assets.coingecko.com/coins/images/325/small/Tether.png',
+  'weeth':  'https://assets.coingecko.com/coins/images/33033/small/weETH.png',
+  'wsteth': 'https://assets.coingecko.com/coins/images/18834/small/wstETH.png',
+  'reth':   'https://assets.coingecko.com/coins/images/20764/small/reth.png',
+  'aero':   'https://assets.coingecko.com/coins/images/31745/small/token.png',
+};
 
 // Só permite logos de CDNs de confiança. Bloqueia IPFS, data:, e domínios arbitrários
 // (tokens de scam trazem metadata maliciosa). Lista branca de hosts conhecidos e seguros.
@@ -9347,6 +9366,13 @@ function afterRender() {
   buildWalletDD();
   if (currentTab === 'simulator') initSimulator();
   if (currentTab === 'planning' && window._planningSubtab === 'simulator') initSimulator();
+  // O simulador também aparece embutido na aba Posições (lending). Se o <select> existe
+  // no DOM mas os cards de análise ainda não foram preenchidos, inicializa — senão a
+  // análise automática só funcionava depois de trocar manualmente a posição (e com 1 só
+  // posição nunca disparava o onchange).
+  if (document.getElementById('sim_pos') && document.getElementById('simAutoCards') && !document.getElementById('simAutoCards').innerHTML.trim()) {
+    if (typeof updateSim === 'function') updateSim();
+  }
   if (currentTab === 'dashboard') startInterestTicker();
   else stopInterestTicker();
   applyStealthMode();
