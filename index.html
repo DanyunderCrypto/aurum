@@ -4026,7 +4026,7 @@ async function fetchMoralisApy(w) {
           apy: det.apy,
           isDebt: det.is_debt,
           tokens: toks.filter(t => t.token_type === 'supplied' || t.token_type === 'borrowed' || t.token_type === 'defi-token')
-                      .map(t => ({ symbol: t.symbol, amount: t.balance_formatted, usd: t.usd_value })),
+                      .map(t => ({ symbol: t.symbol, amount: t.balance_formatted, usd: t.usd_value, address: t.token_address || t.address || '', isDebt: t.token_type === 'borrowed' })),
           logo: p.protocol_logo || '',
           unclaimedUSD: Number(p.position?.total_unclaimed_usd_value) || 0,
         });
@@ -12025,27 +12025,74 @@ function renderDefiPositions(w) {
     const isLend = mp.isDebt != null || /aave|compound|spark|venus|morpho|maker/i.test(mp.protocolId);
     const tokenSummary = (mp.tokens || []).map(t => t.symbol).filter(Boolean).slice(0, 3).join(' / ');
     const _mTokens = (mp.tokens || []).filter(t => t.symbol);
-    // Se é uma pool com exatamente 2 tokens, montar cardData tipo-Morpho (par).
-    const _mPoolCard = (!isLend && _mTokens.length === 2) ? {
-      type: 'pool',
-      protocol: mp.protocol, chainName: (CHAINS[mp.chain]?.name) || mp.chain,
-      feeTier: mp.label || '', chainKey: mp.chain, inRange: true, staked: false,
-      token0: { symbol: _mTokens[0].symbol, amount: _mTokens[0].amount, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', valueUSD: _mTokens[0].usd || 0 },
-      token1: { symbol: _mTokens[1].symbol, amount: _mTokens[1].amount, addr: _mTokens[1].address || _mTokens[1].tokenAddress || '', valueUSD: _mTokens[1].usd || 0 },
-      metricsLine: mp.apy ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>${mp.unclaimedUSD>0?` · por reclamar $${fmt(mp.unclaimedUSD)}`:''}</div>` : '',
-    } : null;
+    const _mChainName = (CHAINS[mp.chain]?.name) || mp.chain;
+    const _mSub = `${(mp.protocol||'').toUpperCase()} · ${(_mChainName||'').toUpperCase()}${mp.label ? ' · ' + mp.label : ''}`;
+    const _mMetrics = (mp.apy || mp.unclaimedUSD > 0)
+      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${mp.apy ? `APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>` : ''}${mp.unclaimedUSD>0?`${mp.apy?' · ':''}por reclamar $${fmt(mp.unclaimedUSD)}`:''} <span style="opacity:0.6">· via Moralis</span></div>`
+      : `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono);opacity:0.6">via Moralis</div>`;
+    let _mCard = null;
+    if (!isLend && _mTokens.length === 2) {
+      // Pool com par → card pair.
+      _mCard = {
+        variant: 'pair',
+        protocol: mp.protocol,
+        chainName: _mChainName,
+        subLabel: _mSub,
+        chainKey: mp.chain,
+        accent: '#9B6FFF',
+        valueEUR,
+        apy: mp.apy != null ? mp.apy : null,
+        pair: {
+          token0: { symbol: _mTokens[0].symbol, amount: _mTokens[0].amount, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', valueUSD: _mTokens[0].usd || 0 },
+          token1: { symbol: _mTokens[1].symbol, amount: _mTokens[1].amount, addr: _mTokens[1].address || _mTokens[1].tokenAddress || '', valueUSD: _mTokens[1].usd || 0 },
+        },
+        metricsLine: _mMetrics,
+      };
+    } else if (!isLend && _mTokens.length === 1) {
+      // Posição single-token (ex: staking, vault de 1 ativo) → card single.
+      _mCard = {
+        variant: 'single',
+        protocol: mp.protocol,
+        chainName: _mChainName,
+        subLabel: _mSub,
+        chainKey: mp.chain,
+        accent: '#9B6FFF',
+        valueEUR,
+        apy: mp.apy != null ? mp.apy : null,
+        single: { symbol: _mTokens[0].symbol, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', amount: _mTokens[0].amount, valueUSD: _mTokens[0].usd || 0, kindLabel: 'Posição' },
+        metricsLine: _mMetrics,
+      };
+    } else if (isLend) {
+      // Lending via Moralis → card agregado (tokens supplied/borrowed pelo token_type).
+      const _sup = _mTokens.filter(t => !t.isDebt).map(t => ({ symbol: t.symbol, addr: t.address || t.tokenAddress || '' }));
+      const _bor = _mTokens.filter(t => t.isDebt).map(t => ({ symbol: t.symbol, addr: t.address || t.tokenAddress || '' }));
+      const _supUSD = _mTokens.filter(t => !t.isDebt).reduce((s,t) => s + (t.usd||0), 0);
+      const _borUSD = _mTokens.filter(t => t.isDebt).reduce((s,t) => s + (t.usd||0), 0);
+      _mCard = {
+        variant: 'aggregate',
+        protocol: mp.protocol,
+        chainName: _mChainName,
+        subLabel: _mSub,
+        chainKey: mp.chain,
+        accent: '#9B6FFF',
+        icon: (mp.protocol || '?').slice(0, 2).toUpperCase(),
+        valueEUR,
+        aggregate: { collatUSD: _supUSD, debtUSD: _borUSD, ltv: _supUSD > 0 ? (_borUSD/_supUSD*100) : 0, collatTokens: _sup.length?_sup:null, debtTokens: _bor.length?_bor:null },
+        metricsLine: _mMetrics,
+      };
+    }
     _unifiedRows.push({
       kind: isLend ? 'lend' : 'pool',
-      name: _mPoolCard ? `${_mTokens[0].symbol}/${_mTokens[1].symbol}` : mp.protocol,
-      sub: `${mp.protocol} · ${(CHAINS[mp.chain]?.name) || mp.chain}${tokenSummary ? ' · ' + tokenSummary : ''}`,
-      chain: (CHAINS[mp.chain]?.name) || mp.chain,
+      name: _mCard && _mCard.variant === 'pair' ? `${_mTokens[0].symbol}/${_mTokens[1].symbol}` : mp.protocol,
+      sub: `${mp.protocol} · ${_mChainName}${tokenSummary ? ' · ' + tokenSummary : ''}`,
+      chain: _mChainName,
       chainColor: (CHAINS[mp.chain]?.color) || '#888',
       color: '#9B6FFF', // roxo: distingue posições vindas do Moralis
       icon: (mp.protocol || '?').slice(0, 2).toUpperCase(),
       valueEUR,
       status: mp.apy ? `<span style="color:var(--green)">APY ${mp.apy.toFixed(2)}%</span>` : (mp.label || ''),
       health: mp.apy ? { type: 'range', inRange: true, label: `APY ${mp.apy.toFixed(2)}%`, color: 'var(--green)' } : null,
-      cardData: _mPoolCard,
+      cardData: _mCard,
       detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` ($${fmt(t.usd)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: $${fmt(mp.unclaimedUSD)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
     });
   }
