@@ -9541,20 +9541,41 @@ function _getFifoStateFor(w) {
 // poluir a consola nesta sessão. (Teste empírico em Mai/2026: com a chave da
 // empresa a ter todas as redes ligadas, as 36 redes respondem ao browser. Esta
 // marcação dinâmica fica como rede de segurança caso alguma falhe pontualmente.)
-const _alchemyChainUnavailable = new Set();
+// Chains que a chave Alchemy não serve (dão 400/403/404). Persistido em localStorage
+// para não desperdiçar pedidos a cada reload (cada 400 conta para o rate-limit e, em
+// rajada, dispara 429 que faz faltar dados no portfólio). Pré-semeado com as chains
+// que sabemos não estarem no plano Alchemy atual.
+const _ALCHEMY_KNOWN_UNAVAILABLE = ['superseed','metis','mantle','mode','sonic','moonbeam','frax','opbnb','polygonzkevm','bob','flow','sei','astar'];
+let _alchemyChainUnavailable;
+try {
+  const _saved = JSON.parse(localStorage.getItem('_alchemyUnavail_v1') || '[]');
+  _alchemyChainUnavailable = new Set([..._ALCHEMY_KNOWN_UNAVAILABLE, ..._saved]);
+} catch { _alchemyChainUnavailable = new Set(_ALCHEMY_KNOWN_UNAVAILABLE); }
+// Sempre que aprendemos uma nova chain indisponível, persiste (debounced via microtask).
+const _origAdd = _alchemyChainUnavailable.add.bind(_alchemyChainUnavailable);
+_alchemyChainUnavailable.add = function(chain) {
+  _origAdd(chain);
+  try { localStorage.setItem('_alchemyUnavail_v1', JSON.stringify([..._alchemyChainUnavailable])); } catch {}
+  return _alchemyChainUnavailable;
+};
 
-// ── Rate limiter global para a Alchemy ──────────────────────────────────────
-// O free tier da Alchemy tem um limite de pedidos por segundo (CUPS). Com 44
-// redes, disparar tudo ao mesmo tempo dá 429 (Too Many Requests). Este limitador
-// garante um intervalo mínimo entre pedidos, espaçando-os no tempo. Quem usa a
-// sua própria chave paga não nota (o atraso é mínimo); quem usa a chave partilhada
-// fica protegido de rebentar o limite.
+// ── Rate limiter global para a Alchemy (adaptativo) ─────────────────────────
+// O proxy/free tier tem um limite de pedidos por segundo. Com muitas redes +
+// LP readers + Chainlink a dispararem juntos, um gap fixo otimista dá 429 em
+// catadupa (e o portfólio fica sem dados). Este limitador:
+//  (1) espaça os pedidos com um gap base conservador;
+//  (2) AUMENTA o gap dinamicamente quando apanha 429 (backoff), e baixa-o
+//      devagar quando os pedidos voltam a passar. Auto-calibra ao limite real.
 let _alchemyLastCall = 0;
-const _ALCHEMY_MIN_GAP_MS = 22; // ~45 pedidos/seg — o free tier (300 RPS no eth) aguenta bem isto
+const _ALCHEMY_BASE_GAP_MS = 60;   // ~16 req/s base (conservador; o free tier real é bem menor que 300 RPS)
+const _ALCHEMY_MAX_GAP_MS = 600;   // teto do backoff
+let _alchemyGap = _ALCHEMY_BASE_GAP_MS;
+function _alchemyOn429() { _alchemyGap = Math.min(_ALCHEMY_MAX_GAP_MS, Math.round(_alchemyGap * 1.5)); }
+function _alchemyOnOk() { if (_alchemyGap > _ALCHEMY_BASE_GAP_MS) _alchemyGap = Math.max(_ALCHEMY_BASE_GAP_MS, Math.round(_alchemyGap * 0.92)); }
 async function _alchemyThrottle() {
   const now = Date.now();
-  const wait = _alchemyLastCall + _ALCHEMY_MIN_GAP_MS - now;
-  _alchemyLastCall = Math.max(now, _alchemyLastCall + _ALCHEMY_MIN_GAP_MS);
+  const wait = _alchemyLastCall + _alchemyGap - now;
+  _alchemyLastCall = Math.max(now, _alchemyLastCall + _alchemyGap);
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
 }
 
@@ -9584,10 +9605,11 @@ async function _alchemyRpc(chain, method, params, key) {
   // via este método) → marcar como indisponível para não repetir o pedido (evita encher
   // a consola de erros a cada refresh e poupa chamadas).
   if (res.status === 400 || res.status === 404) { _alchemyChainUnavailable.add(chain); return null; }
-  // 429 = rate limit → espera progressiva e tenta até 3x; só desiste no fim
+  // 429 = rate limit → abranda o throttle global (backoff) e tenta até 3x.
   let _retry = 0;
   while (res.status === 429 && _retry < 3) {
     _retry++;
+    _alchemyOn429(); // aumenta o gap global para os próximos pedidos
     await new Promise(r => setTimeout(r, 800 * _retry)); // 0.8s, 1.6s, 2.4s
     try {
       res = await fetch(reqUrl, {
@@ -9598,6 +9620,7 @@ async function _alchemyRpc(chain, method, params, key) {
   }
   if (res.status === 429) return null; // ainda limitado após 3 tentativas — desiste em silêncio
   if (!res.ok) return null; // qualquer outro erro HTTP: silencioso, não estoira o fluxo
+  _alchemyOnOk(); // pedido passou → relaxa o gap devagar
   const j = await res.json();
   if (j.error) {
     const msg = (j.error.message || '').toLowerCase();
@@ -9663,11 +9686,13 @@ async function _rpcBatch(chain, calls, key) {
         body: JSON.stringify(body),
       });
       if (res.status === 403) { _alchemyChainUnavailable.add(chain); for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
-      if (res.status === 429) { // espera e tenta uma vez mais
+      if (res.status === 429) { // abranda o throttle global, espera e tenta uma vez mais
+        _alchemyOn429();
         await new Promise(r => setTimeout(r, 1200));
         res = await fetch(_rpcUrl(chain, key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       if (!res.ok) { for (let k = 0; k < chunk.length; k++) out.push(null); continue; }
+      _alchemyOnOk();
       const j = await res.json();
       if (Array.isArray(j)) {
         j.sort((a, b) => a.id - b.id);
