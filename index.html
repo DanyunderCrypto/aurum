@@ -2031,19 +2031,16 @@ body.stealth-mode .stealth-badge {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
   gap: 0;
-  background: linear-gradient(135deg, rgba(59,130,246,0.035), rgba(59,130,246,0.008));
-  border: 1px solid rgba(59,130,246,0.16);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: var(--radius-lg, 14px);
   overflow: hidden;
   position: relative;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: var(--trans);
 }
-.hero-block::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(135deg, transparent 60%, rgba(59,130,246,0.025));
-}
+.hero-block:hover { border-color: rgba(255,255,255,0.12); }
 
 .hero-main {
   padding: 2.2rem 2.4rem 2rem;
@@ -2172,10 +2169,12 @@ body.stealth-mode .stealth-badge {
   margin-top: 1.5rem;
 }
 .metric-card {
-  background: linear-gradient(135deg, rgba(59,130,246,0.035), rgba(59,130,246,0.008));
-  border: 1px solid rgba(59,130,246,0.16);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: var(--radius-md);
   padding: 1.3rem 1.2rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   transition: transform 200ms var(--easing), border-color 200ms;
 }
 [data-theme="light"] .metric-card {
@@ -2188,7 +2187,7 @@ body.stealth-mode .stealth-badge {
 }
 .metric-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(59,130,246,0.2);
+  border-color: rgba(255,255,255,0.12);
 }
 .metric-label {
   font-family: var(--mono);
@@ -11370,7 +11369,7 @@ function renderDashboardFiscalHero(w) {
   const taxColor = yr.taxEstimateEUR > 0 ? 'sv-red' : 'sv-green';
 
   return `
-    <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:linear-gradient(135deg,rgba(59,130,246,0.06),rgba(59,130,246,0.01));border:1px solid rgba(59,130,246,0.25);border-radius:var(--radius)">
+    <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:var(--radius);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)">
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
         <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.taxEstimate')} · ${currentYear}</div>
@@ -11576,6 +11575,28 @@ function renderDefiPositions(w) {
       </div>
     `);
     const _lbEur = (window._lastEurUsdRate || 0.92);
+    const _isMorpho = key === 'morpho';
+    // cardData normalizado para o card único. Morpho com mercados → 1 card por mercado
+    // (par colSym→loanSym). AAVE / Morpho-agregado → card agregado (colateral/dívida/HF).
+    let _aaveCardData = null;
+    const _morphoMkts = (_isMorpho && Array.isArray(p.positions)) ? p.positions.filter(m => (m.supplyUsd > 0 || m.borrowUsd > 0)) : [];
+    if (!(_isMorpho && _morphoMkts.length)) {
+      // AAVE (ou Morpho sem mercados detalhados): card agregado.
+      _aaveCardData = {
+        variant: 'aggregate',
+        protocol: _isMorpho ? 'Morpho Blue' : 'AAVE V3',
+        chainName: _isMorpho ? 'Multi' : (CHAINS[key]?.name || key),
+        subLabel: `${_isMorpho ? 'MORPHO BLUE' : 'AAVE V3'} · ${(_isMorpho ? 'MULTI-MERCADO' : (CHAINS[key]?.name || key).toUpperCase())}`,
+        icon: _isMorpho ? 'MO' : 'AA',
+        accent: _isMorpho ? '#1C55FE' : '#B6509E',
+        chainKey: key,
+        valueEUR: net * _lbEur,
+        hf: hf || null,
+        aggregate: { collatUSD: collat, debtUSD: debt, ltv: p.ltv || 0, liqThreshold: p.liqThreshold, availableUSD: p.available },
+        link: _isMorpho ? { url: 'https://app.morpho.org', label: 'Abrir em app.morpho.org' }
+                        : { url: `https://app.aave.com/?marketName=proto_${key === 'eth' ? 'mainnet' : key}_v3`, label: 'Abrir em app.aave.com' },
+      };
+    }
     _unifiedRows.push({
       kind: 'lend',
       name: key === 'morpho' ? 'Morpho Blue' : 'AAVE V3',
@@ -11586,6 +11607,27 @@ function renderDefiPositions(w) {
       icon: key === 'morpho' ? 'MO' : 'AA',
       valueEUR: net * _lbEur,
       status: hf ? `HF <span style="color:${hfColor}">${hf.toFixed(2)}</span>` : '',
+      // Morpho com mercados detalhados → array de cards (1 por par). AAVE → 1 card agregado.
+      cardData: _aaveCardData,
+      cardDataList: (_isMorpho && _morphoMkts.length) ? _morphoMkts.map(m => ({
+        variant: 'pair',
+        protocol: 'Morpho Blue',
+        chainName: (m.chain || '').toUpperCase(),
+        subLabel: `${(m.chain||'').toUpperCase()} · ${m.marketKey || ''}`,
+        chainKey: m.chain,
+        pairSep: '→',
+        valueEUR: ((m.collateralUsd || 0) - (m.borrowUsd || 0)) * _lbEur,
+        hf: m.hf || null,
+        pair: {
+          token0: { symbol: m.colSym, amount: m.colAmt, addr: m.colAddr || '', valueUSD: m.collateralUsd },
+          token1: { symbol: m.loanSym, amount: m.borrowAmt, addr: m.loanAddr || '', valueUSD: m.borrowUsd },
+        },
+        metricsLine: `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;font-family:var(--mono)">
+          <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LLTV</div><span style="color:var(--white);font-size:0.85rem">${fmt(m.lltv,1)}%</span></div>
+          <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Borrow APR</div><span style="color:var(--red);font-size:0.85rem">${(m.borrowApy*100).toFixed(2)}%</span></div>
+          <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Utilização</div><span style="color:${m.utilization>0.9?'var(--red)':m.utilization>0.7?'var(--gold)':'var(--green)'};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
+        </div>${m.supplyUsd > 0 ? `<div style="margin-top:0.6rem;font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">Supply (yield): <span style="color:var(--green)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>` : ''}`,
+      })) : null,
       health: hf ? { type: 'hf', value: hf, color: hfColor,
         // HF: 1.0 = liquidação, 2.0+ = muito seguro. Barra: 0% (HF 1) → 100% (HF 2+).
         pct: Math.max(0, Math.min(100, (hf - 1) * 100)),
@@ -12024,78 +12066,21 @@ function renderDefiPositions(w) {
     } else if (r.health && r.health.type === 'range') {
       healthHTML = `<span style="font-size:0.7rem;color:${r.health.color};border:1px solid ${r.health.color}55;border-radius:20px;padding:2px 9px;flex-shrink:0;white-space:nowrap">${r.health.inRange ? '● ' : '○ '}${r.health.label}</span>`;
     }
-    // CARD DEDICADO (B5): pools/vaults/staking ganham um card com a metadata sempre
-    // visível e mais espaço (a aba já mostra só um tipo). Lending mantém a linha compacta
-    // (tem os cards AAVE/Morpho próprios mais abaixo).
+    // CARD ÚNICO: se a row traz cardData (formato normalizado), usa renderDefiCard —
+    // o mesmo card para TODOS os protocolos (AAVE/Morpho/Solana/Moralis/pools/vaults).
+    // Mudar o aspeto = mudar renderDefiCard, propaga a toda a app.
+    if (Array.isArray(r.cardDataList) && r.cardDataList.length) {
+      // Múltiplos cards (ex: Morpho com vários mercados → 1 card por par).
+      return r.cardDataList.map(cd => renderDefiCard(cd)).join('');
+    }
+    if (r.cardData && r.cardData.variant) {
+      return renderDefiCard(r.cardData);
+    }
+    // Sem cardData estruturado: card simples arejado (fallback temporário).
     const isDedicatedCard = (_curTab === 'pools' || _curTab === 'vaults' || _curTab === 'staking');
     if (isDedicatedCard) {
-      const cd = r.cardData;
-      // Pools: card completo estilo-Morpho com logos do par + blocos por token.
-      if (cd && cd.type === 'pool') {
-        const logo0 = typeof tokenLogo==='function' ? tokenLogo(cd.token0.symbol, cd.chainKey, cd.token0.addr||'', 28) : '';
-        const logo1 = typeof tokenLogo==='function' ? tokenLogo(cd.token1.symbol, cd.chainKey, cd.token1.addr||'', 28) : '';
-        const rangeColor = cd.inRange ? 'var(--green)' : 'var(--gold)';
-        return `
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem;margin-bottom:0.9rem">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
-              <div>
-                <div style="display:flex;align-items:center;gap:0.55rem">
-                  <div style="display:flex;align-items:center">
-                    ${logo0}<div style="margin-left:-8px;display:flex">${logo1}</div>
-                  </div>
-                  <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${cd.token0.symbol} / ${cd.token1.symbol}</div>
-                  ${cd.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
-                </div>
-                <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.1em;margin-top:0.3rem">${cd.protocol.toUpperCase()} · ${cd.chainName.toUpperCase()} · ${cd.feeTier}</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:var(--text);line-height:1">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
-                <div style="font-size:0.66rem;color:${rangeColor};margin-top:0.3rem">${cd.inRange ? '● In range' : '○ Out of range'}</div>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-              <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
-                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token0.symbol}</span></div>
-                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(cd.token0.amount||0).toFixed(4)}</div>
-                <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token0.valueUSD)}</div>
-              </div>
-              <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
-                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token1.symbol}</span></div>
-                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(cd.token1.amount||0).toFixed(4)}</div>
-                <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token1.valueUSD)}</div>
-              </div>
-            </div>
-            ${cd.metricsLine ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07)">${cd.metricsLine}</div>` : ''}
-          </div>`;
-      }
-      // Vaults: card com logo do subjacente + bloco de posição.
-      if (cd && cd.type === 'vault') {
-        const vlogo = typeof tokenLogo==='function' ? tokenLogo(cd.asset, cd.chainKey, cd.addr||'', 28) : '';
-        return `
-          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem;margin-bottom:0.9rem">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
-              <div style="display:flex;align-items:center;gap:0.55rem">
-                ${vlogo}
-                <div>
-                  <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${cd.asset}</div>
-                  <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.1em;margin-top:0.3rem">VAULT · ${cd.chainName.toUpperCase()}</div>
-                </div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:var(--text);line-height:1">${r.valueEUR != null ? '€'+fmt(r.valueEUR) : '—'}</div>
-                ${cd.apy != null ? `<div style="font-size:0.66rem;color:var(--green);margin-top:0.3rem">APY ${(cd.apy*100).toFixed(2)}%</div>` : ''}
-              </div>
-            </div>
-            <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
-              <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Subjacente</div>
-              <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(cd.assetsQty)} ${cd.asset}</div>
-              <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.valueUSD)}</div>
-            </div>
-          </div>`;
-      }
-      // Vaults/staking (sem cardData estruturado ainda): card simples mas arejado.
       return `
-        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.3rem;margin-bottom:0.9rem">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.3rem;margin-bottom:0.9rem;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:0.9rem">
             <div style="display:flex;align-items:center;gap:0.7rem;min-width:0">
               <div style="width:40px;height:40px;border-radius:11px;background:${r.color};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.72rem;color:#fff;font-weight:700;flex-shrink:0">${r.icon}</div>
@@ -13069,6 +13054,153 @@ function renderMorphoMarketCard(m) {
     ${m.supplyUsd > 0 ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07);font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">Supply (yield): <span style="color:var(--green)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>`:''}
   </div>`;
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// renderDefiCard — CARD ÚNICO para TODAS as posições DeFi (qualquer protocolo).
+// ------------------------------------------------------------------------
+// Substitui os vários HTMLs de card espalhados. Todos os protocolos (AAVE,
+// Morpho, Kamino, Jito, Raydium, vaults, pools...) alimentam ESTA função com
+// um objeto normalizado `c` e recebem o mesmo aspeto (estilo Morpho aprovado).
+// Mudar o aspeto = mudar AQUI, propaga a toda a app.
+//
+// FORMATO NORMALIZADO (campos de `c`):
+//   variant   : 'pair' | 'aggregate' | 'single'   (obrigatório — define o layout)
+//   protocol  : nome do protocolo (ex: 'Morpho Blue', 'AAVE V3', 'Kamino')
+//   chainName : nome da rede (ex: 'Base', 'Solana')
+//   subLabel  : linha mono pequena por baixo do título (marketKey, feeTier, etc.)
+//   valueEUR  : valor da posição em EUR (mostrado em destaque à direita)
+//   accent    : (opcional) cor de destaque do header
+//   link      : (opcional) { url, label } → rodapé "→ abrir em ..."
+//   // -- métrica principal à direita (escolher UMA) --
+//   hf        : Health Factor (lending) → número colorido + label "Health Factor"
+//   apy       : APY decimal (ex 0.0512) → "APY 5.12%" verde
+//   rangeBadge: { inRange:bool, label } → pílula in/out range (pools)
+//   // -- por variante --
+//   pair      : { token0:{symbol,amount,addr,valueUSD}, token1:{...}, staked? } (variant 'pair')
+//   aggregate : { collatUSD, debtUSD, ltv, liqThreshold, availableUSD } (variant 'aggregate')
+//   single    : { symbol, addr, amount, valueUSD, kindLabel } (variant 'single')
+//   metricsLine: (opcional) HTML extra no rodapé (APRs, supply yield, etc.)
+// ════════════════════════════════════════════════════════════════════════
+function renderDefiCard(c) {
+  const chainKey = c.chainKey || '';
+  const hasLogo = typeof tokenLogo === 'function';
+  // Cor da métrica HF
+  const hfColor = c.hf == null ? 'var(--muted)' : c.hf < 1.2 ? 'var(--red)' : c.hf < 1.5 ? 'var(--gold)' : 'var(--green)';
+
+  // ── Header esquerdo: logos + título ──
+  let headLeft = '';
+  if (c.variant === 'pair' && c.pair) {
+    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 26) : '';
+    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 26) : '';
+    headLeft = `
+      <div style="display:flex;align-items:center;gap:0.55rem">
+        <div style="display:flex;align-items:center">${l0}<div style="margin-left:-8px;display:flex">${l1}</div></div>
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.pair.token0.symbol} ${c.pairSep || '/'} ${c.pair.token1.symbol}</div>
+        ${c.pair.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
+      </div>`;
+  } else if (c.variant === 'single' && c.single) {
+    const sl = hasLogo ? tokenLogo(c.single.symbol, chainKey, c.single.addr || '', 28) : '';
+    headLeft = `
+      <div style="display:flex;align-items:center;gap:0.55rem">
+        ${sl}
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.single.symbol}</div>
+      </div>`;
+  } else {
+    // aggregate (AAVE) — sem par; ícone do protocolo + nome
+    headLeft = `
+      <div style="display:flex;align-items:center;gap:0.55rem">
+        <div style="width:30px;height:30px;border-radius:8px;background:${c.accent || 'var(--gold)'};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.62rem;color:#fff;font-weight:700;flex-shrink:0">${c.icon || (c.protocol || '?').slice(0,2).toUpperCase()}</div>
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.protocol}</div>
+      </div>`;
+  }
+
+  // ── Header direito: valor + métrica principal ──
+  let metricHTML = '';
+  if (c.hf != null) {
+    metricHTML = `<div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:${hfColor};line-height:1">${c.hf.toFixed(3)}</div>
+      <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">Health Factor</div>`;
+  } else if (c.rangeBadge) {
+    const rc = c.rangeBadge.inRange ? 'var(--green)' : 'var(--gold)';
+    metricHTML = `<div style="font-size:0.66rem;color:${rc};margin-top:0.3rem">${c.rangeBadge.inRange ? '● In range' : '○ Out of range'}</div>`;
+  } else if (c.apy != null) {
+    const a = c.apy < 1 ? c.apy * 100 : c.apy;
+    metricHTML = `<div style="font-size:0.66rem;color:var(--green);margin-top:0.3rem">APY ${a.toFixed(2)}%</div>`;
+  }
+  const headRight = `
+    <div style="text-align:right">
+      <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:var(--text);line-height:1">${c.valueEUR != null ? '€' + fmt(c.valueEUR) : '—'}</div>
+      ${metricHTML ? `<div style="margin-top:0.3rem">${metricHTML}</div>` : ''}
+    </div>`;
+
+  // ── Sub-label (mono pequena) ──
+  const subLine = c.subLabel
+    ? `<div style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);letter-spacing:0.1em;margin-top:0.3rem">${c.subLabel}</div>`
+    : '';
+
+  // ── Corpo: blocos por variante ──
+  let body = '';
+  if (c.variant === 'pair' && c.pair) {
+    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 20) : '';
+    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 20) : '';
+    body = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token0.symbol}</span></div>
+          <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token0.amount||0).toFixed(4)}</div>
+          ${c.pair.token0.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token0.valueUSD)}</div>` : ''}
+        </div>
+        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token1.symbol}</span></div>
+          <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token1.amount||0).toFixed(4)}</div>
+          ${c.pair.token1.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token1.valueUSD)}</div>` : ''}
+        </div>
+      </div>`;
+  } else if (c.variant === 'aggregate' && c.aggregate) {
+    const ag = c.aggregate;
+    const ltvColor = ag.ltv > 70 ? 'var(--red)' : ag.ltv > 50 ? 'var(--gold)' : 'var(--green)';
+    body = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
+          <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
+        </div>
+        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
+          <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+        <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LTV</div><span style="font-family:var(--mono);color:${ltvColor};font-size:0.85rem">${fmt(ag.ltv||0,1)}%</span></div>
+        ${ag.liqThreshold != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Liq. Threshold</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(ag.liqThreshold/100).toFixed(2)}%</span></div>` : '<div></div>'}
+        ${ag.availableUSD != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Disponível</div><span style="font-family:var(--mono);color:var(--blue);font-size:0.85rem">$${fmt(ag.availableUSD)}</span></div>` : '<div></div>'}
+      </div>`;
+  } else if (c.variant === 'single' && c.single) {
+    const sg = c.single;
+    body = `
+      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${sg.kindLabel || 'Posição'}</div>
+        <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(sg.amount)} ${sg.symbol}</div>
+        ${sg.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(sg.valueUSD)}</div>` : ''}
+      </div>`;
+  }
+
+  // ── Rodapé: métricas extra + link ──
+  const footer = [
+    c.metricsLine ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07)">${c.metricsLine}</div>` : '',
+    c.link ? `<div style="margin-top:0.85rem;font-family:var(--mono);font-size:0.7rem"><a href="${c.link.url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none">→ ${c.link.label}</a></div>` : '',
+  ].join('');
+
+  return `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:1.4rem;margin-bottom:0.9rem;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem">
+        <div>${headLeft}${subLine}</div>
+        ${headRight}
+      </div>
+      ${body}
+      ${footer}
+    </div>`;
+}
+window.renderDefiCard = renderDefiCard;
 
 function renderPositionsTable() {
   const rows = Object.entries(CHAINS).map(([key,chain])=>{
