@@ -12507,14 +12507,11 @@ function renderPortfolioCharts(w) {
     const _eurRate = (window._lastEurUsdRate || 0.86);
     for (const p of _solDefiPositions) _solDefiEUR += (p.valueUSD || 0) * _eurRate;
     totalPortfolio += _solDefiEUR;
-    // Também entra na alocação por ativo (senão as fatias somam < 100% e o donut não fecha).
-    // Agrupa por categoria para dar leitura útil em vez de uma fatia genérica.
-    for (const p of _solDefiPositions) {
-      const _v = (p.valueUSD || 0) * _eurRate;
-      if (_v < 0.01) continue;
-      const _catLabel = { 'native-staking': 'Staking SOL', 'liquid-staking': 'Liquid Staking', 'lp': 'Pools Solana', 'lending': 'Lending Solana', 'perps': 'Perps Solana' }[p.category] || 'DeFi Solana';
-      allocationMap.set(_catLabel, (allocationMap.get(_catLabel) || 0) + _v);
-    }
+    // NOTA: as posições DeFi (Solana e EVM) NÃO entram no donut "Distribuição por ativo" —
+    // este mostra só os tokens soltos da carteira. As posições DeFi têm o seu donut próprio
+    // (Distribuição DeFi). [FUTURO: desdobrar cada posição DeFi nos tokens subjacentes e
+    // somar à exposição por ativo — staking/pools positivo, dívida de lending subtrai;
+    // requer normalizar símbolos (ETH/WETH) e evitar dupla contagem de receipt tokens.]
   }
 
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
@@ -12671,9 +12668,15 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
+  // O divisor das fatias é a SOMA DAS FATIAS, não o total do património. Assim o anel
+  // fecha sempre os 360°, mesmo que o total inclua valor não representado em fatias
+  // (ex: posições DeFi, que têm o seu próprio donut). As % do donut são relativas ao
+  // que ele mostra (tokens soltos).
+  const sliceTotal = items.reduce((s, [, v]) => s + (v || 0), 0) || total;
+
   let cumulativePct = 0;
   const segments = items.map(([label, value], i) => {
-    const pct = value / total;
+    const pct = value / sliceTotal;
     const dashArray = `${pct * circumference} ${circumference}`;
     const rotation = cumulativePct * 360 - 90;
     cumulativePct += pct;
@@ -12747,8 +12750,8 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
       <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0">
         <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="var(--bg2)" stroke-width="${strokeWidth}"/>
         ${svgSegments}
-        <text x="${center}" y="${center - 6}" text-anchor="middle" style="font-family:var(--display);font-size:1.25rem;font-weight:700;fill:var(--text)">€${fmt(total, 0)}</text>
-        <text x="${center}" y="${center + 16}" text-anchor="middle" style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.12em;fill:var(--text-muted);text-transform:uppercase">Total</text>
+        <text x="${center}" y="${center - 6}" text-anchor="middle" style="font-family:var(--display);font-size:1.25rem;font-weight:700;fill:var(--text)">€${fmt(sliceTotal, 0)}</text>
+        <text x="${center}" y="${center + 16}" text-anchor="middle" style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.12em;fill:var(--text-muted);text-transform:uppercase">Tokens</text>
       </svg>
       <div style="flex:1;min-width:260px;max-height:300px;overflow-y:auto;padding-right:0.5rem">
         ${legend}
