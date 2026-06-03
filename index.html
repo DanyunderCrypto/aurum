@@ -4177,7 +4177,15 @@ const AAVE_CONTRACT_SYMBOL = {'0xd4a0e0b9149bcee3c920d2e00b5de09138fd8bb7':'WETH
 // que reporta mal/incompleto. Cruza os contratos com AAVE_ATOKEN_CONTRACTS e limpa o
 // símbolo (aBascbBTC → cbBTC, variableDebtUSDC → USDC). Zero chamadas extra.
 // Set com TODOS os contratos AAVE (todas as chains) — verificação rápida na captura.
-const _AAVE_ALL_CONTRACTS = new Set(Object.values(AAVE_ATOKEN_CONTRACTS).flat().map(a => a.toLowerCase()));
+// Set com TODOS os contratos AAVE (lazy — construído na 1ª utilização, pois o mapa
+// AAVE_ATOKEN_CONTRACTS é declarado mais abaixo neste ficheiro).
+let __aaveAllContractsCache = null;
+function _aaveAllContracts() {
+  if (!__aaveAllContractsCache) {
+    __aaveAllContractsCache = new Set(Object.values(AAVE_ATOKEN_CONTRACTS).flat().map(a => a.toLowerCase()));
+  }
+  return __aaveAllContractsCache;
+}
 function _aaveTokensFromHoldings(w, chainKey) {
   try {
     const receipts = window['_balCache_' + w.id]?.aaveReceipts || [];
@@ -11116,7 +11124,7 @@ async function fetchRealBalances(w, { force = false } = {}) {
         // MAS se for um aToken/debtToken AAVE conhecido, guardamos à parte: precisamos
         // dele para mostrar os tokens REAIS da posição AAVE (o Moralis reporta mal).
         const _c = (h.contract || '').toLowerCase();
-        if (_c && _AAVE_ALL_CONTRACTS.has(_c)) {
+        if (_c && _aaveAllContracts().has(_c)) {
           aaveReceipts.push({ contract: _c, asset: h.asset, chain: h.chain });
         }
         continue;
