@@ -11767,7 +11767,7 @@ function renderDefiPositions(w) {
         token1: { symbol: lp.token1.symbol, amount: lp.token1.amount, addr: lp.token1.address || lp.token1.contract || '', valueUSD: (lp.token1.amount||0) * (p1||0) },
         metricsLine,
       },
-      detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${lp.token0.symbol}: ${(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
+      detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${lp.token0.symbol}: ${Number(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${Number(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
     });
   }
 
@@ -12056,12 +12056,12 @@ function renderDefiPositions(w) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
               <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
                 <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token0.symbol}</span></div>
-                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${(cd.token0.amount||0).toFixed(4)}</div>
+                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(cd.token0.amount||0).toFixed(4)}</div>
                 <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token0.valueUSD)}</div>
               </div>
               <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
                 <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${logo1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${cd.token1.symbol}</span></div>
-                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${(cd.token1.amount||0).toFixed(4)}</div>
+                <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(cd.token1.amount||0).toFixed(4)}</div>
                 <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(cd.token1.valueUSD)}</div>
               </div>
             </div>
