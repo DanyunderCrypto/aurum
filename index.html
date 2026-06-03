@@ -86,6 +86,12 @@
   --duration:     240ms;
   --duration-fast: 140ms;
   --num: "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  /* Card "vidro" — usado em cards translúcidos. No escuro: branco subtil sobre
+     fundo escuro (efeito vidro). No claro é redefinido para sólido + sombra. */
+  --card-glass:        rgba(255,255,255,0.025);
+  --card-glass-border: rgba(255,255,255,0.07);
+  --card-glass-shadow: none;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -132,6 +138,12 @@
   --glow-gr:      0 1px 2px rgba(15,23,42,0.05), 0 2px 8px rgba(15,23,42,0.04);
   --glow-soft:    0 1px 2px rgba(15,23,42,0.05), 0 4px 16px rgba(15,23,42,0.05);
   --shadow-soft:  0 1px 2px rgba(15,23,42,0.05), 0 4px 16px rgba(15,23,42,0.05);
+
+  /* Card "vidro" no claro: superfície sólida clara + sombra (a profundidade vem
+     da sombra, não do blur). Resolve cards que fundiam com o fundo no modo claro. */
+  --card-glass:        var(--surface);
+  --card-glass-border: var(--border);
+  --card-glass-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
 
 /* ── Light mode: flat surfaces, shadow elevation, no dark-native effects ── */
@@ -1004,8 +1016,9 @@ td.muted  { color:var(--muted); }
 /* ══════════════════════════════════════════════════
    PROGRESS
 ══════════════════════════════════════════════════ */
-.prog-wrap { background:rgba(255,255,255,0.07); height:5px; border-radius:100px; overflow:hidden; min-width:70px; }
-.prog-bar { height:100%; border-radius:100px; transition:width 0.8s ease; }
+.prog-wrap { background:rgba(255,255,255,0.09); height:6px; border-radius:100px; overflow:hidden; min-width:70px; }
+[data-theme="light"] .prog-wrap { background:rgba(15,23,42,0.12); }
+.prog-bar { height:100%; border-radius:100px; transition:width 0.8s ease; min-width:3px; }
 .prog-gold   { background:linear-gradient(90deg,var(--gold),var(--gold2)); box-shadow:0 0 8px rgba(59,130,246,0.4); }
 .prog-green  { background:linear-gradient(90deg,var(--green),#69f0ae); box-shadow:0 0 8px rgba(76,222,138,0.3); }
 .prog-red    { background:linear-gradient(90deg,var(--red),#ff7070); }
@@ -3065,7 +3078,7 @@ body.stealth-mode .stealth-badge {
   </span>
 </button>
 
-<div id="helpPanel" style="position:fixed;bottom:92px;right:24px;z-index:9999;width:380px;max-width:calc(100vw - 48px);max-height:calc(100vh - 140px);background:var(--card,#0E0F15);border:1px solid var(--border,rgba(59,130,246,0.2));border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.5);display:none;flex-direction:column;overflow:hidden">
+<div id="helpPanel" style="position:fixed;bottom:92px;right:24px;z-index:9999;width:380px;max-width:calc(100vw - 48px);max-height:calc(100vh - 140px);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,0.35);display:none;flex-direction:column;overflow:hidden">
   <!-- Cabeçalho -->
   <div style="padding:1.3rem 1.3rem 1rem;background:linear-gradient(135deg,rgba(59,130,246,0.12),rgba(59,130,246,0.02))">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -3078,7 +3091,7 @@ body.stealth-mode .stealth-badge {
   </div>
   <!-- Pesquisa -->
   <div style="padding:0.8rem 1.3rem 0.5rem">
-    <input id="helpSearch" oninput="filterHelpFaqs(this.value)" placeholder="🔍 Procurar ajuda..." style="width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid var(--border,rgba(59,130,246,0.2));background:var(--bg,#030305);color:var(--text,#EDF1F7);font-size:0.85rem;box-sizing:border-box">
+    <input id="helpSearch" oninput="filterHelpFaqs(this.value)" placeholder="🔍 Procurar ajuda..." style="width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:0.85rem;box-sizing:border-box">
   </div>
   <!-- Lista de FAQs -->
   <div id="helpFaqList" style="overflow-y:auto;overflow-x:hidden;padding:0.5rem 1.3rem 1rem;flex:1;word-break:break-word;overflow-wrap:break-word"></div>
@@ -11430,7 +11443,7 @@ function renderDashboardFiscalHero(w) {
   const taxColor = yr.taxEstimateEUR > 0 ? 'sv-red' : 'sv-green';
 
   return `
-    <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:var(--radius);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)">
+    <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:var(--card-glass);border:1px solid var(--card-glass-border);border-radius:var(--radius);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:var(--card-glass-shadow, none)">
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
         <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">${t('kpi.taxEstimate')} · ${currentYear}</div>
@@ -17525,9 +17538,9 @@ function renderFiscal(w) {
           {ok: false, t: `<strong>DMIS / Imposto do Selo</strong> — Airdrops &gt;€500 sujeitos a 10% até dia 20 do mês seguinte.`},
           {ok: false, t: `<strong>Documentação</strong> — Guardar hashes, extratos, ficheiros de import por mínimo 10 anos.`},
         ].map(item => `
-          <div style="display:flex;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid rgba(255,255,255,0.04);align-items:flex-start">
+          <div style="display:flex;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid var(--border-soft);align-items:flex-start">
             <span style="flex-shrink:0;font-size:1rem">${item.ok ? '✅' : '☐'}</span>
-            <span style="font-size:0.88rem;color:${item.ok?'var(--green)':'rgba(240,240,240,0.85)'};line-height:1.5">${item.t}${item.warn ? ` <span style="color:var(--amber)">· ⚠ ${item.warn}</span>` : ''}</span>
+            <span style="font-size:0.88rem;color:${item.ok?'var(--green)':'var(--text)'};line-height:1.5">${item.t}${item.warn ? ` <span style="color:var(--amber)">· ⚠ ${item.warn}</span>` : ''}</span>
           </div>
         `).join('')}
       </div>
