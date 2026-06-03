@@ -92,6 +92,10 @@
   --card-glass:        rgba(255,255,255,0.025);
   --card-glass-border: rgba(255,255,255,0.07);
   --card-glass-shadow: none;
+  /* Bloco interno (recesso) dentro de um card: contrasta com a superfície do card.
+     No escuro = mais escuro; no claro = cinza-frio (redefinido no tema claro). */
+  --card-inset:        rgba(0,0,0,0.22);
+  --card-inset-border: rgba(255,255,255,0.05);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -144,6 +148,9 @@
   --card-glass:        var(--surface);
   --card-glass-border: var(--border);
   --card-glass-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
+  /* Bloco interno no claro: cinza-frio claramente distinto do branco do card. */
+  --card-inset:        rgba(15,23,42,0.05);
+  --card-inset-border: rgba(15,23,42,0.07);
 }
 
 /* ── Light mode: flat surfaces, shadow elevation, no dark-native effects ── */
@@ -471,7 +478,9 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   border-color: rgba(255,255,255,0.12);
 }
 [data-theme="light"] .panel {
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: radial-gradient(rgba(15,23,42,0.04) 0.9px, transparent 0.9px);
+  background-size: 18px 18px;
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
@@ -1107,10 +1116,10 @@ td.muted  { color:var(--muted); }
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.toast.danger  { border-color:var(--red);   box-shadow:0 0 30px rgba(255,68,68,0.3); }
+.toast.danger  { border-color:var(--red);   box-shadow:0 0 24px rgba(220,38,38,0.25); }
 .toast.warn    { border-color:var(--gold);  box-shadow:0 0 20px rgba(59,130,246,0.2); }
-.toast.success { border-color:var(--green); box-shadow:0 0 20px rgba(76,222,138,0.2); }
-.toast.info    { border-color:var(--blue);  box-shadow:0 0 20px rgba(77,166,255,0.2); }
+.toast.success { border-color:var(--green); box-shadow:0 0 20px rgba(52,211,153,0.22); }
+.toast.info    { border-color:var(--blue);  box-shadow:0 0 20px rgba(59,130,246,0.22); }
 @keyframes slideIn { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:translateX(0)} }
 
 /* ══════════════════════════════════════════════════
@@ -2225,12 +2234,16 @@ body.stealth-mode .stealth-badge {
   transition: transform 200ms var(--easing), border-color 200ms;
 }
 [data-theme="light"] .metric-card {
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: radial-gradient(rgba(15,23,42,0.04) 0.9px, transparent 0.9px);
+  background-size: 18px 18px;
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
 [data-theme="light"] .hero-block {
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: radial-gradient(rgba(15,23,42,0.04) 0.9px, transparent 0.9px);
+  background-size: 18px 18px;
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
@@ -3815,7 +3828,7 @@ function setAppLanguage(lang) {
     const w = activeWallet();
     if (w) updateWalletBtn(w);
   }
-  toast(lang === 'pt' ? '🇵🇹 Idioma alterado para Português' : '🇬🇧 Language set to English', 'success');
+  toast(lang === 'pt' ? '🇵🇹 Idioma alterado para Português' : '🇬🇧 Language set to English', 'info');
 }
 window.setAppLanguage = setAppLanguage;
 
@@ -3861,7 +3874,7 @@ function setTheme(theme) {
   render();
   toast(t === 'light'
     ? ((state.lang||'pt')==='en' ? '☀️ Light mode' : '☀️ Modo claro')
-    : ((state.lang||'pt')==='en' ? '🌙 Dark mode' : '🌙 Modo escuro'), 'success');
+    : ((state.lang||'pt')==='en' ? '🌙 Dark mode' : '🌙 Modo escuro'), 'info');
 }
 window.setTheme = setTheme;
 
@@ -4788,7 +4801,7 @@ let debugMode = (() => {
 })();
 window.toggleDebugMode = function() {
   debugMode = !debugMode;
-  toast(`Debug mode ${debugMode ? 'ON' : 'OFF'}`, 'success');
+  toast(`Debug mode ${debugMode ? 'ON' : 'OFF'}`, 'info');
   render();
 };
 document.addEventListener('keydown', e => {
@@ -8840,14 +8853,14 @@ function saveState() {
 function copyMorphoJSON() {
   if (!window._lastMorphoJSON) { toast('Faz Debug Morpho primeiro','warn'); return; }
   navigator.clipboard.writeText(window._lastMorphoJSON).then(()=>{
-    toast('✓ JSON copiado para clipboard','success');
+    toast('✓ JSON copiado para clipboard','info');
   }).catch(e=>{
     // Fallback: open in a textarea
     const ta = document.createElement('textarea');
     ta.value = window._lastMorphoJSON;
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); toast('✓ JSON copiado','success'); }
+    try { document.execCommand('copy'); toast('✓ JSON copiado','info'); }
     catch(e2) { toast('Erro ao copiar — vê na consola','danger'); console.log(window._lastMorphoJSON); }
     document.body.removeChild(ta);
   });
@@ -13259,12 +13272,12 @@ function renderMorphoMarketCard(m) {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.85rem">
-      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+      <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
         <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
         <div style="color:var(--white);font-weight:600;font-size:0.95rem">${m.colAmt.toFixed(4)} ${m.colSym}</div>
         <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.collateralUsd)}</div>
       </div>
-      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+      <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
         <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
         <div style="color:var(--amber);font-weight:600;font-size:0.95rem">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
         <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.borrowUsd)}</div>
@@ -13389,12 +13402,12 @@ function renderDefiCard(c) {
     const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 20) : '';
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token0.symbol}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token0.amount||0).toFixed(4)}</div>
           ${c.pair.token0.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token0.valueUSD)}</div>` : ''}
         </div>
-        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token1.symbol}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token1.amount||0).toFixed(4)}</div>
           ${c.pair.token1.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token1.valueUSD)}</div>` : ''}
@@ -13405,11 +13418,11 @@ function renderDefiCard(c) {
     const ltvColor = ag.ltv > 70 ? 'var(--red)' : ag.ltv > 50 ? 'var(--gold)' : 'var(--green)';
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
-        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
           <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
         </div>
-        <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+        <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
           <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
         </div>
@@ -13422,7 +13435,7 @@ function renderDefiCard(c) {
   } else if (c.variant === 'single' && c.single) {
     const sg = c.single;
     body = `
-      <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
+      <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
         <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${sg.kindLabel || 'Posição'}</div>
         <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(sg.amount)} ${sg.symbol}</div>
         ${sg.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(sg.valueUSD)}</div>` : ''}
@@ -17636,7 +17649,7 @@ async function copyErrorReport() {
     const report = errorLogger.buildReport();
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(report);
-      toast('✓ Relatório copiado — cola num email ou Discord para reportar', 'success');
+      toast('✓ Relatório copiado — cola num email ou Discord para reportar', 'info');
     } else {
       // Fallback: use a temp textarea
       const ta = document.createElement('textarea');
@@ -17647,7 +17660,7 @@ async function copyErrorReport() {
       ta.select();
       document.execCommand('copy');
       document.body.removeChild(ta);
-      toast('✓ Relatório copiado', 'success');
+      toast('✓ Relatório copiado', 'info');
     }
   } catch (err) {
     toast('Falha ao copiar: ' + err.message, 'warn');
