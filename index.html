@@ -11152,14 +11152,14 @@ async function fetchRealBalances(w, { force = false } = {}) {
       }
     }
 
-    // Redes que o Portfolio API NÃO cobre: lê-las pelo método on-chain (poucas,
-    // leve). Assim a cobertura fica completa sem voltar ao monstro de pedidos.
-    // (Só se a carteira tiver endereço EVM — uma carteira só-Solana salta isto.)
-    const _onchainOnly = evmAddr ? Object.keys(ALCHEMY_RPCS)
-      .filter(c => ALCHEMY_RPCS[c] && !PORTFOLIO_API_CHAINS.has(c) && !_alchemyChainUnavailable.has(c)) : [];
-    // Lê cada rede on-chain. Corremos TODAS em paralelo (Promise.all) — o throttle
-    // global (_alchemyThrottle) espaça os pedidos para não rebentar o rate limit,
-    // mas não esperamos uma rede acabar para começar a próxima. Corta muito a demora.
+    // C4 — AUTO-DETEÇÃO PURA: confiamos no Portfolio API para a deteção de saldos.
+    // Ele cobre 23 redes (todas as principais EVM + Soneium, Base, Arbitrum, etc.) numa
+    // só chamada em lote. Já NÃO lemos chain-a-chain as redes fora do Portfolio API
+    // (eram exóticas — mantle/sonic/metis/astar… — que davam 400 e desperdiçavam o
+    // rate-limit). Com a chave partilhada do tier grátis, ler 40 redes por carteira
+    // mataria a chave. Esta é a cura: lê só o que o Portfolio API deteta.
+    // [Reversível: para reativar, repor o filtro antigo sobre Object.keys(ALCHEMY_RPCS).]
+    const _onchainOnly = [];
     async function _readOnchainChain(chain) {
       const out = [];
       try {
@@ -11212,7 +11212,12 @@ async function fetchRealBalances(w, { force = false } = {}) {
     const solDefiPositions = (_solDefi && _solDefi.positions) || [];
 
     const result = { holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions };
-    window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions, aaveReceipts };
+    // C4 — chains ATIVAS: as redes onde a carteira tem mesmo saldo (detetadas pelo
+    // Portfolio API). As leituras caras (AAVE, etc.) passam a correr só nestas, em vez
+    // de em todas as ~40 — cura o rate-limit, crítico com a chave partilhada do tier grátis.
+    const _activeChains = [...new Set(holdings.map(h => h.chain).filter(c => c && c !== 'solana'))];
+    window['_activeChains_' + w.id] = _activeChains;
+    window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions, aaveReceipts, activeChains: _activeChains };
     return result;
   }
   // ── FIM CAMINHO RÁPIDO — se chegou aqui, o Portfolio API falhou: método antigo ──
@@ -19038,11 +19043,20 @@ async function refreshAll() {
   }
   const btn = document.getElementById('refreshBtn');
   if (btn) { btn.textContent='...'; btn.disabled=true; }
-  const chainKeys = Object.keys(CHAINS).filter(k => !CHAINS[k].nonEvm);
+  const allEvmChains = Object.keys(CHAINS).filter(k => !CHAINS[k].nonEvm);
+  // C4 — só sondamos AAVE nas chains ATIVAS da carteira (onde há saldo detetado).
+  // Se ainda não foram detetadas (1º load), usamos as chains onde a AAVE realmente
+  // existe como conjunto seguro — nunca lemos as 40. Cura o rate-limit sem perder a
+  // posição AAVE. Restringe-se sempre às chains que TÊM pool AAVE configurada.
+  const _active = window['_activeChains_' + w.id] || [];
+  const _aaveChains = allEvmChains.filter(k => CHAINS[k].aavePool);
+  const chainKeys = (_active.length
+    ? _aaveChains.filter(k => _active.includes(k))
+    : _aaveChains);
   // STEP 1: Fetch prices FIRST (so subsequent calls have USD context)
   await fetchEurRate();
   console.log('Step 1 done: prices loaded ('+Object.keys(live.prices).length+' tokens)');
-  // STEP 2: HF positions in parallel
+  // STEP 2: HF positions in parallel (só nas chains ativas com pool AAVE)
   const hfResults = await Promise.all(chainKeys.map(k=>fetchHF(k,w.addr).then(p=>({k,p}))));
   hfResults.forEach(({k,p})=>{ live.positions[k]=p; });
   // STEP 3: Fetch Morpho positions
