@@ -518,19 +518,20 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 /* ══════════════════════════════════════════════════
    STATS ROW
 ══════════════════════════════════════════════════ */
-.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--border); border-radius:var(--radius); overflow:hidden; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0.85rem; }
 .stat {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  background: var(--card-glass);
+  border: 1px solid var(--card-glass-border);
+  border-radius: 16px;
   padding: var(--space-md);
   transition: var(--trans);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--card-glass-shadow, none);
 }
 .stat:hover {
   border-color: var(--border2);
-  background: var(--surface-elev);
 }
-.stat:hover { background:var(--bg2); }
 .stat-label {
   font-family: var(--body);
   font-size: 0.7rem;
@@ -814,14 +815,16 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 .lot-card-prog {
   position: relative;
   height: 11px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.09);
   border-radius: 6px;
   overflow: hidden;
   margin-bottom: 0.4rem;
 }
+[data-theme="light"] .lot-card-prog { background: rgba(15,23,42,0.10); }
 .lot-card-prog-bar {
   position: relative;
   height: 100%;
+  min-width: 4px;
   border-radius: 6px;
   transition: width 0.5s cubic-bezier(0.4,0,0.2,1);
   overflow: hidden;
@@ -1599,9 +1602,12 @@ td.muted  { color:var(--muted); }
   gap: 1rem;
   margin-bottom: 1.2rem;
   padding: 0.85rem 1.1rem;
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  background: var(--card-glass);
+  border: 1px solid var(--card-glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--card-glass-shadow, none);
 }
 
 .mempool-pills {
@@ -2239,6 +2245,11 @@ body.stealth-mode .stealth-badge {
   background-size: 18px 18px;
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
+}
+[data-theme="light"] .stat {
+  background-color: var(--surface);
+  background-image: radial-gradient(rgba(15,23,42,0.04) 0.9px, transparent 0.9px);
+  background-size: 18px 18px;
 }
 [data-theme="light"] .hero-block {
   background-color: var(--surface);
