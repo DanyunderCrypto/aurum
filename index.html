@@ -11582,6 +11582,24 @@ function renderDefiPositions(w) {
     const _morphoMkts = (_isMorpho && Array.isArray(p.positions)) ? p.positions.filter(m => (m.supplyUsd > 0 || m.borrowUsd > 0)) : [];
     if (!(_isMorpho && _morphoMkts.length)) {
       // AAVE (ou Morpho sem mercados detalhados): card agregado.
+      // Tokens supplied/borrowed vêm do Moralis (se em cache); senão, mostra só totais.
+      let _collatToks = null, _debtToks = null;
+      if (!_isMorpho) {
+        const _mc = window._moralisApyCache?.[w.id]?.byProto;
+        const _md = _mc && (_mc['aave-v3'] || _mc[Object.keys(_mc).find(k => k.includes('aave')) || '']);
+        if (_md && Array.isArray(_md.positions)) {
+          const _seen = new Set();
+          _collatToks = []; _debtToks = [];
+          for (const x of _md.positions) {
+            if (!x.symbol) continue;
+            const tag = (x.isDebt ? 'd:' : 'c:') + x.symbol;
+            if (_seen.has(tag)) continue; _seen.add(tag);
+            (x.isDebt ? _debtToks : _collatToks).push({ symbol: x.symbol, addr: '' });
+          }
+          if (!_collatToks.length) _collatToks = null;
+          if (!_debtToks.length) _debtToks = null;
+        }
+      }
       _aaveCardData = {
         variant: 'aggregate',
         protocol: _isMorpho ? 'Morpho Blue' : 'AAVE V3',
@@ -11592,7 +11610,7 @@ function renderDefiPositions(w) {
         chainKey: key,
         valueEUR: net * _lbEur,
         hf: hf || null,
-        aggregate: { collatUSD: collat, debtUSD: debt, ltv: p.ltv || 0, liqThreshold: p.liqThreshold, availableUSD: p.available },
+        aggregate: { collatUSD: collat, debtUSD: debt, ltv: p.ltv || 0, liqThreshold: p.liqThreshold, availableUSD: p.available, collatTokens: _collatToks, debtTokens: _debtToks },
         link: _isMorpho ? { url: 'https://app.morpho.org', label: 'Abrir em app.morpho.org' }
                         : { url: `https://app.aave.com/?marketName=proto_${key === 'eth' ? 'mainnet' : key}_v3`, label: 'Abrir em app.aave.com' },
       };
@@ -13093,17 +13111,19 @@ function renderDefiCard(c) {
     const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 26) : '';
     const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 26) : '';
     headLeft = `
-      <div style="display:flex;align-items:center;gap:0.55rem">
+      <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         <div style="display:flex;align-items:center">${l0}<div style="margin-left:-8px;display:flex">${l1}</div></div>
         <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.pair.token0.symbol} ${c.pairSep || '/'} ${c.pair.token1.symbol}</div>
+        ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
         ${c.pair.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
       </div>`;
   } else if (c.variant === 'single' && c.single) {
     const sl = hasLogo ? tokenLogo(c.single.symbol, chainKey, c.single.addr || '', 28) : '';
     headLeft = `
-      <div style="display:flex;align-items:center;gap:0.55rem">
+      <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         ${sl}
         <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.single.symbol}</div>
+        ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
       </div>`;
   } else {
     // aggregate (AAVE) — sem par; ícone do protocolo + nome
@@ -13158,15 +13178,26 @@ function renderDefiCard(c) {
   } else if (c.variant === 'aggregate' && c.aggregate) {
     const ag = c.aggregate;
     const ltvColor = ag.ltv > 70 ? 'var(--red)' : ag.ltv > 50 ? 'var(--gold)' : 'var(--green)';
+    // Logos + símbolos dos tokens em colateral / dívida (quando disponíveis via Moralis).
+    const _tokRow = (toks) => {
+      if (!toks || !toks.length) return '';
+      const chips = toks.slice(0, 4).map(tk => {
+        const lg = hasLogo ? tokenLogo(tk.symbol, chainKey, tk.addr || '', 16) : '';
+        return `<span style="display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.5rem">${lg}<span style="font-family:var(--mono);font-size:0.74rem;color:var(--text)">${tk.symbol}</span></span>`;
+      }).join('');
+      return `<div style="display:flex;align-items:center;flex-wrap:wrap;margin-top:0.4rem">${chips}</div>`;
+    };
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
           <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
+          ${_tokRow(ag.collatTokens)}
         </div>
         <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
           <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
+          ${_tokRow(ag.debtTokens)}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
