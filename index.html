@@ -13126,12 +13126,31 @@ function renderDefiCard(c) {
         ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
       </div>`;
   } else {
-    // aggregate (AAVE) — sem par; ícone do protocolo + nome
-    headLeft = `
-      <div style="display:flex;align-items:center;gap:0.55rem">
-        <div style="width:30px;height:30px;border-radius:8px;background:${c.accent || 'var(--gold)'};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.62rem;color:#fff;font-weight:700;flex-shrink:0">${c.icon || (c.protocol || '?').slice(0,2).toUpperCase()}</div>
-        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.protocol}</div>
-      </div>`;
+    // aggregate (AAVE) — cross-collateral. Se temos tokens, título = "colat → dívida"
+    // com logos; senão, ícone do protocolo + nome.
+    const ag2 = c.aggregate || {};
+    const _ct = ag2.collatTokens || [];
+    const _dt = ag2.debtTokens || [];
+    if (_ct.length || _dt.length) {
+      const _logos = (toks) => toks.slice(0, 3).map(tk => hasLogo ? tokenLogo(tk.symbol, chainKey, tk.addr || '', 26) : '').join('');
+      const _syms = (toks) => toks.slice(0, 3).map(tk => tk.symbol).join(', ') + (toks.length > 3 ? '…' : '');
+      const collatPart = _ct.length ? `${_logos(_ct)}` : '';
+      const debtPart = _dt.length ? `${_logos(_dt)}` : '';
+      headLeft = `
+        <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
+          <div style="display:flex;align-items:center">
+            ${collatPart}${_dt.length ? `<span style="margin:0 0.35rem;color:var(--text-dim);font-family:var(--mono)">→</span>${debtPart}` : ''}
+          </div>
+          <div style="font-family:var(--display);font-size:1.1rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${_ct.length ? _syms(_ct) : '—'}${_dt.length ? ` → ${_syms(_dt)}` : ''}</div>
+          ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
+        </div>`;
+    } else {
+      headLeft = `
+        <div style="display:flex;align-items:center;gap:0.55rem">
+          <div style="width:30px;height:30px;border-radius:8px;background:${c.accent || 'var(--gold)'};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.62rem;color:#fff;font-weight:700;flex-shrink:0">${c.icon || (c.protocol || '?').slice(0,2).toUpperCase()}</div>
+          <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.protocol}</div>
+        </div>`;
+    }
   }
 
   // ── Header direito: valor + métrica principal ──
@@ -13178,26 +13197,15 @@ function renderDefiCard(c) {
   } else if (c.variant === 'aggregate' && c.aggregate) {
     const ag = c.aggregate;
     const ltvColor = ag.ltv > 70 ? 'var(--red)' : ag.ltv > 50 ? 'var(--gold)' : 'var(--green)';
-    // Logos + símbolos dos tokens em colateral / dívida (quando disponíveis via Moralis).
-    const _tokRow = (toks) => {
-      if (!toks || !toks.length) return '';
-      const chips = toks.slice(0, 4).map(tk => {
-        const lg = hasLogo ? tokenLogo(tk.symbol, chainKey, tk.addr || '', 16) : '';
-        return `<span style="display:inline-flex;align-items:center;gap:0.25rem;margin-right:0.5rem">${lg}<span style="font-family:var(--mono);font-size:0.74rem;color:var(--text)">${tk.symbol}</span></span>`;
-      }).join('');
-      return `<div style="display:flex;align-items:center;flex-wrap:wrap;margin-top:0.4rem">${chips}</div>`;
-    };
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
           <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
-          ${_tokRow(ag.collatTokens)}
         </div>
         <div style="padding:0.85rem 0.9rem;background:rgba(255,255,255,0.025);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
           <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
-          ${_tokRow(ag.debtTokens)}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
@@ -13529,15 +13537,11 @@ function renderProtocols(w) {
     ${renderDefiPositions(w)}
 
     ${(window._posActiveTab === 'lending' || !window._posActiveTab) ? `
-      ${activeProtos.length === 0 ? `<div class="alert alert-info" style="margin-top:1.5rem"><span>ℹ</span><div>Nenhuma posição de lend/borrow activa nos protocolos abaixo.</div></div>` : ''}
-
-      ${activeProtos.map(({key,proto})=>renderProtoFullDetail(key, proto, w)).join('')}
-
-      ${(activeProtos.length > 0 && typeof renderSimulator === 'function') ? `
+      ${(typeof renderSimulator === 'function' && activeProtos.length > 0) ? `
         <div style="margin-top:1.5rem">${renderSimulator(w)}</div>
       ` : ''}
 
-      ${inactiveProtos.length > 0 ? `<div class="panel" style="margin-top:1.5rem;border-color:rgba(59,130,246,0.08)">
+      ${inactiveProtos.length > 0 ? `<div class="panel" style="margin-top:1.5rem">
         <div class="panel-head"><span class="panel-title" style="color:var(--muted)">⬡ Sem posição activa</span></div>
         <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem">
           ${inactiveProtos.map(({key,proto})=>`<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.8rem;background:var(--bg2);border-radius:var(--radius);opacity:0.6">
