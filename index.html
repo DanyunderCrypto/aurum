@@ -12507,6 +12507,14 @@ function renderPortfolioCharts(w) {
     const _eurRate = (window._lastEurUsdRate || 0.86);
     for (const p of _solDefiPositions) _solDefiEUR += (p.valueUSD || 0) * _eurRate;
     totalPortfolio += _solDefiEUR;
+    // Também entra na alocação por ativo (senão as fatias somam < 100% e o donut não fecha).
+    // Agrupa por categoria para dar leitura útil em vez de uma fatia genérica.
+    for (const p of _solDefiPositions) {
+      const _v = (p.valueUSD || 0) * _eurRate;
+      if (_v < 0.01) continue;
+      const _catLabel = { 'native-staking': 'Staking SOL', 'liquid-staking': 'Liquid Staking', 'lp': 'Pools Solana', 'lending': 'Lending Solana', 'perps': 'Perps Solana' }[p.category] || 'DeFi Solana';
+      allocationMap.set(_catLabel, (allocationMap.get(_catLabel) || 0) + _v);
+    }
   }
 
   // Expor o saldo total da carteira para o hero do dashboard (tokens + DeFi).
@@ -13667,23 +13675,10 @@ function renderProtocols(w) {
       </div>` : ''}
     ` : ''}
 
-    <details style="margin-top:1.5rem">
-      <summary style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);cursor:pointer;padding:0.75rem 0;border-top:1px solid var(--border);outline:none">
-        ⌄ Protocolos em breve (${comingSoonProtos.length})
-      </summary>
-      <div style="padding-top:0.75rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem">
-        ${comingSoonProtos.map(({key,proto})=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem;opacity:0.55">
-          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
-            ${protocolLogo(key, proto, 22)}
-            <strong style="font-size:0.88rem">${proto.name}</strong>
-            <span class="badge badge-muted" style="margin-left:auto;font-size:0.5rem">Em breve</span>
-          </div>
-          <div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);letter-spacing:0.15em">
-            ${proto.chains.map(c=>c==='solana'?'SOLANA':CHAINS[c]?.name?.slice(0,3).toUpperCase()).filter(Boolean).join(' · ')}
-          </div>
-        </div>`).join('')}
-      </div>
-    </details>
+    <div style="margin-top:1.5rem;padding:0.85rem 1rem;border-top:1px solid var(--border-soft);font-family:var(--mono);font-size:0.66rem;color:var(--text-dim);letter-spacing:0.04em;line-height:1.6;text-align:center">
+      Cobertura automática de 5000+ protocolos EVM e o ecossistema DeFi Solana.
+      As posições aparecem aqui assim que a carteira tiver saldo num protocolo suportado.
+    </div>
   `;
 }
 
