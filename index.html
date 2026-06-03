@@ -92,26 +92,26 @@
    Sprint 9.0: LIGHT MODE — warm off-white, gold preserved
    ═══════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  /* ── Light mode: fundo cinza médio, cards cinza claro com nuance dourada (NÃO branco) ── */
-  --bg:           #D4D2CB;      /* fundo cinza médio-quente */
-  --bg1:          #DEDBD3;      /* cards — cinza claro (não branco), toque dourado */
-  --bg2:          #D6D3CB;      /* recessed / hover */
-  --bg3:          #C9C6BD;
-  --surface:      #DEDBD3;      /* cinza claro quente — claramente cinza, não branco */
-  --surface-elev: #E4E1D9;
-  --surface-soft: rgba(154,118,53,0.05);
+  /* ── Light mode Taxesly: cinza claro FRIO, cards quase-brancos frios, acento azul ── */
+  --bg:           #E8EBEF;      /* fundo cinza claro frio (slate-tinted) */
+  --bg1:          #F4F6F8;      /* cards — quase branco frio */
+  --bg2:          #EDF0F3;      /* recessed / hover */
+  --bg3:          #E2E6EB;
+  --surface:      #F4F6F8;      /* superfície clara fria */
+  --surface-elev: #FBFCFD;
+  --surface-soft: rgba(29,78,216,0.04);
 
-  /* Brand palette — gold kept ONLY as an accent; deepened for legibility on white */
-  --gold:         #9A7635;
-  --gold-glow:    #9A7635;      /* no glow color in light — same as gold */
-  --gold2:        #B8924A;
+  /* Brand palette — azul como acento (identidade Taxesly), escurecido p/ contraste no claro */
+  --gold:         #1D4ED8;      /* "gold" mantém o nome, valor = azul sóbrio (blue-700) */
+  --gold-glow:    #1D4ED8;      /* sem glow no claro — igual ao acento */
+  --gold2:        #2563EB;      /* azul um tom acima para gradientes/realces */
   --amber:        #C2410C;
   --purple:       #5B4FD6;
   --purple-glow:  #5B4FD6;
   --mint:         #047857;
-  --green:        #047857;      /* darker green, readable on white */
+  --green:        #047857;      /* verde escuro, legível em fundo claro */
   --red:          #DC2626;
-  --blue:         #2563EB;
+  --blue:         #1D4ED8;
   --cyan:         #0891B2;
 
   /* Text — cool near-black (slate), not warm */
@@ -307,7 +307,7 @@ a {
 
 /* ══ SCANLINES ══ */
 body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size:22px 22px; }
-[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(154,118,53,0.04) 0.9px, transparent 0.9px); background-size:20px 20px; }
+[data-theme="light"] body::before { display:block !important; background-image:radial-gradient(rgba(15,23,42,0.035) 0.9px, transparent 0.9px); background-size:20px 20px; }
 
 /* ══ ANIMATED BG ══ */
 #ghostCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
@@ -348,9 +348,9 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   color: var(--gold);
   line-height: 1.05;
 }
-[data-theme="light"] .brand-svg .au-grad-0 { stop-color: #B8924A; }
-[data-theme="light"] .brand-svg .au-grad-1 { stop-color: #9A7635; }
-[data-theme="light"] .brand-svg .au-grad-2 { stop-color: #6E5424; }
+[data-theme="light"] .brand-svg .au-grad-0 { stop-color: #3B82F6; }
+[data-theme="light"] .brand-svg .au-grad-1 { stop-color: #1D4ED8; }
+[data-theme="light"] .brand-svg .au-grad-2 { stop-color: #1E3A8A; }
 .brand-version {
   font-family: var(--body);
   font-size: 0.55rem;
@@ -459,12 +459,12 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
   border-color: rgba(255,255,255,0.12);
 }
 [data-theme="light"] .panel {
-  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
-  border: 1px solid rgba(154,118,53,0.22);
-  box-shadow: 0 1px 3px rgba(60,50,30,0.07);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
 [data-theme="light"] .panel:hover {
-  border-color: rgba(154,118,53,0.32);
+  border-color: rgba(29,78,216,0.28);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
@@ -927,8 +927,8 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 2px rgba(59,130,246,0.1); }
 [data-theme="light"] .form-input, [data-theme="light"] .form-select, [data-theme="light"] .form-textarea {
-  background: rgba(154,118,53,0.04);
-  border: 1px solid rgba(154,118,53,0.18);
+  background: var(--surface-elev);
+  border: 1px solid var(--border2);
 }
 .form-select option { background:var(--bg2); }
 .form-note { font-size:0.72rem; color:var(--muted); font-style:italic; line-height:1.4; }
@@ -2212,12 +2212,14 @@ body.stealth-mode .stealth-badge {
   transition: transform 200ms var(--easing), border-color 200ms;
 }
 [data-theme="light"] .metric-card {
-  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
-  border: 1px solid rgba(154,118,53,0.22);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
 [data-theme="light"] .hero-block {
-  background: linear-gradient(135deg, rgba(154,118,53,0.10), rgba(154,118,53,0.02)), var(--surface);
-  border: 1px solid rgba(154,118,53,0.22);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.05), 0 4px 14px rgba(15,23,42,0.05);
 }
 .metric-card:hover {
   transform: translateY(-2px);
@@ -21955,25 +21957,25 @@ function exportAuditReport() {
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.55; }
-  h1 { font-size: 1.9rem; margin-bottom: 0.2rem; color: #9A7635; font-weight: 600; }
+  h1 { font-size: 1.9rem; margin-bottom: 0.2rem; color: #0F172A; font-weight: 700; }
   h2 { font-size: 1.2rem; margin-top: 2.2rem; margin-bottom: 0.5rem; padding-bottom: 0.35rem; border-bottom: 1px solid #ddd; }
   .subtitle { color: #666; font-size: 0.92rem; }
-  .meta { color: #888; font-size: 0.8rem; margin: 1rem 0 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #9A7635; }
-  .meta code { background: #f3efe6; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.78rem; }
+  .meta { color: #888; font-size: 0.8rem; margin: 1rem 0 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #334155; }
+  .meta code { background: #f1f5f9; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.78rem; }
   table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.83rem; }
-  th { background: #f7f3eb; color: #5a4628; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; border-bottom: 2px solid #9A7635; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  th { background: #f1f5f9; color: #334155; padding: 0.5rem 0.7rem; text-align: left; font-weight: 600; border-bottom: 2px solid #334155; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
   td { padding: 0.45rem 0.7rem; border-bottom: 1px solid #eee; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SF Mono", Consolas, monospace; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem; margin: 1.2rem 0; }
   .card { padding: 0.9rem; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
   .card-label { font-size: 0.66rem; text-transform: uppercase; color: #888; letter-spacing: 0.08em; margin-bottom: 0.3rem; }
   .card-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .green { color: #16a34a; } .amber { color: #d97706; } .red { color: #dc2626; } .gold { color: #9A7635; } .muted { color:#999; }
-  .note { background: #fffbef; border-left: 3px solid #d4af7a; padding: 0.9rem 1.1rem; margin: 1rem 0; font-size: 0.84rem; }
+  .green { color: #16a34a; } .amber { color: #d97706; } .red { color: #dc2626; } .gold { color: #334155; } .muted { color:#999; }
+  .note { background: #f8fafc; border-left: 3px solid #475569; padding: 0.9rem 1.1rem; margin: 1rem 0; font-size: 0.84rem; }
   .recon { background:#f5f9f5; border-left:3px solid #16a34a; padding:0.9rem 1.1rem; margin:1rem 0; font-size:0.84rem; }
   .footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid #ddd; font-size: 0.72rem; color: #999; text-align: center; }
   @media print { body { max-width: none; margin: 0; padding: 1cm; } .no-print { display: none; } }
-  .print-btn { background: #9A7635; color: white; padding: 0.55rem 1.1rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.88rem; }
+  .print-btn { background: #1E293B; color: white; padding: 0.55rem 1.1rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.88rem; }
 </style>
 </head>
 <body>
