@@ -448,10 +448,12 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 .panel {
   background: rgba(255,255,255,0.025);
   border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 18px;
+  border-radius: 16px;
   margin-bottom: var(--space-lg);
   overflow: hidden;
   transition: var(--trans);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .panel:hover {
   border-color: rgba(255,255,255,0.12);
@@ -2033,7 +2035,7 @@ body.stealth-mode .stealth-badge {
   gap: 0;
   background: rgba(255,255,255,0.025);
   border: 1px solid rgba(255,255,255,0.07);
-  border-radius: var(--radius-lg, 14px);
+  border-radius: 16px;
   overflow: hidden;
   position: relative;
   backdrop-filter: blur(8px);
@@ -2041,6 +2043,38 @@ body.stealth-mode .stealth-badge {
   transition: var(--trans);
 }
 .hero-block:hover { border-color: rgba(255,255,255,0.12); }
+/* Barra de progresso de carregamento de saldos (no hero do património) */
+.hero-loadbar {
+  width: min(280px, 60%);
+  height: 4px;
+  margin: 0.7rem auto 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  position: relative;
+}
+.hero-loadbar::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--gold, #3B82F6), transparent);
+  animation: heroLoadSlide 1.1s ease-in-out infinite;
+}
+@keyframes heroLoadSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+.hero-loadlabel {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold, #3B82F6);
+  margin-top: 0.5rem;
+  opacity: 0.85;
+}
 
 .hero-main {
   padding: 2.2rem 2.4rem 2rem;
@@ -12515,10 +12549,13 @@ function renderPortfolioCharts(w) {
       totalPortfolio += value;
     }
     if (_proxyActive() || resolveAlchemyKey(w)) {
+      window._balanceFetching = true;
       fetchRealBalances(w).then(b => {
         const h = b && (b.holdings || b);
+        window._balanceFetching = false;
         if (h && h.length > 0) renderDebounced();
-      }).catch(() => {});
+        else renderDebounced(); // re-render para tirar a barra mesmo se vazio
+      }).catch(() => { window._balanceFetching = false; renderDebounced(); });
     }
   }
 
@@ -12948,6 +12985,10 @@ function renderDashboard(w) {
               : `<span class="currency-symbol">$</span>${fmt(netWorth, 2)}`}
         </div>
         ${deltaHTML}
+        ${(window._balanceFetching || _balanceLoading) ? `
+          <div class="hero-loadbar"></div>
+          <div class="hero-loadlabel">A carregar saldos on-chain…</div>
+        ` : ''}
         ${hasLeveraged ? `
         <div style="display:flex;gap:1.5rem;margin-top:0.7rem;justify-content:center">
           <div class="hero-mini-stat">
