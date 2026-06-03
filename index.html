@@ -10703,7 +10703,7 @@ async function fetchSolanaDefiMobula(solAddr) {
           name: pos.name || pname,
           type: pos.type,                 // stake | liquidity | deposit | leverage
           valueUSD,
-          tokens: (pos.tokens || []).map(t => ({ symbol: t.symbol, amount: t.amountFormatted, valueUSD: t.valueUSD })),
+          tokens: (pos.tokens || []).map(t => ({ symbol: t.symbol, amount: t.amountFormatted, valueUSD: t.valueUSD, address: t.address || t.mint || t.tokenAddress || '', isDebt: t.isDebt === true || t.type === 'borrowed' || t.side === 'borrow' })),
           metadata: pos.metadata || null, // health factor, APY, inRange, leverage, etc.
           _source: 'mobula',
         });
@@ -11936,20 +11936,73 @@ function renderDefiPositions(w) {
     if (valueEUR < 0.01) continue;
     solDefiEUR += valueEUR;
     const cm = _catMeta[p.category] || { color: '#888', icon: 'D', label: 'DeFi' };
+    const _solToks = (p.tokens || []).filter(t => t.symbol);
     // Detalhe: tokens da posição + metadata relevante (APY, health factor, in-range, leverage)
-    const tokensHtml = (p.tokens || []).filter(t => t.symbol).map(t =>
+    const tokensHtml = _solToks.map(t =>
       `${fmt(t.amount)} ${t.symbol}${t.valueUSD ? ` ($${(t.valueUSD).toFixed(2)})` : ''}`).join(' + ');
     let metaHtml = '';
     const md = p.metadata || {};
-    if (md.apy && parseFloat(md.apy) > 0) { const a = parseFloat(md.apy); metaHtml += ` · APY ${(a < 1 ? a * 100 : a).toFixed(2)}%`; }
-    if (md.healthFactor) metaHtml += ` · HF ${parseFloat(md.healthFactor).toFixed(2)}`;
+    const _apy = (md.apy && parseFloat(md.apy) > 0) ? (parseFloat(md.apy) < 1 ? parseFloat(md.apy) : parseFloat(md.apy) / 100) : null;
+    const _hf = md.healthFactor ? parseFloat(md.healthFactor) : null;
+    if (_apy) metaHtml += ` · APY ${(_apy * 100).toFixed(2)}%`;
+    if (_hf) metaHtml += ` · HF ${_hf.toFixed(2)}`;
     if (md.inRange !== undefined) metaHtml += md.inRange ? ' · 🟢 in-range' : ' · 🔴 out-of-range';
     if (md.currentLeverage) metaHtml += ` · ${md.currentLeverage}x`;
     if (md.side) metaHtml += ` · ${md.side === 'BUY' ? 'LONG' : 'SHORT'}`;
+
+    // ── cardData normalizado por categoria → card único (mesmo estilo do EVM) ──
+    const _solSub = `${(p.protocol||'').toUpperCase()} · SOLANA`;
+    const _solExtra = [];
+    if (md.currentLeverage) _solExtra.push(`<span style="color:var(--gold)">${md.currentLeverage}x</span>`);
+    if (md.side) _solExtra.push(`<span style="color:${md.side==='BUY'?'var(--green)':'var(--red)'}">${md.side==='BUY'?'LONG':'SHORT'}</span>`);
+    const _solMetrics = (p.metadata && (_apy || _solExtra.length || md.inRange !== undefined))
+      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${[
+          _apy ? `APY <span style="color:var(--green)">${(_apy*100).toFixed(2)}%</span>` : '',
+          ..._solExtra,
+        ].filter(Boolean).join(' · ')} <span style="opacity:0.6">· via Mobula</span></div>`
+      : `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono);opacity:0.6">via Mobula</div>`;
+
+    let _solCard = null;
+    if (p.category === 'lp' && _solToks.length === 2) {
+      // Pool de liquidez Solana → card par.
+      _solCard = {
+        variant: 'pair', protocol: p.protocol, chainName: 'Solana', subLabel: _solSub,
+        chainKey: 'solana', accent: cm.color, valueEUR,
+        rangeBadge: md.inRange !== undefined ? { inRange: !!md.inRange, label: md.inRange ? 'In range' : 'Out of range' } : null,
+        apy: (!md.inRange && _apy) ? _apy : null,
+        pair: {
+          token0: { symbol: _solToks[0].symbol, amount: _solToks[0].amount, addr: _solToks[0].address || _solToks[0].mint || '', valueUSD: _solToks[0].valueUSD },
+          token1: { symbol: _solToks[1].symbol, amount: _solToks[1].amount, addr: _solToks[1].address || _solToks[1].mint || '', valueUSD: _solToks[1].valueUSD },
+        },
+        metricsLine: _solMetrics,
+      };
+    } else if (p.category === 'lending' && (md.healthFactor || _solToks.length > 1)) {
+      // Lending Solana (Kamino) → card agregado com HF e tokens supplied/borrowed.
+      const _sup = _solToks.filter(t => !t.isDebt).map(t => ({ symbol: t.symbol, addr: t.address || t.mint || '' }));
+      const _bor = _solToks.filter(t => t.isDebt).map(t => ({ symbol: t.symbol, addr: t.address || t.mint || '' }));
+      const _supUSD = _solToks.filter(t => !t.isDebt).reduce((s,t) => s + (t.valueUSD||0), 0);
+      const _borUSD = _solToks.filter(t => t.isDebt).reduce((s,t) => s + (t.valueUSD||0), 0);
+      _solCard = {
+        variant: 'aggregate', protocol: p.protocol, chainName: 'Solana', subLabel: _solSub,
+        chainKey: 'solana', accent: cm.color, icon: cm.icon, valueEUR, hf: _hf,
+        aggregate: { collatUSD: _supUSD || (p.valueUSD||0), debtUSD: _borUSD, ltv: _supUSD > 0 ? (_borUSD/_supUSD*100) : 0, collatTokens: _sup.length?_sup:null, debtTokens: _bor.length?_bor:null },
+        metricsLine: _solMetrics,
+      };
+    } else if (_solToks.length >= 1) {
+      // Staking nativo / liquid-staking / lending-1-token / perps → card single.
+      _solCard = {
+        variant: 'single', protocol: p.protocol, chainName: 'Solana', subLabel: _solSub,
+        chainKey: 'solana', accent: cm.color, valueEUR, apy: _apy,
+        single: { symbol: _solToks[0].symbol, addr: _solToks[0].address || _solToks[0].mint || '', amount: _solToks[0].amount, valueUSD: _solToks[0].valueUSD, kindLabel: cm.label },
+        metricsLine: _solMetrics,
+      };
+    }
+
     _unifiedRows.push({
       kind: p.category, name: p.name, sub: `${p.protocol} · Solana${metaHtml}`,
       chain: 'Solana', chainColor: '#9945FF',
       color: cm.color, icon: cm.icon, valueEUR, status: '',
+      cardData: _solCard,
       detailHTML: tokensHtml ? `<div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--mono)">${tokensHtml}</div>` : '',
     });
   }
