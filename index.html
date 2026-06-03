@@ -16904,12 +16904,14 @@ function renderHistory(w) {
                       : '<span style="color:var(--text-muted)">—</span>';
                     const escDay = day.replace(/'/g, '');
                     _html += `
-                      <tr class="hist-day-header" style="cursor:pointer;background:rgba(59,130,246,0.04)" onclick="(function(){const s=window._histCollapsedDays||(window._histCollapsedDays=new Set());s.has('${escDay}')?s.delete('${escDay}'):s.add('${escDay}');render();})()">
-                        <td colspan="10" style="padding:0.5rem 0.75rem;border-top:1px solid var(--border)">
-                          <span style="display:inline-block;width:1rem;color:var(--gold)">${isCollapsed?'▸':'▾'}</span>
-                          <span style="font-weight:600;color:var(--text);font-size:0.8rem">${fmtDayHeader(day)}</span>
-                          <span style="color:var(--text-muted);font-size:0.72rem;margin-left:0.5rem">${evs.length} mov.</span>
-                          <span style="float:right;font-size:0.78rem">${netStr}</span>
+                      <tr class="hist-day-header" style="cursor:pointer" onclick="(function(){const s=window._histCollapsedDays||(window._histCollapsedDays=new Set());s.has('${escDay}')?s.delete('${escDay}'):s.add('${escDay}');render();})()">
+                        <td colspan="10" style="padding:0;border-top:1px solid var(--border);background:rgba(59,130,246,0.07)">
+                          <div style="padding:0.6rem 1.1rem;display:flex;align-items:center;gap:0.5rem">
+                            <span style="color:var(--gold);width:1rem;display:inline-block">${isCollapsed?'▸':'▾'}</span>
+                            <span style="font-weight:600;color:var(--text);font-size:0.8rem">${fmtDayHeader(day)}</span>
+                            <span style="color:var(--text-muted);font-size:0.72rem">${evs.length} mov.</span>
+                            <span style="margin-left:auto;font-size:0.78rem">${netStr}</span>
+                          </div>
                         </td>
                       </tr>`;
                     if (isCollapsed) continue;
