@@ -3610,6 +3610,32 @@ const I18N = {
     'pos.howWeCalc': 'ⓘ Como calculamos estes valores & notas fiscais',
     'pos.collateralSupply': 'Colateral+Supply',
     'pos.collateralBorrow': 'Colateral (borrow)',
+    // Cabeçalhos de tabela (neutros, sem risco fiscal)
+    'th.date': 'Data',
+    'th.card': 'Cartão',
+    'th.description': 'Descrição',
+    'th.category': 'Categoria',
+    'th.value': 'Valor',
+    'th.cashback': 'Cashback',
+    'th.note': 'Nota',
+    'th.lot': 'Lote',
+    'th.acquisition': 'Aquisição',
+    'th.deposit': 'Depósito',
+    'th.network': 'Rede',
+    'th.asset': 'Ativo',
+    'th.qty': 'Qtd',
+    'th.valueEur': 'Valor EUR',
+    'th.days': 'Dias',
+    'th.status': 'Status',
+    'th.exemptOn': 'Isento em',
+    'th.protocol': 'Protocolo',
+    'th.source': 'Origem',
+    'th.line': 'Linha',
+    'th.reason': 'Razão',
+    'th.content': 'Conteúdo',
+    'th.type': 'Tipo',
+    'th.occurrences': 'Ocorrências',
+    'th.explanation': 'Explicação',
   },
   en: {
     // Tabs
@@ -4044,6 +4070,32 @@ const I18N = {
     'pos.howWeCalc': 'ⓘ How we calculate these values & tax notes',
     'pos.collateralSupply': 'Collateral+Supply',
     'pos.collateralBorrow': 'Collateral (borrow)',
+    // Table headers (neutral, no fiscal risk)
+    'th.date': 'Date',
+    'th.card': 'Card',
+    'th.description': 'Description',
+    'th.category': 'Category',
+    'th.value': 'Value',
+    'th.cashback': 'Cashback',
+    'th.note': 'Note',
+    'th.lot': 'Lot',
+    'th.acquisition': 'Acquisition',
+    'th.deposit': 'Deposit',
+    'th.network': 'Network',
+    'th.asset': 'Asset',
+    'th.qty': 'Qty',
+    'th.valueEur': 'Value EUR',
+    'th.days': 'Days',
+    'th.status': 'Status',
+    'th.exemptOn': 'Exempt on',
+    'th.protocol': 'Protocol',
+    'th.source': 'Source',
+    'th.line': 'Line',
+    'th.reason': 'Reason',
+    'th.content': 'Content',
+    'th.type': 'Type',
+    'th.occurrences': 'Occurrences',
+    'th.explanation': 'Explanation',
   },
 };
 
@@ -14474,7 +14526,7 @@ function renderCards(w) {
       <div class="panel-head"><span class="panel-title">Transações ${activeCardId==='all'?'(todos os cartões)':`(${walletCards.find(c=>c.id===activeCardId)?.name||''})`}</span></div>
       <div class="panel-body no-pad">
         ${txs.length?`<div class="table-wrap"><table>
-          <thead><tr><th>Data</th><th>Cartão</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Cashback</th><th>Nota</th><th></th></tr></thead>
+          <thead><tr><th>${t('th.date')}</th><th>${t('th.card')}</th><th>${t('th.description')}</th><th>${t('th.category')}</th><th>${t('th.value')}</th><th>${t('th.cashback')}</th><th>${t('th.note')}</th><th></th></tr></thead>
           <tbody>${[...txs].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,100).map(t=>{
             const card = state.cards.find(c=>c.id===t.cardId);
             const iss = CARD_ISSUERS[card?.issuer||'outro'];
@@ -15401,7 +15453,7 @@ function renderStrategy(w) {
       <div class="panel-head"><span class="panel-title">Detalhe por Lote</span></div>
       <div class="panel-body no-pad">
         ${cols.length?`<div class="table-wrap"><table>
-          <thead><tr><th>Lote</th><th>Aquisição</th><th>Depósito</th><th>Rede</th><th>Ativo</th><th>Qtd</th><th>Valor EUR</th><th>Dias</th><th>Status</th><th>Isento em</th><th>Protocolo</th><th>Origem</th><th>TX</th><th></th></tr></thead>
+          <thead><tr><th>${t('th.lot')}</th><th>${t('th.acquisition')}</th><th>${t('th.deposit')}</th><th>${t('th.network')}</th><th>${t('th.asset')}</th><th>${t('th.qty')}</th><th>${t('th.valueEur')}</th><th>${t('th.days')}</th><th>${t('th.status')}</th><th>${t('th.exemptOn')}</th><th>${t('th.protocol')}</th><th>${t('th.source')}</th><th>TX</th><th></th></tr></thead>
           <tbody>${((granularity === 'month') ? cols : mempoolGroupLots(cols)).map((c,i)=>{
             const held=daysHeld(c.acqDate), isento=held>=365, left=Math.max(0,365-held), pct=Math.min(100,(held/365)*100);
             const iDate=new Date((new Date(c.acqDate+'T12:00:00')).getTime()+365*86400000).toLocaleDateString('pt-PT');
@@ -19904,7 +19956,7 @@ function previewImport() {
     ${validRows.length>0 ? `
       <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--gold);margin-bottom:0.4rem">Primeiras ${validRows.length} válidas</div>
       <table style="width:100%;font-size:0.78rem;margin-bottom:0.75rem">
-        <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+        <thead><tr><th>${t('th.date')}</th><th>${t('th.description')}</th><th style="text-align:right">${t('th.value')}</th></tr></thead>
         <tbody>
           ${validRows.map(r => `<tr><td class="mono">${r.date}</td><td>${r.desc.slice(0,40)}</td><td class="mono" style="text-align:right">€${r.amt.toFixed(2)}</td></tr>`).join('')}
         </tbody>
@@ -19913,7 +19965,7 @@ function previewImport() {
     ${rejectedRows.length>0 ? `
       <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--red);margin-bottom:0.4rem">Linhas rejeitadas (amostra)</div>
       <table style="width:100%;font-size:0.78rem">
-        <thead><tr><th>Linha</th><th>Razão</th><th>Conteúdo</th></tr></thead>
+        <thead><tr><th>${t('th.line')}</th><th>${t('th.reason')}</th><th>${t('th.content')}</th></tr></thead>
         <tbody>
           ${rejectedRows.map(r => `<tr><td class="mono">${r.line}</td><td style="color:var(--red)">${r.reason}</td><td class="mono">"${String(r.raw||'').slice(0,40)}"</td></tr>`).join('')}
         </tbody>
@@ -22502,7 +22554,7 @@ function exportAuditReport() {
 </div>
 ${Object.keys(warnByType).length === 0 ? '<p class="muted">Sem avisos. Cálculo totalmente resolvido.</p>' : `
 <table>
-  <thead><tr><th>Tipo</th><th style="text-align:right">Ocorrências</th><th>Explicação</th></tr></thead>
+  <thead><tr><th>${t('th.type')}</th><th style="text-align:right">${t('th.occurrences')}</th><th>${t('th.explanation')}</th></tr></thead>
   <tbody>
     ${Object.entries(warnByType).sort((a,b)=>b[1]-a[1]).map(([type, n]) =>
       `<tr><td><code>${type}</code></td><td class="num">${n}</td><td>${warnLabels[type] || '—'}</td></tr>`
