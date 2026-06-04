@@ -2792,7 +2792,7 @@ body.stealth-mode .stealth-badge {
       <button class="btn btn-outline btn-sm" id="walletSwitchBtn" onclick="toggleWalletDD()">⬡ <span id="walletBtnLabel">Wallet</span> ▾</button>
       <div class="wallet-dropdown hidden" id="walletDD"></div>
     </div>
-    <button class="btn btn-outline btn-sm" id="langToggleBtn" onclick="toggleLang()" title="PT / EN">🇵🇹</button>
+    <button class="btn btn-outline btn-sm" id="langToggleBtn" onclick="toggleLang()" title="PT / EN" style="padding:0.35rem 0.5rem"></button>
     <button class="btn btn-outline btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark/light">🌙</button>
     <button class="btn btn-outline btn-sm" id="refreshBtn" onclick="refreshAll()">↻</button>
   </div>
@@ -4066,11 +4066,31 @@ window.toggleLang = toggleLang;
 
 // Atualiza a bandeira do botão para refletir o idioma ATIVO.
 // (Mostra a bandeira do idioma atual; clicar troca para o outro.)
+// Bandeiras desenhadas em SVG (não emoji) — funcionam em qualquer sistema, incluindo
+// Windows, que não renderiza emojis de bandeira. ~22x16px, cantos arredondados.
+const _FLAG_PT = `<svg width="22" height="16" viewBox="0 0 22 16" style="display:block;border-radius:2px" xmlns="http://www.w3.org/2000/svg">
+  <rect width="22" height="16" fill="#FF0000"/>
+  <rect width="8.8" height="16" fill="#006600"/>
+  <circle cx="8.8" cy="8" r="3.1" fill="none" stroke="#FFD700" stroke-width="0.9"/>
+  <rect x="7.3" y="6" width="3" height="4" rx="0.5" fill="#fff" stroke="#003399" stroke-width="0.7"/>
+</svg>`;
+const _FLAG_GB = `<svg width="22" height="16" viewBox="0 0 60 30" style="display:block;border-radius:2px" xmlns="http://www.w3.org/2000/svg">
+  <clipPath id="gbc"><rect width="60" height="30"/></clipPath>
+  <g clip-path="url(#gbc)">
+    <rect width="60" height="30" fill="#012169"/>
+    <path d="M0,0 60,30 M60,0 0,30" stroke="#fff" stroke-width="6"/>
+    <path d="M0,0 60,30 M60,0 0,30" stroke="#C8102E" stroke-width="4"/>
+    <path d="M30,0 V30 M0,15 H60" stroke="#fff" stroke-width="10"/>
+    <path d="M30,0 V30 M0,15 H60" stroke="#C8102E" stroke-width="6"/>
+  </g>
+</svg>`;
+
 function _updateLangBtn() {
   const btn = document.getElementById('langToggleBtn');
   if (!btn) return;
   const cur = (state && state.lang) || 'pt';
-  btn.textContent = cur === 'pt' ? '🇵🇹' : '🇬🇧';
+  // Mostra a bandeira do idioma ATIVO; clicar troca para o outro.
+  btn.innerHTML = cur === 'pt' ? _FLAG_PT : _FLAG_GB;
   btn.title = cur === 'pt' ? 'Português → English' : 'English → Português';
 }
 window._updateLangBtn = _updateLangBtn;
