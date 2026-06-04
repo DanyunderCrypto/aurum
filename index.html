@@ -2792,6 +2792,7 @@ body.stealth-mode .stealth-badge {
       <button class="btn btn-outline btn-sm" id="walletSwitchBtn" onclick="toggleWalletDD()">⬡ <span id="walletBtnLabel">Wallet</span> ▾</button>
       <div class="wallet-dropdown hidden" id="walletDD"></div>
     </div>
+    <button class="btn btn-outline btn-sm" id="langToggleBtn" onclick="toggleLang()" title="PT / EN">🇵🇹</button>
     <button class="btn btn-outline btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark/light">🌙</button>
     <button class="btn btn-outline btn-sm" id="refreshBtn" onclick="refreshAll()">↻</button>
   </div>
@@ -3562,6 +3563,40 @@ const I18N = {
     'col.acqDate': 'Data Aquisição *',
     'col.depDate': 'Data Depósito',
     'col.network': 'Rede',
+    // Onboarding (renderSetup)
+    'onb.tagline': 'Crypto taxes · Done right',
+    'onb.sub': 'Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam só no teu browser — nunca num servidor.',
+    'onb.steps': '<span>01</span> Regista a wallet → <span>02</span> A app busca os dados → <span>03</span> Monitoriza tudo',
+    'onb.version': 'v2.0 · dados guardados localmente no teu browser',
+    'onb.firstWallet': '⬡ Primeira Wallet',
+    'onb.name': 'Nome',
+    'onb.namePlaceholder': 'ex: Wallet Principal DeFi',
+    'onb.evmLabel': 'Endereço EVM',
+    'onb.evmHint': '(Ethereum / Base / Arbitrum / etc.)',
+    'onb.solLabel': 'Endereço Solana',
+    'onb.solOptional': '(opcional)',
+    'onb.solPlaceholder': 'Endereço Solana (base58)',
+    'onb.btcLabel': 'Endereço Bitcoin',
+    'onb.btcOptional': '(opcional)',
+    'onb.btcPlaceholder': 'bc1q... ou xpub/ypub/zpub',
+    'onb.tip': '💡 Podes ligar EVM, Solana e Bitcoin na mesma wallet. Os dados on-chain são buscados automaticamente — <strong>não precisas de chaves nem de configurar nada</strong>.',
+    'onb.start': 'INICIAR TRACKING ⬡',
+    // Empty states
+    'empty.noData': 'Sem dados',
+    'empty.noWallet': 'Sem wallet',
+    'empty.noActivePositions': 'Sem posições activas. Clica ↻ para actualizar.',
+    'empty.noRelevantTx': 'Sem transactions relevantes para mostrar.',
+    'empty.noHistory': 'Sem histórico encontrado.',
+    'empty.noUsdTx': 'Nenhuma transacção com valor USD detectado.',
+    'empty.noCards': 'Sem cartões. Adiciona o primeiro acima.',
+    'empty.noCardTx': 'Sem transações. Importa um CSV ou XLSX.',
+    'empty.noLots': 'Sem lotes. Adiciona o primeiro depósito de colateral.',
+    'empty.noLotMatch': 'Nenhum lote corresponde ao filtro.',
+    'empty.noWallets': 'Sem wallets registadas.',
+    'empty.noEventsIndexed': 'Sem eventos indexados ainda',
+    'empty.noSimPositions': 'Sem posições activas para simular. Faz Refresh primeiro.',
+    'empty.noAaveTransfers': 'Nenhuma transferência AAVE encontrada nesta chain.',
+    'empty.no24hChange': 'Sem variação significativa nas últimas 24h',
   },
   en: {
     // Tabs
@@ -3949,6 +3984,40 @@ const I18N = {
     'col.acqDate': 'Acquisition Date *',
     'col.depDate': 'Deposit Date',
     'col.network': 'Network',
+    // Onboarding (renderSetup)
+    'onb.tagline': 'Crypto taxes · Done right',
+    'onb.sub': 'Automatic multi-protocol monitor with a 365-day tax strategy for Portugal.<br>Your data stays only in your browser — never on a server.',
+    'onb.steps': '<span>01</span> Add your wallet → <span>02</span> The app fetches data → <span>03</span> Track everything',
+    'onb.version': 'v2.0 · data stored locally in your browser',
+    'onb.firstWallet': '⬡ First Wallet',
+    'onb.name': 'Name',
+    'onb.namePlaceholder': 'e.g. Main DeFi Wallet',
+    'onb.evmLabel': 'EVM Address',
+    'onb.evmHint': '(Ethereum / Base / Arbitrum / etc.)',
+    'onb.solLabel': 'Solana Address',
+    'onb.solOptional': '(optional)',
+    'onb.solPlaceholder': 'Solana address (base58)',
+    'onb.btcLabel': 'Bitcoin Address',
+    'onb.btcOptional': '(optional)',
+    'onb.btcPlaceholder': 'bc1q... or xpub/ypub/zpub',
+    'onb.tip': '💡 You can link EVM, Solana and Bitcoin in the same wallet. On-chain data is fetched automatically — <strong>no keys or setup needed</strong>.',
+    'onb.start': 'START TRACKING ⬡',
+    // Empty states
+    'empty.noData': 'No data',
+    'empty.noWallet': 'No wallet',
+    'empty.noActivePositions': 'No active positions. Click ↻ to refresh.',
+    'empty.noRelevantTx': 'No relevant transactions to show.',
+    'empty.noHistory': 'No history found.',
+    'empty.noUsdTx': 'No transaction with USD value detected.',
+    'empty.noCards': 'No cards. Add your first one above.',
+    'empty.noCardTx': 'No transactions. Import a CSV or XLSX.',
+    'empty.noLots': 'No lots. Add your first collateral deposit.',
+    'empty.noLotMatch': 'No lot matches the filter.',
+    'empty.noWallets': 'No wallets registered.',
+    'empty.noEventsIndexed': 'No events indexed yet',
+    'empty.noSimPositions': 'No active positions to simulate. Refresh first.',
+    'empty.noAaveTransfers': 'No AAVE transfers found on this chain.',
+    'empty.no24hChange': 'No significant change in the last 24h',
   },
 };
 
@@ -3976,6 +4045,7 @@ function setAppLanguage(lang) {
   saveState();
   document.documentElement.lang = lang;
   applyStaticI18n();
+  if (typeof _updateLangBtn === 'function') _updateLangBtn();
   render();
   // Re-render top-level wallet button labels too
   if (typeof updateWalletBtn === 'function') {
@@ -3985,6 +4055,25 @@ function setAppLanguage(lang) {
   toast(lang === 'pt' ? '🇵🇹 Idioma alterado para Português' : '🇬🇧 Language set to English', 'info');
 }
 window.setAppLanguage = setAppLanguage;
+
+// Alterna PT↔EN a partir do botão de bandeira no cabeçalho.
+function toggleLang() {
+  const cur = (state && state.lang) || 'pt';
+  setAppLanguage(cur === 'pt' ? 'en' : 'pt');
+  _updateLangBtn();
+}
+window.toggleLang = toggleLang;
+
+// Atualiza a bandeira do botão para refletir o idioma ATIVO.
+// (Mostra a bandeira do idioma atual; clicar troca para o outro.)
+function _updateLangBtn() {
+  const btn = document.getElementById('langToggleBtn');
+  if (!btn) return;
+  const cur = (state && state.lang) || 'pt';
+  btn.textContent = cur === 'pt' ? '🇵🇹' : '🇬🇧';
+  btn.title = cur === 'pt' ? 'Português → English' : 'English → Português';
+}
+window._updateLangBtn = _updateLangBtn;
 
 // Apply translations to elements with data-i18n attribute (for static HTML like nav tabs)
 function applyStaticI18n() {
@@ -9122,7 +9211,7 @@ async function testMorphoAPI() {
   const w = activeWallet();
   const el = document.getElementById('histDiagResult');
   if (!el) return;
-  if (!w?.addr) { el.innerHTML = '<span style="color:var(--red)">Sem wallet</span>'; return; }
+  if (!w?.addr) { el.innerHTML = '<span style="color:var(--red)">'+t('empty.noWallet')+'</span>'; return; }
 
   el.innerHTML = '<span style="color:var(--muted)">A consultar Morpho API...</span>';
   const lines = ['<span style="color:var(--muted)">URL: https://api.morpho.org/graphql</span>'];
@@ -9273,7 +9362,7 @@ async function testAlchemyAPI(chainKey) {
 
     const allTx = txs.concat(outTxs);
     if (allTx.length === 0) {
-      lines.push('<span style="color:var(--gold)">Nenhuma transferência AAVE encontrada nesta chain.</span>');
+      lines.push('<span style="color:var(--gold)">'+t('empty.noAaveTransfers')+'</span>');
       lines.push('<span style="color:var(--muted)">Possíveis causas:</span>');
       lines.push('<span style="color:var(--muted)">  • Não tens posição AAVE V3 nesta rede</span>');
       lines.push('<span style="color:var(--muted)">  • A wallet activa não é a que fez o supply</span>');
@@ -9336,6 +9425,7 @@ function boot() {
   // Sprint 9.0: apply persisted theme + language before first render
   if (typeof applyTheme === 'function') applyTheme(state.theme || 'dark');
   if (state.lang) document.documentElement.lang = state.lang;
+  if (typeof _updateLangBtn === 'function') _updateLangBtn();
   startCanvas();
   fetchEurRate();
   render();
@@ -9636,23 +9726,20 @@ function renderSetup() {
     </div>
     <div>
       <div class="setup-title" style="font-family:var(--display);letter-spacing:0.08em;font-weight:600">TAXESLY</div>
-      <div style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.3em;color:var(--gold);opacity:0.7;margin-top:0.5rem;text-transform:uppercase">Crypto taxes · Done right</div>
-      <p class="setup-sub" style="margin-top:1.25rem;text-align:center">Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam só no teu browser — nunca num servidor.</p>
+      <div style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.3em;color:var(--gold);opacity:0.7;margin-top:0.5rem;text-transform:uppercase">${t('onb.tagline')}</div>
+      <p class="setup-sub" style="margin-top:1.25rem;text-align:center">${t('onb.sub')}</p>
     </div>
-    <div class="setup-steps"><span>01</span> Regista a wallet → <span>02</span> A app busca os dados → <span>03</span> Monitoriza tudo</div>
-    <div style="font-family:var(--mono);font-size:0.6rem;color:rgba(59,130,246,0.4)">v2.0 · dados guardados localmente no teu browser</div>
+    <div class="setup-steps">${t('onb.steps')}</div>
+    <div style="font-family:var(--mono);font-size:0.6rem;color:rgba(59,130,246,0.4)">${t('onb.version')}</div>
     <div class="panel" style="width:100%;max-width:520px">
-      <div class="panel-head"><span class="panel-title">⬡ Primeira Wallet</span></div>
+      <div class="panel-head"><span class="panel-title">${t('onb.firstWallet')}</span></div>
       <div class="panel-body">
-        <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="sw_name" placeholder="ex: Wallet Principal DeFi"></div>
-        <div class="form-group"><label class="form-label">Endereço EVM <span style="color:var(--muted)">(Ethereum / Base / Arbitrum / etc.)</span></label><input class="form-input" id="sw_addr" placeholder="0x..."></div>
-        <div class="form-group"><label class="form-label">Endereço Solana <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_sol" placeholder="Endereço Solana (base58)"></div>
-        <div class="form-group"><label class="form-label">Endereço Bitcoin <span style="color:var(--muted)">(opcional)</span></label><input class="form-input" id="sw_btc" placeholder="bc1q... ou xpub/ypub/zpub"></div>
-        <p style="font-size:0.72rem;color:var(--text-muted);margin:0.2rem 0 0.8rem;line-height:1.5">
-          💡 Podes ligar EVM, Solana e Bitcoin na mesma wallet. Os dados on-chain são
-          buscados automaticamente — <strong>não precisas de chaves nem de configurar nada</strong>.
-        </p>
-        <button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:0.5rem" onclick="saveFirstWallet()">INICIAR TRACKING ⬡</button>
+        <div class="form-group"><label class="form-label">${t('onb.name')}</label><input class="form-input" id="sw_name" placeholder="${t('onb.namePlaceholder')}"></div>
+        <div class="form-group"><label class="form-label">${t('onb.evmLabel')} <span style="color:var(--muted)">${t('onb.evmHint')}</span></label><input class="form-input" id="sw_addr" placeholder="0x..."></div>
+        <div class="form-group"><label class="form-label">${t('onb.solLabel')} <span style="color:var(--muted)">${t('onb.solOptional')}</span></label><input class="form-input" id="sw_sol" placeholder="${t('onb.solPlaceholder')}"></div>
+        <div class="form-group"><label class="form-label">${t('onb.btcLabel')} <span style="color:var(--muted)">${t('onb.btcOptional')}</span></label><input class="form-input" id="sw_btc" placeholder="${t('onb.btcPlaceholder')}"></div>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin:0.2rem 0 0.8rem;line-height:1.5">${t('onb.tip')}</p>
+        <button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:0.5rem" onclick="saveFirstWallet()">${t('onb.start')}</button>
       </div>
     </div>
   </div>`;
@@ -13024,7 +13111,7 @@ function renderPortfolioCharts(w) {
 
 // Pure SVG donut chart — now with token logos and per-asset unrealized PnL in the legend
 function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAsset, avgCostByAsset) {
-  if (!items.length || total === 0) return '<div style="text-align:center;color:var(--text-muted);padding:1rem">Sem dados</div>';
+  if (!items.length || total === 0) return '<div style="text-align:center;color:var(--text-muted);padding:1rem">'+t('empty.noData')+'</div>';
 
   const size = 220;
   const strokeWidth = 36;
@@ -13269,7 +13356,7 @@ function renderDashboard(w) {
       <span class="hero-delta-pct">(${delta.abs>=0?'+':''}${delta.pct.toFixed(2)}%)</span>
       <span class="hero-delta-period">· ${delta.days <= 1 ? '1d' : delta.days + 'd'}</span>
     </div>
-  ` : delta ? `<div class="hero-delta neutral"><span>Sem variação significativa nas últimas 24h</span></div>` : `<div class="hero-delta neutral"><span class="hero-delta-period">Recolhendo histórico para mostrar variação 24h…</span></div>`;
+  ` : delta ? `<div class="hero-delta neutral"><span>${t('empty.no24hChange')}</span></div>` : `<div class="hero-delta neutral"><span class="hero-delta-period">Recolhendo histórico para mostrar variação 24h…</span></div>`;
 
   return `
     ${alertHTML}
@@ -13424,7 +13511,7 @@ function renderUnifiedPositions() {
   });
 
   if (rows.length === 0) {
-    return '<div class="empty"><span class="empty-icon">📡</span><p>Sem posições activas. Clica ↻ para actualizar.</p></div>';
+    return '<div class="empty"><span class="empty-icon">📡</span><p>'+t('empty.noActivePositions')+'</p></div>';
   }
 
   // Compute totals
@@ -13884,7 +13971,7 @@ function renderRecentHistory() {
     if (filtered.length === 0) {
       return `<div class="empty">
         <span class="empty-icon">📭</span>
-        <p style="font-size:0.85rem">Sem transactions relevantes para mostrar.</p>
+        <p style="font-size:0.85rem">${t('empty.noRelevantTx')}</p>
         <button class="btn btn-outline btn-sm" onclick="showTab('history')">→ Ver histórico completo</button>
       </div>`;
     }
@@ -13941,7 +14028,7 @@ function renderRecentHistory() {
 
   if (!all.length) {
     return `<div class="empty"><span class="empty-icon">📡</span>
-      <p style="font-size:0.85rem;margin-bottom:1rem">Sem histórico encontrado.</p>
+      <p style="font-size:0.85rem;margin-bottom:1rem">${t('empty.noHistory')}</p>
       <p style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);line-height:1.8">
         ${activeWallet()?.alchemyKey ? '✓ Alchemy Key configurada' : '✗ Sem Alchemy Key — Config'}<br>
         Redes com posição: ${Object.entries(live.positions).filter(([,p])=>p?.totalCollateral>0).map(([k])=>k).join(', ')||'nenhuma'}<br>
@@ -13953,7 +14040,7 @@ function renderRecentHistory() {
   if (!display.length && !showZero) {
     return `<div class="empty">
       <span class="empty-icon">📭</span>
-      <p style="font-size:0.85rem">Nenhuma transacção com valor USD detectado.</p>
+      <p style="font-size:0.85rem">${t('empty.noUsdTx')}</p>
       <p style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);margin-bottom:0.75rem">${all.length} transações foram filtradas por terem valor $0 (internos do aToken, tokens sem cotação).</p>
       <button class="btn btn-outline btn-sm" onclick="state.showZeroValue=true;saveState();render()">Mostrar mesmo assim (${all.length})</button>
     </div>`;
@@ -14309,7 +14396,7 @@ function renderCards(w) {
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Cartões Registados</span></div>
         <div class="panel-body"><div class="cards-grid">
-          ${walletCards.length ? walletCards.map(c=>renderCardVisual(c)).join('') : '<p style="color:var(--muted);font-size:0.85rem">Sem cartões. Adiciona o primeiro acima.</p>'}</div>
+          ${walletCards.length ? walletCards.map(c=>renderCardVisual(c)).join('') : '<p style="color:var(--muted);font-size:0.85rem">'+t('empty.noCards')+'</p>'}</div>
         </div>
       </div>
       <div class="panel">
@@ -14356,7 +14443,7 @@ function renderCards(w) {
               <td><button class="btn btn-danger btn-xs" onclick="deleteTx('${t.id}')">✕</button></td>
             </tr>`;
           }).join('')}</tbody>
-        </table></div>`:`<div class="empty"><span class="empty-icon">💳</span><p>Sem transações. Importa um CSV ou XLSX.</p></div>`}
+        </table></div>`:`<div class="empty"><span class="empty-icon">💳</span><p>${t('empty.noCardTx')}</p></div>`}
       </div>
     </div>
 
@@ -15133,8 +15220,8 @@ function renderStrategy(w) {
           <div class="mempool-section">
             ${toolbar}
             ${displayCols.length ?
-              bucketsMeta.map(renderBucket).join('') || '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'
-              : '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'}
+              bucketsMeta.map(renderBucket).join('') || '<div class="mempool-empty">'+t('empty.noLotMatch')+'</div>'
+              : '<div class="mempool-empty">'+t('empty.noLotMatch')+'</div>'}
           </div>
         `;
       }
@@ -15183,7 +15270,7 @@ function renderStrategy(w) {
                   </tbody>
                 </table>
               </div>
-            ` : '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'}
+            ` : '<div class="mempool-empty">'+t('empty.noLotMatch')+'</div>'}
           </div>
         `;
       }
@@ -15231,7 +15318,7 @@ function renderStrategy(w) {
                 </svg>
                 ${c._count>1?`<span class="mempool-block-count">${c._count}</span>`:''}
               </div>`;
-            }).join('') : '<div class="mempool-empty">Nenhum lote corresponde ao filtro.</div>'}
+            }).join('') : '<div class="mempool-empty">'+t('empty.noLotMatch')+'</div>'}
           </div>
 
           <div class="mempool-legend">
@@ -15293,7 +15380,7 @@ function renderStrategy(w) {
               <td><button class="btn btn-danger btn-xs" onclick="deleteCollateral('${c.id}')">✕</button></td>
             </tr>`;
           }).join('')}</tbody>
-        </table></div>`:`<div class="empty"><span class="empty-icon">📅</span><p>Sem lotes. Adiciona o primeiro depósito de colateral.</p></div>`}
+        </table></div>`:`<div class="empty"><span class="empty-icon">📅</span><p>${t('empty.noLots')}</p></div>`}
       </div>
     </div>
   `;
@@ -15340,7 +15427,7 @@ function renderSimulator(w) {
         </select>
       </div>
       <div class="panel-body">
-        ${simPositions.length === 0 ? '<div class="alert alert-info"><span>ℹ</span><div>Sem posições activas para simular. Faz Refresh primeiro.</div></div>' : '<div id="simAutoCards"></div>'}
+        ${simPositions.length === 0 ? '<div class="alert alert-info"><span>ℹ</span><div>'+t('empty.noSimPositions')+'</div></div>' : '<div id="simAutoCards"></div>'}
       </div>
     </div>
 
@@ -15714,7 +15801,7 @@ function renderWallets() {
 
   return `
     <div class="section-row"><div class="section-label">Gestão de Wallets</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="openCexImportModal()">↑ Importar Exchange (CSV)</button><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">+ Adicionar Wallet</button></div></div>
-    ${state.wallets.length ? groupsHTML : `<div class="empty"><span class="empty-icon">👻</span><p>Sem wallets registadas.</p></div>`}`;
+    ${state.wallets.length ? groupsHTML : `<div class="empty"><span class="empty-icon">👻</span><p>${t('empty.noWallets')}</p></div>`}`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -17121,7 +17208,7 @@ function renderHistory(w) {
         <div class="panel-body">
           <div class="empty" style="padding:3rem 1rem">
             <span class="empty-icon">🌐</span>
-            <p style="font-size:1rem;color:var(--text);margin-top:0.5rem">Sem eventos indexados ainda</p>
+            <p style="font-size:1rem;color:var(--text);margin-top:0.5rem">${t('empty.noEventsIndexed')}</p>
             <p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.5rem;max-width:480px;margin-left:auto;margin-right:auto">
               Clica em <strong>"Indexar Agora"</strong> acima para descarregar toda a actividade on-chain desta wallet. Demora ~30s-2min na primeira vez (depois é incremental).
             </p>
