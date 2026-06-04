@@ -17999,7 +17999,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
     `;
   }
 
-  const { lots, disposals, rewards, warnings, summary } = result;
+  const { lots, disposals, rewards, warnings, summary, undatedCount } = result;
   const yr = summary.byYear[fiscalYear] || {
     anexoG: { qty:0, proceeds:0, basis:0, gain:0, count:0 },
     anexoG1: { qty:0, proceeds:0, basis:0, gain:0, count:0 },
@@ -18021,6 +18021,27 @@ function renderFiscalEngineV2(w, fiscalYear) {
         <span style="font-size:0.7rem;color:var(--text-muted)">FIFO · ${disposals.length} alienações · ${lots.length} lots · ${rewards.length} rewards</span>
       </div>
       <div class="panel-body">
+
+        ${undatedCount > 0 ? `<div class="alert alert-warning" style="margin-bottom:1rem;font-size:0.82rem;align-items:flex-start">
+          <span style="font-size:1rem">⚠️</span>
+          <div>
+            <strong>${lang === 'en'
+              ? `${undatedCount} transactions without a date were excluded from the calculation.`
+              : `${undatedCount} transações sem data foram excluídas do cálculo.`}</strong><br>
+            ${lang === 'en'
+              ? 'These transactions (on newer chains) lack a timestamp, so they cannot be placed in time for FIFO / the 365-day rule. The date is recoverable from the block number.'
+              : 'Estas transações (em chains mais recentes) não têm data, por isso não podem ser situadas no tempo para o FIFO / regra dos 365 dias. A data é recuperável a partir do número do bloco.'}
+            <div style="margin-top:0.6rem">
+              <button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()">${lang === 'en' ? '🕐 Resolve dates now' : '🕐 Resolver datas agora'}</button>
+            </div>
+            <div id="resolveDatesProgress" style="display:none;margin-top:0.6rem">
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
+              <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                <div id="resolveDatesBar" style="height:100%;width:0%;background:var(--gold);transition:width 0.2s"></div>
+              </div>
+            </div>
+          </div>
+        </div>` : ''}
 
         ${(consolidated && _bridgeLinks.length) ? `<div class="alert alert-info" style="font-size:0.78rem;margin-bottom:1rem">
           <span>🔗</span>
@@ -19023,12 +19044,6 @@ function renderSettings(w) {
             <button class="btn btn-blue btn-sm" onclick="testMorphoAPI()">▶ Morpho</button>
             <button class="btn btn-blue btn-sm" onclick="testPricesAPI()" data-i18n="cfg.pricesBtn">▶ Preços</button>
             <button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()" data-i18n="cfg.resolveDates">🕐 Resolver datas em falta</button>
-          </div>
-          <div id="resolveDatesProgress" style="display:none;margin-bottom:0.8rem">
-            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
-            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-              <div id="resolveDatesBar" style="height:100%;width:0%;background:var(--gold);transition:width 0.2s"></div>
-            </div>
           </div>
           <div class="alert alert-info" style="font-size:0.75rem;margin-bottom:0.6rem">
             <span>ℹ</span><div>Wallet activa: <strong style="color:var(--gold)">${activeWallet()?.addr||'nenhuma'}</strong></div>
