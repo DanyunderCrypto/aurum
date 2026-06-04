@@ -3589,6 +3589,20 @@ const I18N = {
     'wallets.groupEvm': 'EVM (Ethereum, Base, Polygon…)',
     'wallets.groupCex': 'Exchanges (CEX)',
     'wallets.groupOther': 'Outras',
+    // Aba Cards
+    'cards.addCard': '+ Cartão',
+    'cards.totalSpend': 'Total Gasto',
+    'cards.txCount': 'transações',
+    'cards.legacyIgnored': 'legacy ignoradas',
+    'cards.activeCards': 'Cartões Activos',
+    'cards.importsLabel': 'Imports',
+    'cards.filesImported': 'ficheiros importados',
+    'cards.registered': 'Cartões Registados',
+    'cards.byCategory': 'Por Categoria',
+    'cards.importToSeeCategories': 'Importa transações para ver categorias.',
+    'cards.importHistory': 'Histórico de Imports',
+    'cards.noCardsYet': 'Ainda sem cartões. Adiciona o primeiro cartão para começar a importar transações.',
+    'cards.cashbackNote': 'O cashback em cripto é tratado como <strong>aquisição gratuita</strong> com valor de aquisição = €EUR à data do recebimento. Ao alienar, é <strong>Categoria G</strong> (mais-valia = preço de venda − basis): isento se detido &gt;365 dias, 28% se &lt;365 dias. Cashback acumulado: <strong>€{cb}</strong> ({lots} lotes).',
     // Onboarding (renderSetup)
     'onb.tagline': 'Crypto taxes · Done right',
     'onb.sub': 'Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam só no teu browser — nunca num servidor.',
@@ -4116,6 +4130,20 @@ const I18N = {
     'wallets.groupEvm': 'EVM (Ethereum, Base, Polygon…)',
     'wallets.groupCex': 'Exchanges (CEX)',
     'wallets.groupOther': 'Other',
+    // Cards tab
+    'cards.addCard': '+ Card',
+    'cards.totalSpend': 'Total Spent',
+    'cards.txCount': 'transactions',
+    'cards.legacyIgnored': 'legacy ignored',
+    'cards.activeCards': 'Active Cards',
+    'cards.importsLabel': 'Imports',
+    'cards.filesImported': 'files imported',
+    'cards.registered': 'Registered Cards',
+    'cards.byCategory': 'By Category',
+    'cards.importToSeeCategories': 'Import transactions to see categories.',
+    'cards.importHistory': 'Import History',
+    'cards.noCardsYet': 'No cards yet. Add your first card to start importing transactions.',
+    'cards.cashbackNote': 'Crypto cashback is treated as a <strong>free acquisition</strong> with acquisition value = €EUR at the date of receipt. On disposal, it is <strong>Category G</strong> (capital gain = sale price − basis): exempt if held &gt;365 days, 28% if &lt;365 days. Accumulated cashback: <strong>€{cb}</strong> ({lots} lots).',
     // Onboarding (renderSetup)
     'onb.tagline': 'Crypto taxes · Done right',
     'onb.sub': 'Automatic multi-protocol monitor with a 365-day tax strategy for Portugal.<br>Your data stays only in your browser — never on a server.',
@@ -14620,12 +14648,12 @@ function renderCards(w) {
         ${walletCards.map(c=>`<button class="btn btn-xs ${activeCardId===c.id?'btn-gold':'btn-outline'}" onclick="setActiveCard('${c.id}')">${c.name}</button>`).join('')}
       </div>
       <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-outline btn-sm" onclick="openModal('modalCard')">+ Cartão</button>
+        <button class="btn btn-outline btn-sm" onclick="openModal('modalCard')">${t('cards.addCard')}</button>
         <button class="btn btn-gold btn-sm" onclick="openImportModal()">↑ Importar</button>
       </div>
     </div>
 
-    ${!walletCards.length?`<div class="alert alert-info"><span>ℹ</span><div>Ainda sem cartões. Adiciona o primeiro cartão para começar a importar transações.</div></div>`:''}
+    ${!walletCards.length?`<div class="alert alert-info"><span>ℹ</span><div>${t('cards.noCardsYet')}</div></div>`:''}
     ${excludedCount > 0 ? `<div class="alert alert-warn" style="margin-bottom:1.2rem">
       <span>⚠</span>
       <div>
@@ -14636,21 +14664,21 @@ function renderCards(w) {
     
 
     <div class="stats-grid" style="margin-bottom:1.3rem">
-      <div class="stat"><div class="stat-label">Total Gasto</div><div class="stat-value sv-blue">€${fmt(totalSpend)}</div><div class="stat-sub">${cardSpends.length} transações${excludedCount > 0 ? ` · ${excludedCount} legacy ignoradas` : ""}</div></div>
+      <div class="stat"><div class="stat-label">${t('cards.totalSpend')}</div><div class="stat-value sv-blue">€${fmt(totalSpend)}</div><div class="stat-sub">${cardSpends.length} ${t('cards.txCount')}${excludedCount > 0 ? ` · ${excludedCount} ${t('cards.legacyIgnored')}` : ""}</div></div>
       <div class="stat"><div class="stat-label">Cashback</div><div class="stat-value sv-green">€${fmt(cashback)}</div><div class="stat-sub">${rewardLots.length} lotes · Cat. G (isento &gt;365d)</div></div>
-      <div class="stat"><div class="stat-label">Cartões Activos</div><div class="stat-value sv-gold">${walletCards.length}</div></div>
-      <div class="stat"><div class="stat-label">Imports</div><div class="stat-value sv-muted">${walletImports.length}</div><div class="stat-sub">ficheiros importados</div></div>
+      <div class="stat"><div class="stat-label">${t('cards.activeCards')}</div><div class="stat-value sv-gold">${walletCards.length}</div></div>
+      <div class="stat"><div class="stat-label">Imports</div><div class="stat-value sv-muted">${walletImports.length}</div><div class="stat-sub">${t('cards.filesImported')}</div></div>
     </div>
 
     <div class="two-col" style="margin-bottom:1.3rem">
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">Cartões Registados</span></div>
+        <div class="panel-head"><span class="panel-title">${t('cards.registered')}</span></div>
         <div class="panel-body"><div class="cards-grid">
           ${walletCards.length ? walletCards.map(c=>renderCardVisual(c)).join('') : '<p style="color:var(--muted);font-size:0.85rem">'+t('empty.noCards')+'</p>'}</div>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-head"><span class="panel-title">Por Categoria</span></div>
+        <div class="panel-head"><span class="panel-title">${t('cards.byCategory')}</span></div>
         <div class="panel-body">
           ${topCats.length ? topCats.map(([cat,val])=>`<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid rgba(255,255,255,0.04)"><span style="font-size:0.85rem">${catEmoji(cat)} ${cat}</span><span style="font-family:var(--mono);color:var(--blue)">€${fmt(val)}</span></div>`).join('')
           : '<p style="color:var(--muted);font-size:0.85rem">Importa transações para ver categorias.</p>'}
@@ -14660,7 +14688,7 @@ function renderCards(w) {
 
     ${walletImports.length?`<div class="panel" style="margin-bottom:1.3rem">
       <div class="panel-head">
-        <span class="panel-title">Histórico de Imports</span>
+        <span class="panel-title">${t('cards.importHistory')}</span>
         <button class="btn btn-danger btn-xs" onclick="clearAllImports()" title="Apaga todos os imports e transações antigos (recomendado se importaste antes do sistema fiscal estar activo)">🧹 Limpar tudo</button>
       </div>
       <div class="panel-body no-pad">
@@ -14698,7 +14726,7 @@ function renderCards(w) {
     </div>
 
     <div class="alert alert-warn" style="margin-top:1rem">
-      <span>⚠</span><div>O cashback em cripto é tratado como <strong>aquisição gratuita</strong> com valor de aquisição = €EUR à data do recebimento. Ao alienar, é <strong>Categoria G</strong> (mais-valia = preço de venda − basis): isento se detido &gt;365 dias, 28% se &lt;365 dias. Cashback acumulado: <strong>€${fmt(cashback)}</strong> (${rewardLots.length} lotes).</div>
+      <span>⚠</span><div>${t('cards.cashbackNote', {cb: fmt(cashback), lots: rewardLots.length})}</div>
     </div>
   `;
 }
@@ -18182,9 +18210,9 @@ function renderFiscal(w) {
         <div class="panel-body">
           <div style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1rem">
             <div>
-              <div class="stat-label">Total Gasto</div>
+              <div class="stat-label">${t('cards.totalSpend')}</div>
               <div class="stat-value sv-blue">€${fmt(totalLoanSpendsEUR)}</div>
-              <div class="stat-sub">${loanSpends.length} transações</div>
+              <div class="stat-sub">${loanSpends.length} ${t('cards.txCount')}</div>
             </div>
           </div>
           <div class="alert alert-info" style="font-size:0.8rem">
