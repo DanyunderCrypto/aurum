@@ -3462,6 +3462,8 @@ const I18N = {
     'fiscalPanel.cashback': '<strong>Cashback em cripto</strong> — aquisição gratuita. Valor de aquisição = EUR à data do recebimento. Tributação só na alienação futura (Cat. G).',
     'fiscalPanel.cardLoan': '<strong>Cartão financiado por empréstimo DeFi</strong> — gastos não são alienação fiscal (capital emprestado).',
     'fiscalPanel.fifoMandatory': '<strong>FIFO obrigatório</strong> por wallet/exchange.',
+    'fiscalPanel.airdropsStaking': '<strong>Airdrops/staking</strong> — se recebidos em moeda fiduciária, tributam já em Cat. E (28%); se recebidos em cripto, ficam "em espera" e tributam como mais-valia (G/G1) só na conversão para fiat (entendimento AT; OCC PT28627; Art. 10º nº 20 CIRS).',
+    'fiscalPanel.stablecoinConversion': '<strong>Conversão para stablecoin</strong> (USDC/USDT) não é tributada — só a passagem final a moeda fiduciária com curso legal (info vinculativa AT, nov. 2025).',
     'fiscalPanel.disclaimer': 'Não substitui aconselhamento profissional. Confirma com contabilista especializado em cripto.',
     'fiscalPanel.colDate': 'Data',
     'fiscalPanel.colAsset': 'Asset',
@@ -3933,6 +3935,8 @@ const I18N = {
     'fiscalPanel.cashback': '<strong>Crypto cashback</strong> — gratis acquisition. Acquisition value = EUR at receipt date. Taxed only on future disposal (Cat. G).',
     'fiscalPanel.cardLoan': '<strong>Card funded by DeFi loan</strong> — spending is not a fiscal disposal (borrowed capital).',
     'fiscalPanel.fifoMandatory': '<strong>FIFO mandatory</strong> per wallet/exchange.',
+    'fiscalPanel.airdropsStaking': '<strong>Airdrops/staking</strong> — if received in fiat currency, they are taxed immediately under Category E (28%); if received in crypto, they are "on hold" and taxed as a capital gain (G/G1) only upon conversion to fiat (Portuguese Tax Authority understanding; OCC PT28627; Art. 10 no. 20 CIRS).',
+    'fiscalPanel.stablecoinConversion': '<strong>Conversion to stablecoin</strong> (USDC/USDT) is not taxed — only the final conversion to legal-tender fiat currency is (binding ruling from the Portuguese Tax Authority, Nov. 2025).',
     'fiscalPanel.disclaimer': 'Does not replace professional advice. Confirm with a tax accountant specialized in crypto.',
     'fiscalPanel.colDate': 'Date',
     'fiscalPanel.colAsset': 'Asset',
@@ -4168,11 +4172,26 @@ window.toggleLang = toggleLang;
 // (Mostra a bandeira do idioma atual; clicar troca para o outro.)
 // Bandeiras desenhadas em SVG (não emoji) — funcionam em qualquer sistema, incluindo
 // Windows, que não renderiza emojis de bandeira. ~22x16px, cantos arredondados.
-const _FLAG_PT = `<svg width="22" height="16" viewBox="0 0 22 16" style="display:block;border-radius:2px" xmlns="http://www.w3.org/2000/svg">
-  <rect width="22" height="16" fill="#FF0000"/>
-  <rect width="8.8" height="16" fill="#006600"/>
-  <circle cx="8.8" cy="8" r="3.1" fill="none" stroke="#FFD700" stroke-width="0.9"/>
-  <rect x="7.3" y="6" width="3" height="4" rx="0.5" fill="#fff" stroke="#003399" stroke-width="0.7"/>
+const _FLAG_PT = `<svg width="22" height="16" viewBox="0 0 600 400" style="display:block;border-radius:2px" xmlns="http://www.w3.org/2000/svg">
+  <rect width="600" height="400" fill="#FF0000"/>
+  <rect width="240" height="400" fill="#006600"/>
+  <g transform="translate(240,200)">
+    <circle r="78" fill="#FFD000" stroke="#8a6d00" stroke-width="4"/>
+    <ellipse rx="78" ry="30" fill="none" stroke="#8a6d00" stroke-width="6"/>
+    <ellipse rx="30" ry="78" fill="none" stroke="#8a6d00" stroke-width="5"/>
+    <line x1="-78" y1="0" x2="78" y2="0" stroke="#8a6d00" stroke-width="5"/>
+  </g>
+  <g transform="translate(240,200)">
+    <path d="M-48,-62 L48,-62 L48,30 Q48,64 0,80 Q-48,64 -48,30 Z" fill="#fff" stroke="#003399" stroke-width="6"/>
+    <path d="M-30,-44 L30,-44 L30,24 Q30,48 0,60 Q-30,48 -30,24 Z" fill="#FF0000" stroke="#fff" stroke-width="3"/>
+    <g fill="#fff">
+      <circle cx="0" cy="-26" r="6"/>
+      <circle cx="0" cy="18" r="6"/>
+      <circle cx="-16" cy="-4" r="6"/>
+      <circle cx="16" cy="-4" r="6"/>
+      <circle cx="0" cy="-4" r="6"/>
+    </g>
+  </g>
 </svg>`;
 const _FLAG_GB = `<svg width="22" height="16" viewBox="0 0 60 30" style="display:block;border-radius:2px" xmlns="http://www.w3.org/2000/svg">
   <clipPath id="gbc"><rect width="60" height="30"/></clipPath>
@@ -17890,8 +17909,8 @@ function renderFiscal(w) {
           <li>${t('fiscalPanel.cashback')}</li>
           <li>${t('fiscalPanel.cardLoan')}</li>
           <li>${t('fiscalPanel.fifoMandatory')}</li>
-          <li><strong>Airdrops/staking</strong> — se recebidos em moeda fiduciária, tributam já em Cat. E (28%); se recebidos em cripto, ficam "em espera" e tributam como mais-valia (G/G1) só na conversão para fiat (entendimento AT; OCC PT28627; Art. 10º nº 20 CIRS).</li>
-          <li><strong>Conversão para stablecoin</strong> (USDC/USDT) não é tributada — só a passagem final a moeda fiduciária com curso legal (info vinculativa AT, nov. 2025).</li>
+          <li>${t('fiscalPanel.airdropsStaking')}</li>
+          <li>${t('fiscalPanel.stablecoinConversion')}</li>
         </ul>
         ${t('fiscalPanel.disclaimer')}
       </div>
