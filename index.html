@@ -11756,7 +11756,25 @@ async function fetchRealBalances(w, { force = false } = {}) {
     // C4 — chains ATIVAS: as redes onde a carteira tem mesmo saldo (detetadas pelo
     // Portfolio API). As leituras caras (AAVE, etc.) passam a correr só nestas, em vez
     // de em todas as ~40 — cura o rate-limit, crítico com a chave partilhada do tier grátis.
-    const _activeChains = [...new Set(holdings.map(h => h.chain).filter(c => c && c !== 'solana'))];
+    // AFINAÇÃO: uma chain só conta como ativa se tiver ≥1 token NÃO-spam. Evita que
+    // chains cheias só de airdrops de scam (ex: Avalanche) entrem e gerem leituras
+    // desnecessárias. Filtramos por SPAM (não por valor) de propósito: filtrar por valor
+    // excluiria posições reais de baixo valor — mau num produto fiscal. O histórico fica
+    // protegido noutra camada (indexação = ativas + chains com histórico).
+    const _holdingIsSpam = (h) => {
+      try {
+        const _eng = window.aurumFifoEngine;
+        if (!_eng || typeof _eng.isSpamToken !== 'function') return false;
+        return _eng.isSpamToken({
+          asset: h.asset, assetName: h.asset, chain: h.chain,
+          assetContract: h.contract,
+          priceUSD: h._portfolioPriceUSD || 0,
+          amount: h.qty, direction: 'in',
+        });
+      } catch { return false; } // em dúvida, NÃO marca spam (não exclui chain real)
+    };
+    const _nonSpamHoldings = holdings.filter(h => h.chain && h.chain !== 'solana' && !_holdingIsSpam(h));
+    const _activeChains = [...new Set(_nonSpamHoldings.map(h => h.chain))];
     window['_activeChains_' + w.id] = _activeChains;
     window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions, aaveReceipts, activeChains: _activeChains };
     return result;
