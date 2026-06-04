@@ -5591,8 +5591,16 @@ const alchemyAdapter = (() => {
     }
 
     const addrLower = String(address).toLowerCase();
+    // A categoria 'internal' só é suportada pela Alchemy em ETH e Polygon. Pedi-la
+    // noutras chains (Arbitrum, Optimism, Linea, BSC, zkSync…) faz a Alchemy REJEITAR
+    // a chamada inteira → 0 transações indexadas nessas redes. Por isso ajustamos as
+    // categorias por chain: 'internal' apenas onde é suportada.
+    const _INTERNAL_OK = (chain === 'eth' || chain === 'polygon');
+    const _categories = _INTERNAL_OK
+      ? TRANSFER_CATEGORIES
+      : TRANSFER_CATEGORIES.filter(c => c !== 'internal');
     const baseParams = {
-      category: TRANSFER_CATEGORIES,
+      category: _categories,
       withMetadata: true,
       excludeZeroValue: true,
       maxCount: '0x3e8',  // 1000 in hex
@@ -8587,7 +8595,11 @@ const universalIndexer = (() => {
       durationMs: 0,
     };
 
-    const chains = INDEXER_SUPPORTED_CHAINS;
+    // Por defeito indexa todas as suportadas; mas se opts.chains for dado, indexa só
+    // essas (usado para indexar apenas as chains ativas que ainda faltam — C4).
+    const chains = (Array.isArray(opts.chains) && opts.chains.length)
+      ? opts.chains.filter(c => INDEXER_SUPPORTED_CHAINS.includes(c))
+      : INDEXER_SUPPORTED_CHAINS;
     let chainIdx = 0;
 
     for (const chain of chains) {
