@@ -3001,7 +3001,7 @@ body.stealth-mode .stealth-badge {
       <div class="form-group"><label class="form-label" data-i18n="cex.accountLabel">Nome da conta</label><input class="form-input" id="cex_label" data-i18n-placeholder="cex.accountPlaceholder" placeholder="ex: Binance principal" value="main"></div>
     </div>
     <div class="alert alert-info" id="cexHint" style="margin-bottom:1rem;font-size:0.8rem">
-      <span>ℹ</span><div>Exporta o teu <strong>Transaction History</strong> da Binance em CSV e arrasta-o aqui. O formato é auto-detetado.</div>
+      <span>ℹ</span><div data-i18n-html="cexHint.binance">Exporta o teu <strong>Transaction History</strong> da Binance em CSV e arrasta-o aqui. O formato é auto-detetado.</div>
     </div>
     <div class="drop-zone" id="cexDropZone"
        onclick="document.getElementById('cexFileInput').click()"
@@ -3647,6 +3647,33 @@ const I18N = {
     'dash.addCollateralNow': 'Adiciona colateral ou reduz dívida imediatamente.',
     'dash.collecting24h': 'Recolhendo histórico para mostrar variação 24h…',
     'dash.totalNetWorth': 'Património total',
+    // Hints de importação de exchange (CSV)
+    'cexHint.binance': 'Exporta o teu <strong>Transaction History</strong> (CSV) em Wallet → Transaction History → Export. O formato ledger é auto-detetado.',
+    'cexHint.kraken': 'Exporta o <strong>Ledgers</strong> CSV em History → Export → Ledgers. (Adaptador provisório — confirma o preview.)',
+    'cexHint.other': 'Se o formato não for reconhecido, vais poder mapear as colunas manualmente a seguir.',
+    // Config / diagnóstico
+    'cfg.allWorking': '<strong>Já está tudo a funcionar</strong> — a app usa a chave da Taxesly por defeito, não precisas de criar nada.',
+    'cfg.recommendedOption': 'é a opção recomendada e funciona para todas as chains.',
+    'cfg.signupFree': '→ Sign Up grátis',
+    'cfg.diagnostics': '🔧 Diagnóstico',
+    'cfg.rpcTest': 'Teste de Conexão RPC',
+    'cfg.rpcTestDesc': 'Verifica se a app consegue ligar a cada rede e ler a tua posição.',
+    'cfg.testConnection': '▶ Testar Conexão',
+    'cfg.historyDiag': 'Diagnóstico de Histórico',
+    'cfg.pricesBtn': '▶ Preços',
+    'cfg.copyReport': '📋 Copiar Relatório',
+    'cfg.homepage': '🌐 Página inicial',
+    'cfg.invalidHash': 'Hash inválido. Deve começar por 0x e ter 66 caracteres.',
+    'cfg.txNotFound': 'Transação não encontrada em nenhuma das redes pesquisadas.',
+    'cfg.addCardFirst': 'Adiciona um cartão primeiro',
+    'cfg.dontMap': '— Não mapear —',
+    'cfg.keyWorkingOpt': 'Opcional: se quiseres usar a tua própria chave Alchemy (para não partilhares a quota partilhada), cola-a abaixo.',
+    'cfg.alchemyStep1': 'alchemy.com → Sign Up grátis',
+    'cfg.alchemyStep2cfg': 'Create App → selecciona a chain (ex: Base)',
+    'cfg.alchemyStep3cfg': 'Copia a API Key e cola abaixo',
+    'cfg.alchemyKeyLabel': 'Alchemy API Key',
+    'cfg.alchemyConfigured': '✓ Configurada',
+    'cfg.alchemyKeyPlaceholder': 'Cola aqui a tua Alchemy API Key',
   },
   en: {
     // Tabs
@@ -4121,6 +4148,33 @@ const I18N = {
     'dash.addCollateralNow': 'Add collateral or reduce debt immediately.',
     'dash.collecting24h': 'Collecting history to show 24h change…',
     'dash.totalNetWorth': 'Total Net Worth',
+    // Exchange import hints (CSV)
+    'cexHint.binance': 'Export your <strong>Transaction History</strong> (CSV) in Wallet → Transaction History → Export. The ledger format is auto-detected.',
+    'cexHint.kraken': 'Export the <strong>Ledgers</strong> CSV in History → Export → Ledgers. (Provisional adapter — check the preview.)',
+    'cexHint.other': 'If the format is not recognized, you will be able to map the columns manually next.',
+    // Config / diagnostics
+    'cfg.allWorking': '<strong>Everything is already working</strong> — the app uses the Taxesly key by default, you don\'t need to create anything.',
+    'cfg.recommendedOption': 'is the recommended option and works for all chains.',
+    'cfg.signupFree': '→ Sign Up free',
+    'cfg.diagnostics': '🔧 Diagnostics',
+    'cfg.rpcTest': 'RPC Connection Test',
+    'cfg.rpcTestDesc': 'Checks whether the app can connect to each network and read your position.',
+    'cfg.testConnection': '▶ Test Connection',
+    'cfg.historyDiag': 'History Diagnostics',
+    'cfg.pricesBtn': '▶ Prices',
+    'cfg.copyReport': '📋 Copy Report',
+    'cfg.homepage': '🌐 Homepage',
+    'cfg.invalidHash': 'Invalid hash. Must start with 0x and be 66 characters long.',
+    'cfg.txNotFound': 'Transaction not found on any of the searched networks.',
+    'cfg.addCardFirst': 'Add a card first',
+    'cfg.dontMap': '— Don\'t map —',
+    'cfg.keyWorkingOpt': 'Optional: if you want to use your own Alchemy key (to avoid sharing the shared quota), paste it below.',
+    'cfg.alchemyStep1': 'alchemy.com → Sign Up free',
+    'cfg.alchemyStep2cfg': 'Create App → select the chain (e.g. Base)',
+    'cfg.alchemyStep3cfg': 'Copy the API Key and paste it below',
+    'cfg.alchemyKeyLabel': 'Alchemy API Key',
+    'cfg.alchemyConfigured': '✓ Configured',
+    'cfg.alchemyKeyPlaceholder': 'Paste your Alchemy API Key here',
   },
 };
 
@@ -8720,9 +8774,9 @@ window.openCexImportModal = openCexImportModal;
 function updateCexHint() {
   const ex = document.getElementById('cex_exchange')?.value || 'binance';
   const hints = {
-    binance: 'Exporta o teu <strong>Transaction History</strong> (CSV) em Wallet → Transaction History → Export. O formato ledger é auto-detetado.',
-    kraken: 'Exporta o <strong>Ledgers</strong> CSV em History → Export → Ledgers. (Adaptador provisório — confirma o preview.)',
-    other: 'Se o formato não for reconhecido, vais poder mapear as colunas manualmente a seguir.',
+    binance: t('cexHint.binance'),
+    kraken: t('cexHint.kraken'),
+    other: t('cexHint.other'),
   };
   const el = document.getElementById('cexHint');
   if (el) el.querySelector('div').innerHTML = hints[ex] || hints.other;
@@ -18523,18 +18577,18 @@ function renderSettings(w) {
       <div class="panel-body">
         ${_companyKeyActive() ? `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>✓</span>
-          <div><strong>Já está tudo a funcionar</strong> — a app usa a chave da Taxesly por defeito, não precisas de criar nada.<br>
-          <span style="color:var(--text-muted)">Opcional: se quiseres usar a tua própria chave Alchemy (para não partilhares a quota partilhada), cola-a abaixo.</span></div>
+          <div>${t('cfg.allWorking')}<br>
+          <span style="color:var(--text-muted)">${t('cfg.keyWorkingOpt')}</span></div>
         </div>` : `<div class="alert alert-success" style="margin-bottom:1rem;font-size:0.8rem">
           <span>⭐</span>
-          <div><strong>Alchemy</strong> é a opção recomendada e funciona para todas as chains.<br>
-          1. <strong>alchemy.com</strong> → Sign Up grátis<br>
-          2. Create App → selecciona a chain (ex: Base)<br>
-          3. Copia a API Key e cola abaixo</div>
+          <div><strong>Alchemy</strong> ${t('cfg.recommendedOption')}<br>
+          1. ${t('cfg.alchemyStep1')}<br>
+          2. ${t('cfg.alchemyStep2cfg')}<br>
+          3. ${t('cfg.alchemyStep3cfg')}</div>
         </div>`}
         <div class="form-group">
-          <label class="form-label">Alchemy API Key ${w.alchemyKey?'<span style="color:var(--green)">✓ Configurada</span>':''}</label>
-          <input class="form-input" id="set_alchemy_key" value="${w.alchemyKey||''}" placeholder="Cola aqui a tua Alchemy API Key">
+          <label class="form-label">${t('cfg.alchemyKeyLabel')} ${w.alchemyKey?`<span style="color:var(--green)">${t('cfg.alchemyConfigured')}</span>`:''}</label>
+          <input class="form-input" id="set_alchemy_key" value="${w.alchemyKey||''}" placeholder="${t('cfg.alchemyKeyPlaceholder')}">
         </div>
         <div style="height:1px;background:var(--border-soft);margin:1rem 0"></div>
         <div class="form-group">
@@ -18618,14 +18672,14 @@ function renderSettings(w) {
     <!-- ── Diagnóstico (debug mode only) ── -->
     <div class="panel" style="margin-bottom:1rem;border-color:var(--orange,#f9a825)">
       <div class="panel-head" onclick="document.getElementById('diagBody').classList.toggle('hidden')" style="cursor:pointer;user-select:none">
-        <span class="panel-title">🔧 Diagnóstico <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:0.5rem">(debug mode · clica para expandir)</span></span>
+        <span class="panel-title"><span data-i18n="cfg.diagnostics">🔧 Diagnóstico</span> <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-left:0.5rem">(debug mode · clica para expandir)</span></span>
       </div>
       <div class="panel-body hidden" id="diagBody">
 
         <div style="margin-bottom:1.5rem">
-          <h4 style="font-family:var(--display);font-weight:500;font-size:0.9rem;margin-bottom:0.7rem;color:var(--text)">Teste de Conexão RPC</h4>
+          <h4 style="font-family:var(--display);font-weight:500;font-size:0.9rem;margin-bottom:0.7rem;color:var(--text)" data-i18n="cfg.rpcTest">Teste de Conexão RPC</h4>
           <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:0.8rem">Verifica se a app consegue ligar a cada rede e ler a tua posição AAVE.</p>
-          <button class="btn btn-gold btn-sm" onclick="runConnectionTest()">▶ Testar Conexão</button>
+          <button class="btn btn-gold btn-sm" onclick="runConnectionTest()" data-i18n="cfg.testConnection">▶ Testar Conexão</button>
           <div id="connTestResults" style="margin-top:0.8rem;font-family:var(--mono);font-size:0.72rem;display:flex;flex-direction:column;gap:0.4rem"></div>
         </div>
 
@@ -18640,7 +18694,7 @@ function renderSettings(w) {
             <button class="btn btn-outline btn-sm" onclick="testAlchemyAPI('arbitrum')">▶ Alchemy (ARB)</button>
             <button class="btn btn-outline btn-sm" onclick="testAlchemyAPI('linea')">▶ Alchemy (Linea)</button>
             <button class="btn btn-blue btn-sm" onclick="testMorphoAPI()">▶ Morpho</button>
-            <button class="btn btn-blue btn-sm" onclick="testPricesAPI()">▶ Preços</button>
+            <button class="btn btn-blue btn-sm" onclick="testPricesAPI()" data-i18n="cfg.pricesBtn">▶ Preços</button>
           </div>
           <div class="alert alert-info" style="font-size:0.75rem;margin-bottom:0.6rem">
             <span>ℹ</span><div>Wallet activa: <strong style="color:var(--gold)">${activeWallet()?.addr||'nenhuma'}</strong></div>
@@ -18698,7 +18752,7 @@ function renderSettings(w) {
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:1rem">
           <button class="btn btn-outline btn-sm" onclick="refreshErrorLog()">↺ Atualizar</button>
-          <button class="btn btn-outline btn-sm" onclick="copyErrorReport()">📋 Copiar Relatório</button>
+          <button class="btn btn-outline btn-sm" onclick="copyErrorReport()" data-i18n="cfg.copyReport">📋 Copiar Relatório</button>
           <button class="btn btn-danger btn-sm" onclick="clearErrorLog()">🗑 Limpar Log</button>
         </div>
         <div class="alert alert-info" style="margin-top:1rem;font-size:0.78rem">
@@ -18729,7 +18783,7 @@ function renderSettings(w) {
           Tracker fiscal DeFi <strong>local-first</strong> e open source para Portugal. Ao contrário das ferramentas tradicionais, os teus dados — carteiras, transações e cálculos — ficam guardados <strong>apenas no teu browser</strong> (IndexedDB), nunca num servidor. Não há conta para criar, nem base de dados central. Sem tracking, sem ads. FIFO automático, Anexo G/G1/E, regra dos 365 dias. Preços históricos via DefiLlama + ECB.
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem">
-          <a class="btn btn-gold btn-sm" href="./landing.html" target="_blank" rel="noopener">🌐 Página inicial</a>
+          <a class="btn btn-gold btn-sm" href="./landing.html" target="_blank" rel="noopener" data-i18n="cfg.homepage">🌐 Página inicial</a>
           <a class="btn btn-outline btn-sm" href="https://github.com/danyundercrypto/aurum" target="_blank" rel="noopener">📦 GitHub</a>
           <a class="btn btn-outline btn-sm" href="https://twitter.com/DanyunderCrypto" target="_blank" rel="noopener">🐦 Twitter</a>
           <a class="btn btn-outline btn-sm" href="https://github.com/danyundercrypto/aurum/issues/new" target="_blank" rel="noopener">🐛 Reportar Bug</a>
@@ -19659,7 +19713,7 @@ async function autoFillTxHash() {
   const status = document.getElementById('txFetchStatus');
   const btn = document.getElementById('txFetchBtn');
   if (!hash?.startsWith('0x') || hash.length !== 66) {
-    if (status) status.innerHTML = '<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span> Hash inválido. Deve começar por 0x e ter 66 caracteres.</div>';
+    if (status) status.innerHTML = '<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span> '+t('cfg.invalidHash')+'</div>';
     return;
   }
   if (status) status.innerHTML = '<div style="display:flex;align-items:center;gap:0.5rem"><div class="loader"><div class="ldot"></div><div class="ldot"></div><div class="ldot"></div></div><span style="font-size:0.8rem;color:var(--muted)">A pesquisar em paralelo: ETH, Base, Arbitrum, Optimism, Polygon, Linea, Scroll...</span></div>';
@@ -19703,7 +19757,7 @@ async function autoFillTxHash() {
   if (btn) { btn.disabled = false; btn.textContent = '🔍 Auto-fill'; }
 
   if (!found) {
-    if (status) status.innerHTML = '<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span> Transação não encontrada em nenhuma das redes pesquisadas.</div>';
+    if (status) status.innerHTML = '<div class="alert alert-warn" style="font-size:0.78rem"><span>⚠</span> '+t('cfg.txNotFound')+'</div>';
     return;
   }
 
@@ -19813,7 +19867,7 @@ function openImportModal() {
   const sel = document.getElementById('imp_card_id');
   if (sel) {
     sel.innerHTML = walletCards.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-    if (!walletCards.length) sel.innerHTML = '<option value="">Adiciona um cartão primeiro</option>';
+    if (!walletCards.length) sel.innerHTML = '<option value="">'+t('cfg.addCardFirst')+'</option>';
   }
   document.getElementById('importPreview').innerHTML='';
   const _mf = document.querySelector('#modalImport .modal-foot'); if(_mf) _mf.style.display = '';
@@ -19926,7 +19980,7 @@ function detectColumns(cols, fmt) {
 function buildColMapper(cols, detected) {
   const mp = document.getElementById('colMapper');
   if (!mp) return;
-  const makeSelect = (id,label,val)=>`<div class="col-map-item"><div class="col-map-label">${label}</div><select class="form-select" id="${id}"><option value="">— Não mapear —</option>${cols.map(c=>`<option value="${c}" ${c===val?'selected':''}>${c}</option>`).join('')}</select></div>`;
+  const makeSelect = (id,label,val)=>`<div class="col-map-item"><div class="col-map-label">${label}</div><select class="form-select" id="${id}"><option value="">${t('cfg.dontMap')}</option>${cols.map(c=>`<option value="${c}" ${c===val?'selected':''}>${c}</option>`).join('')}</select></div>`;
   mp.innerHTML = [
     makeSelect('cm_date','Data',detected?.date||''),
     makeSelect('cm_amount','Valor (€/$)',detected?.amount||''),
@@ -22759,7 +22813,12 @@ function daysHeld(d) { if(!d)return 0; const a=new Date(d+'T12:00:00'),b=new Dat
 function daysBetween(d1,d2) { if(!d1||!d2)return 0; return Math.max(0,Math.floor((new Date(d2+'T12:00:00')-new Date(d1+'T12:00:00'))/86400000)); }
 function catEmoji(c='') { const m={Supermercado:'🛒',Restaurante:'🍽️',Transporte:'🚗',Combustível:'⛽',Saúde:'💊','Lazer/Streaming':'🎭',Viagem:'✈️',Tecnologia:'💻',Casa:'🏠',Outro:'📦'}; return m[c]||'📦'; }
 
-function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function openModal(id) {
+  document.getElementById(id)?.classList.remove('hidden');
+  // Reaplica traduções: os modais são HTML estático e podem ter sido renderizados
+  // antes de uma mudança de língua. Garante que abrem sempre na língua ativa.
+  if (typeof applyStaticI18n === 'function') applyStaticI18n();
+}
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 
 function toast(msg, type='info', dur=5000) {
