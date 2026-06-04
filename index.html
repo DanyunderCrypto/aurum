@@ -16462,8 +16462,33 @@ async function startIndexerForActiveWallet() {
   try {
     // ── EVM indexing (if applicable) ──
     if (hasEVM && resolveAlchemyKey(w)) {
+      // Que chains indexar? Para poupar chamadas (chave partilhada) sem perder
+      // histórico fiscal:
+      //   - chains ATIVAS detetadas pelo C4 (onde há saldo agora), MAIS
+      //   - chains que JÁ têm eventos indexados (ex: Polygon — muito histórico,
+      //     zero saldo hoje; tem de continuar a ser indexada para o relatório).
+      // Salvaguarda: na PRIMEIRA indexação (ainda sem histórico) corremos o
+      // conjunto completo, para não perder uma chain histórica nunca vista.
+      const _activeC4 = (window['_activeChains_' + w.id] || []).filter(Boolean);
+      const _wAddrLc = (walletAddr || '').toLowerCase();
+      const _chainsWithHistory = [...new Set(
+        (state.events || [])
+          .filter(e => e.walletAddress === _wAddrLc)
+          .map(e => e.chain)
+          .filter(c => c && c !== 'solana')
+      )];
+      const _hasHistory = _chainsWithHistory.length > 0;
+      const _chainsToIndex = _hasHistory
+        ? [...new Set([..._activeC4, ..._chainsWithHistory])]
+        : null; // null = indexa tudo (1ª vez, não perde nada)
+      if (_chainsToIndex) {
+        console.log('[Indexer] Chains a indexar (ativas + histórico):', _chainsToIndex.join(', '));
+      } else {
+        console.log('[Indexer] 1ª indexação — corre conjunto completo');
+      }
       evmSummary = await universalIndexer.indexWallet(walletAddr, resolveAlchemyKey(w), {
         signal: window._indexerController.signal,
+        ...(_chainsToIndex ? { chains: _chainsToIndex } : {}),
         onProgress: (p) => {
           const phaseEl = document.getElementById('indexerPhase');
           const countEl = document.getElementById('indexerCount');
