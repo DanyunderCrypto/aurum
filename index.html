@@ -1052,6 +1052,7 @@ td.muted  { color:var(--muted); }
 .alert-danger { background: rgba(255,92,122,0.08); border-color: var(--red); }
 .alert-warn { background: rgba(255,140,90,0.08); border-color: var(--amber); }
 .alert-info { background: rgba(59,130,246,0.06); border-color: rgba(59,130,246,0.3); }
+.alert-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.4); }
 .alert-success { background: rgba(52,211,153,0.08); border-color: var(--mint); }
 
 /* ══════════════════════════════════════════════════
@@ -16636,6 +16637,13 @@ function renderHistory(w) {
     byType[e.type] = (byType[e.type] || 0) + 1;
   });
 
+  // INTEGRIDADE FISCAL: chains onde a carteira TEM saldo (detetadas pelo C4) mas
+  // que NÃO têm transações indexadas. Sem estas transações, o relatório fiscal fica
+  // incompleto — por isso avisamos o utilizador de forma clara.
+  const _activeChains = (window['_activeChains_' + w.id] || []).filter(Boolean);
+  const _chainsWithEvents = new Set(Object.keys(byChain));
+  const _unindexedActiveChains = _activeChains.filter(c => !_chainsWithEvents.has(c));
+
   // Date range
   const dates = walletEvents.map(e => e.timestamp).filter(t => t > 0).sort();
   const oldest = dates.length ? new Date(dates[0] * 1000).toISOString().slice(0, 10) : '—';
@@ -16862,6 +16870,21 @@ function renderHistory(w) {
       </div>
     </div>
 
+    ${_unindexedActiveChains.length ? `
+      <div class="alert alert-warning" style="margin-bottom:1rem;font-size:0.82rem;align-items:flex-start">
+        <span style="font-size:1rem">⚠️</span>
+        <div>
+          <strong>${(state.lang||'pt')==='en'?'Your tax report may be incomplete.':'O teu relatório fiscal pode estar incompleto.'}</strong><br>
+          ${(state.lang||'pt')==='en'
+            ? `We detected balances on <strong>${_unindexedActiveChains.map(c=>c.toUpperCase()).join(', ')}</strong>, but no transactions have been indexed there yet. Capital gains can only be accurate once these are indexed.`
+            : `Detetámos saldos em <strong>${_unindexedActiveChains.map(c=>c.toUpperCase()).join(', ')}</strong>, mas ainda não há transações indexadas nessas redes. As mais-valias só ficam corretas depois de as indexar.`}
+          <div style="margin-top:0.6rem">
+            <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()">${(state.lang||'pt')==='en'?'Index now':'Indexar agora'}</button>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
     ${totalEvents === 0 ? `
       <div class="panel">
         <div class="panel-body">
@@ -16883,6 +16906,7 @@ function renderHistory(w) {
             <select class="form-select" style="min-width:130px" onchange="window._histFilterChain=this.value;window._histPage=0;render()">
               <option value="all">${t('history.filters.all')} (${totalEvents})</option>
               ${Object.entries(byChain).sort((a,b)=>b[1]-a[1]).map(([c,n]) => `<option value="${c}" ${c===filterChain?'selected':''}>${c.toUpperCase()} (${n})</option>`).join('')}
+              ${_unindexedActiveChains.map(c => `<option value="${c}" ${c===filterChain?'selected':''}>${c.toUpperCase()} ${(state.lang||'pt')==='en'?'(not indexed)':'(por indexar)'}</option>`).join('')}
             </select>
           </div>
           <div>
