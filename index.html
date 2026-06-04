@@ -7304,8 +7304,13 @@ const priceOracle = (() => {
 
       // ── Stablecoin fast-path: USD-pegged ≈ $1, EUR-pegged ≈ €1 ──
       // No API call needed — resolves the bulk of "missing price" cases instantly.
-      const blockTsStable = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
-      const dateStrStable = e.date || new Date((dayStartTs(blockTsStable) || blockTsStable) * 1000).toISOString().slice(0, 10);
+      let blockTsStable = e.timestamp;
+      if (!(typeof blockTsStable === 'number' && isFinite(blockTsStable) && blockTsStable > 0)) {
+        const _ms = e.date ? new Date(e.date).getTime() : NaN;
+        blockTsStable = (isFinite(_ms) && _ms > 0) ? Math.floor(_ms / 1000) : 0;
+      }
+      const _dayTsStable = dayStartTs(blockTsStable) || blockTsStable;
+      const dateStrStable = e.date || (_dayTsStable > 0 ? new Date(_dayTsStable * 1000).toISOString().slice(0, 10) : '');
       if (isUsdStablecoin(e.asset)) {
         const rate = await getEurRate(dateStrStable);
         if (rate !== null) {
@@ -7328,7 +7333,11 @@ const priceOracle = (() => {
         stats.failed++; continue;
       }
 
-      const blockTs = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+      let blockTs = e.timestamp;
+      if (!(typeof blockTs === 'number' && isFinite(blockTs) && blockTs > 0)) {
+        const _ms = e.date ? new Date(e.date).getTime() : NaN;
+        blockTs = (isFinite(_ms) && _ms > 0) ? Math.floor(_ms / 1000) : 0;
+      }
       const dayTs = dayStartTs(blockTs);
       if (!dayTs) {
         e.priceEUR = null; e.priceUSD = null; e.priceNote = 'no_timestamp';
@@ -7541,6 +7550,32 @@ const fifoEngine = (() => {
   // Holding period for exempt classification: 365 days
   const HOLDING_PERIOD_DAYS = 365;
   const HOLDING_PERIOD_SECONDS = HOLDING_PERIOD_DAYS * 86400;
+
+  // ── CAMADA 1 (motor robusto): resolução de timestamp à prova de dados maus ──
+  // Devolve um timestamp UNIX (segundos) válido, ou null se o evento não tem data
+  // utilizável. NUNCA devolve NaN. Antes, eventos sem data (timestamp:0 + date:'')
+  // produziam new Date('') → NaN → new Date(NaN).toISOString() → "Invalid time value",
+  // que derrubava o cálculo INTEIRO. Agora um evento sem data é detetável (null) e
+  // tratado explicitamente em vez de rebentar.
+  function _safeEventTs(event) {
+    if (!event) return null;
+    // 1) timestamp numérico direto (o caminho normal)
+    const t = event.timestamp;
+    if (typeof t === 'number' && isFinite(t) && t > 0) return t;
+    // 2) derivar da string de data, com validação
+    if (event.date) {
+      const ms = new Date(event.date).getTime();
+      if (isFinite(ms) && ms > 0) return Math.floor(ms / 1000);
+    }
+    // 3) sem data utilizável
+    return null;
+  }
+  // Converte um ts (segundos) em 'YYYY-MM-DD' de forma segura; '' se inválido.
+  function _safeDateStr(ts) {
+    if (typeof ts !== 'number' || !isFinite(ts) || ts <= 0) return '';
+    const d = new Date(ts * 1000);
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+  }
 
   // ── Classification ───────────────────────────────────────
   // Protocol receipt tokens (NOT crypto-assets fiscally — they're contractual receipts)
@@ -7851,10 +7886,22 @@ const fifoEngine = (() => {
     const walletId = opts.walletId || 'default';
     const swapMode = opts.swapMode || 'permuta';
 
+    // ── CAMADA 1: segregar eventos SEM data válida ──────────────────────────
+    // Um evento sem timestamp utilizável não pode entrar no FIFO nem na regra dos
+    // 365 dias (não sabemos QUANDO aconteceu). Processá-lo como ts=0 (1970) corromperia
+    // o cálculo. Em vez disso, separamo-lo e reportamo-lo como pendente de data —
+    // o relatório fica honesto ("X transações sem data, a resolver") em vez de errado.
+    const _undated = [];
+    const _datedEvents = [];
+    for (const e of events) {
+      if (_safeEventTs(e) === null) _undated.push(e);
+      else _datedEvents.push(e);
+    }
+
     // Sort events chronologically (FIFO requires this)
-    const sorted = [...events].sort((a, b) => {
-      const ta = a.timestamp || Math.floor(new Date(a.date).getTime() / 1000);
-      const tb = b.timestamp || Math.floor(new Date(b.date).getTime() / 1000);
+    const sorted = [..._datedEvents].sort((a, b) => {
+      const ta = _safeEventTs(a) ?? 0;
+      const tb = _safeEventTs(b) ?? 0;
       return ta - tb;
     });
 
@@ -7947,7 +7994,7 @@ const fifoEngine = (() => {
     function _openLot(event, qty, basisEURPerUnit, source, swapOriginAsset = null) {
       lotCounter++;
       const lotId = `L${lotCounter}`;
-      const ts = event.timestamp || Math.floor(new Date(event.date).getTime() / 1000);
+      const ts = _safeEventTs(event);
       const lot = {
         lotId,
         walletId,
@@ -7959,7 +8006,7 @@ const fifoEngine = (() => {
         basisEURPerUnit,
         basisEURTotal: qty * basisEURPerUnit,
         acqTimestamp: ts,
-        acqDate: event.date || new Date(ts * 1000).toISOString().slice(0, 10),
+        acqDate: event.date || _safeDateStr(ts),
         source,                       // 'buy', 'receive', 'reward', 'swap_in', 'pre_2023'
         swapOriginAsset,              // for permuta-mode swap_in: which asset funded this lot
         originEventId: event.id || `${event.txHash}_${event.asset}`,
@@ -8028,9 +8075,9 @@ const fifoEngine = (() => {
         return null;
       }
       disposalCounter++;
-      const ts = event.timestamp || Math.floor(new Date(event.date).getTime() / 1000);
-      const date = event.date || new Date(ts * 1000).toISOString().slice(0, 10);
-      const fiscalYear = parseInt(date.slice(0, 4), 10);
+      const ts = _safeEventTs(event);
+      const date = event.date || _safeDateStr(ts);
+      const fiscalYear = date ? parseInt(date.slice(0, 4), 10) : null;
 
       // Determine regime based on lots consumed (mixed lots may span regimes)
       // Total split into G vs G1 based on per-lot regime
@@ -8086,8 +8133,8 @@ const fifoEngine = (() => {
     const sortedTxKeys = [...eventsByTx.keys()].sort((a, b) => {
       const eventsA = eventsByTx.get(a);
       const eventsB = eventsByTx.get(b);
-      const tsA = eventsA[0].timestamp || Math.floor(new Date(eventsA[0].date).getTime() / 1000);
-      const tsB = eventsB[0].timestamp || Math.floor(new Date(eventsB[0].date).getTime() / 1000);
+      const tsA = _safeEventTs(eventsA[0]) ?? 0;
+      const tsB = _safeEventTs(eventsB[0]) ?? 0;
       return tsA - tsB;
     });
 
@@ -8259,7 +8306,7 @@ const fifoEngine = (() => {
         }
         else if (klass === 'disposal') {
           // Outgoing without swap context: sale to fiat OR card payment OR external transfer
-          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          const ts = _safeEventTs(e) ?? 0;
           const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
           let proceeds = eventPriceEURTotal ?? 0;
           // Phantom disposal guard: if we never held this asset (no lots consumed) AND
@@ -8299,7 +8346,7 @@ const fifoEngine = (() => {
           // Stablecoin sent out without a proven fiat off-ramp. Per AT (Nov 2025) this is not a
           // taxable event — the EUR/USD drift only realizes on a real fiat sale. Consume the lot
           // to keep FIFO consistent (the stablecoin left the wallet), but record NO gain.
-          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          const ts = _safeEventTs(e) ?? 0;
           _consumeFifo(e.asset, e.chain, e.amount, ts);
           stablecoinTransferCount++;
           warnings.push({
@@ -8316,7 +8363,7 @@ const fifoEngine = (() => {
           // e estas saídas são quase sempre transferências para outra carteira do próprio, a
           // perna de saída de um swap não-emparelhado, ou depósito numa exchange. Consumimos o
           // lot (FIFO consistente), mas NÃO registamos mais-valia. Reclassificável como venda real.
-          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          const ts = _safeEventTs(e) ?? 0;
           _consumeFifo(e.asset, e.chain, e.amount, ts);
           onchainTransferOutCount++;
           warnings.push({
@@ -8334,7 +8381,7 @@ const fifoEngine = (() => {
           // alienation. So we consume the outgoing lot but DO NOT record a taxable disposal.
           // The basis carries forward conceptually; the matching swap_buy leg opens a new
           // lot at its own market value (best effort without the pair).
-          const ts = e.timestamp || Math.floor(new Date(e.date).getTime() / 1000);
+          const ts = _safeEventTs(e) ?? 0;
           if (swapMode === 'aggressive') {
             // Aggressive mode: treat as sale
             const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
@@ -8367,7 +8414,18 @@ const fifoEngine = (() => {
     // ── Build summary ──────────────────────────────────────
     const summary = _buildSummary(disposals, rewards, lots);
 
-    return { lots, disposals, rewards, warnings, summary };
+    // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
+    // no cálculo, mas o utilizador tem de saber que existem e podem afetar o relatório).
+    if (_undated.length) {
+      warnings.push({
+        type: 'missing_date',
+        count: _undated.length,
+        chains: [...new Set(_undated.map(e => e.chain))],
+        message: `${_undated.length} transações sem data foram excluídas do cálculo (não é possível situá-las no tempo para FIFO/365 dias). Chains afetadas: ${[...new Set(_undated.map(e => e.chain))].join(', ')}. A data é recuperável via blockNumber.`,
+      });
+    }
+
+    return { lots, disposals, rewards, warnings, summary, undatedCount: _undated.length, undatedEvents: _undated };
   }
 
   // ── Aggregation helpers ───────────────────────────────────
@@ -8754,7 +8812,7 @@ const aurumBasisBridge = (() => {
     const cfg = Object.assign({}, DEFAULTS, opts || {});
     const addrToGroup = buildAddressToGroup(ownerGroups);
     const links = []; const stats = { candidatesOut: 0, candidatesIn: 0, linked: 0 };
-    const tsOf = (e) => e.timestamp || Math.floor(new Date(e.date).getTime() / 1000) || 0;
+    const tsOf = (e) => _safeEventTs(e) ?? 0;
     const grp = (e) => addrToGroup.get(String(e.walletAddress || '').toLowerCase());
     const inGroup = events.filter(e => grp(e) !== undefined);
     const isMovable = (e) => {
