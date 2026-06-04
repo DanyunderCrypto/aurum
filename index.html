@@ -5586,7 +5586,10 @@ const alchemyAdapter = (() => {
     if (!apiKey && !_px) {
       return { transfers: [], skipped: true, reason: 'No Alchemy API key' };
     }
-    if (!ALCHEMY_SUBDOMAINS[chain]) {
+    // A chain é suportada se conseguirmos resolver um URL para ela (via proxy ou
+    // subdomínio direto). O ALCHEMY_SUBDOMAINS sozinho é um mapa parcial (legado) e
+    // rejeitava chains válidas como BSC/zkSync que o proxy (ALCHEMY_RPCS) cobre.
+    if (!_alchemyUrl(chain, apiKey)) {
       return { transfers: [], skipped: true, reason: `Chain ${chain} not supported by Alchemy` };
     }
 
@@ -9666,11 +9669,20 @@ try {
 } catch { _alchemyChainUnavailable = new Set(_ALCHEMY_KNOWN_UNAVAILABLE); }
 // Sempre que aprendemos uma nova chain indisponível, persiste (debounced via microtask).
 const _origAdd = _alchemyChainUnavailable.add.bind(_alchemyChainUnavailable);
+// Chains principais (com RPC Alchemy fiável): NUNCA as marcamos como indisponíveis.
+// Uma falha transitória (CORS, timeout, 429, RPC público em baixo) não significa que
+// a rede não funciona — marcá-las escondia saldos/transações reais (bug: eth e
+// arbitrum ficaram presos aqui por uma falha de rede pontual).
+const _ALCHEMY_CORE_CHAINS = new Set(['eth','base','arbitrum','optimism','polygon','linea','bsc','zksync','avalanche','scroll','blast','celo','soneium']);
 _alchemyChainUnavailable.add = function(chain) {
+  if (_ALCHEMY_CORE_CHAINS.has(chain)) return _alchemyChainUnavailable; // protegida
   _origAdd(chain);
   try { localStorage.setItem('_alchemyUnavail_v1', JSON.stringify([..._alchemyChainUnavailable])); } catch {}
   return _alchemyChainUnavailable;
 };
+// Limpeza única: remover chains principais que ficaram presas em sessões anteriores.
+_ALCHEMY_CORE_CHAINS.forEach(c => _alchemyChainUnavailable.delete(c));
+try { localStorage.setItem('_alchemyUnavail_v1', JSON.stringify([..._alchemyChainUnavailable])); } catch {}
 
 // ── Rate limiter global para a Alchemy (adaptativo) ─────────────────────────
 // O proxy/free tier tem um limite de pedidos por segundo. Com muitas redes +
