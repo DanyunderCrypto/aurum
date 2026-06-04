@@ -3048,22 +3048,22 @@ body.stealth-mode .stealth-badge {
           <option value="gnosis">Gnosis</option><option value="linea">Linea</option>
         </select>
       </div>
-      <div class="form-group"><label class="form-label">Ativo</label>
-        <select class="form-select" id="col_asset"><option>ETH</option><option>eETH</option><option>stETH</option><option>weETH</option><option>WBTC</option><option>USDC</option><option>EURC</option><option>DAI</option><option>Outro</option></select>
+      <div class="form-group"><label class="form-label" data-i18n="col.asset">Ativo</label>
+        <select class="form-select" id="col_asset"><option>ETH</option><option>eETH</option><option>stETH</option><option>weETH</option><option>WBTC</option><option>USDC</option><option>EURC</option><option>DAI</option><option data-i18n="col.assetOther">Outro</option></select>
       </div>
-      <div class="form-group"><label class="form-label">Quantidade</label><input class="form-input" id="col_qty" type="number" step="any" placeholder="ex: 0.5"></div>
-      <div class="form-group"><label class="form-label">Valor EUR no momento *</label><input class="form-input" id="col_eur" type="number" step="0.01" placeholder="ex: 5000"></div>
-      <div class="form-group"><label class="form-label">Preço EUR/unidade</label><input class="form-input" id="col_price" type="number" step="0.01" placeholder="ex: 3500"></div>
-      <div class="form-group"><label class="form-label">Protocolo</label>
-        <select class="form-select" id="col_proto"><option value="aave">AAVE V3</option><option value="morpho">Morpho</option><option value="compound">Compound V3</option><option value="spark">SparkLend</option><option value="etherfi">ether.fi Vault</option><option value="outro">Outro</option></select>
+      <div class="form-group"><label class="form-label" data-i18n="col.qty">Quantidade</label><input class="form-input" id="col_qty" type="number" step="any" placeholder="ex: 0.5"></div>
+      <div class="form-group"><label class="form-label" data-i18n="col.eurValue">Valor EUR no momento *</label><input class="form-input" id="col_eur" type="number" step="0.01" placeholder="ex: 5000"></div>
+      <div class="form-group"><label class="form-label" data-i18n="col.eurPrice">Preço EUR/unidade</label><input class="form-input" id="col_price" type="number" step="0.01" placeholder="ex: 3500"></div>
+      <div class="form-group"><label class="form-label" data-i18n="col.protocol">Protocolo</label>
+        <select class="form-select" id="col_proto"><option value="aave">AAVE V3</option><option value="morpho">Morpho</option><option value="compound">Compound V3</option><option value="spark">SparkLend</option><option value="etherfi">ether.fi Vault</option><option value="outro" data-i18n="col.protoOther">Outro</option></select>
       </div>
-      <div class="form-group form-full"><label class="form-label">Origem do Ativo</label>
-        <select class="form-select" id="col_origin"><option value="compra">Compra com EUR — Categoria G (0% após 365d)</option><option value="yield">DeFi Yield/Staking — Categoria E (28%)</option><option value="lp">LP Rewards — Categoria E (28%)</option><option value="swap">Swap de outro ativo</option></select>
+      <div class="form-group form-full"><label class="form-label" data-i18n="col.assetOrigin">Origem do Ativo</label>
+        <select class="form-select" id="col_origin"><option value="compra" data-i18n="col.originBuy">Compra com EUR — Categoria G (0% após 365d)</option><option value="yield" data-i18n="col.originYield">DeFi Yield/Staking — Categoria E (28%)</option><option value="lp" data-i18n="col.originLp">LP Rewards — Categoria E (28%)</option><option value="swap" data-i18n="col.originSwap">Swap de outro ativo</option></select>
       </div>
-      <div class="form-group form-full"><label class="form-label">Notas</label><input class="form-input" id="col_notes" placeholder="Opcional..."></div>
+      <div class="form-group form-full"><label class="form-label" data-i18n="col.notes">Notas</label><input class="form-input" id="col_notes" data-i18n-placeholder="col.notesPlaceholder" placeholder="Opcional..."></div>
     </div>
   </div>
-  <div class="modal-foot"><button class="btn btn-gold" onclick="saveCollateral()">Guardar Lote</button><button class="btn btn-ghost" onclick="closeModal('modalCollateral')">Cancelar</button></div>
+  <div class="modal-foot"><button class="btn btn-gold" onclick="saveCollateral()" data-i18n="col.save">Guardar Lote</button><button class="btn btn-ghost" onclick="closeModal('modalCollateral')" data-i18n="col.cancel">Cancelar</button></div>
 </div>
 </div>
 
@@ -3563,6 +3563,32 @@ const I18N = {
     'col.acqDate': 'Data Aquisição *',
     'col.depDate': 'Data Depósito',
     'col.network': 'Rede',
+    'col.asset': 'Ativo',
+    'col.assetOther': 'Outro',
+    'col.qty': 'Quantidade',
+    'col.eurValue': 'Valor EUR no momento *',
+    'col.eurPrice': 'Preço EUR/unidade',
+    'col.protocol': 'Protocolo',
+    'col.protoOther': 'Outro',
+    'col.assetOrigin': 'Origem do Ativo',
+    'col.originBuy': 'Compra com EUR — Categoria G (0% após 365d)',
+    'col.originYield': 'DeFi Yield/Staking — Categoria E (28%)',
+    'col.originLp': 'LP Rewards — Categoria E (28%)',
+    'col.originSwap': 'Swap de outro ativo',
+    'col.notes': 'Notas',
+    'col.notesPlaceholder': 'Opcional...',
+    'col.save': 'Guardar Lote',
+    'col.cancel': 'Cancelar',
+    'col.noSuggestions': 'Sem sugestões automáticas. Adiciona um TX hash manualmente acima ou faz refresh para detectar novas transações.',
+    // Aba Wallets
+    'wallets.management': 'Gestão de Wallets',
+    'wallets.importCex': '↑ Importar Exchange (CSV)',
+    'wallets.addWallet': '+ Adicionar Wallet',
+    'wallets.activate': 'Activar',
+    'wallets.active': 'Activa',
+    'wallets.groupEvm': 'EVM (Ethereum, Base, Polygon…)',
+    'wallets.groupCex': 'Exchanges (CEX)',
+    'wallets.groupOther': 'Outras',
     // Onboarding (renderSetup)
     'onb.tagline': 'Crypto taxes · Done right',
     'onb.sub': 'Monitor automático multi-protocolo com estratégia fiscal 365 dias para Portugal.<br>Os teus dados ficam só no teu browser — nunca num servidor.',
@@ -4064,6 +4090,32 @@ const I18N = {
     'col.acqDate': 'Acquisition Date *',
     'col.depDate': 'Deposit Date',
     'col.network': 'Network',
+    'col.asset': 'Asset',
+    'col.assetOther': 'Other',
+    'col.qty': 'Quantity',
+    'col.eurValue': 'EUR value at the time *',
+    'col.eurPrice': 'EUR price/unit',
+    'col.protocol': 'Protocol',
+    'col.protoOther': 'Other',
+    'col.assetOrigin': 'Asset Origin',
+    'col.originBuy': 'Bought with EUR — Category G (0% after 365d)',
+    'col.originYield': 'DeFi Yield/Staking — Category E (28%)',
+    'col.originLp': 'LP Rewards — Category E (28%)',
+    'col.originSwap': 'Swap from another asset',
+    'col.notes': 'Notes',
+    'col.notesPlaceholder': 'Optional...',
+    'col.save': 'Save Lot',
+    'col.cancel': 'Cancel',
+    'col.noSuggestions': 'No automatic suggestions. Add a TX hash manually above or refresh to detect new transactions.',
+    // Wallets tab
+    'wallets.management': 'Wallet Management',
+    'wallets.importCex': '↑ Import Exchange (CSV)',
+    'wallets.addWallet': '+ Add Wallet',
+    'wallets.activate': 'Activate',
+    'wallets.active': 'Active',
+    'wallets.groupEvm': 'EVM (Ethereum, Base, Polygon…)',
+    'wallets.groupCex': 'Exchanges (CEX)',
+    'wallets.groupOther': 'Other',
     // Onboarding (renderSetup)
     'onb.tagline': 'Crypto taxes · Done right',
     'onb.sub': 'Automatic multi-protocol monitor with a 365-day tax strategy for Portugal.<br>Your data stays only in your browser — never on a server.',
@@ -14928,7 +14980,7 @@ function renderLotSuggestions() {
   const el = document.getElementById('lotSuggestions');
   if (!el) return;
   if (sugs.length === 0) {
-    el.innerHTML = '<div style="font-size:0.78rem;color:var(--muted);padding:0.5rem 0">Sem sugestões automáticas. Adiciona um TX hash manualmente acima ou faz refresh para detectar novas transações.</div>';
+    el.innerHTML = '<div style="font-size:0.78rem;color:var(--muted);padding:0.5rem 0">'+t('col.noSuggestions')+'</div>';
     return;
   }
   el.innerHTML = `
@@ -15953,11 +16005,11 @@ function renderWallets() {
     return 'other';
   };
   const groupsMeta = [
-    { key: 'evm',   label: 'EVM (Ethereum, Base, Polygon…)', icon: '⬨', color: 'var(--gold)' },
+    { key: 'evm',   label: t('wallets.groupEvm'), icon: '⬨', color: 'var(--gold)' },
     { key: 'svm',   label: 'Solana', icon: '◎', color: '#9945FF' },
     { key: 'btc',   label: 'Bitcoin', icon: '₿', color: '#F7931A' },
-    { key: 'cex',   label: 'Exchanges (CEX)', icon: '⇄', color: 'var(--cyan)' },
-    { key: 'other', label: 'Outras', icon: '•', color: 'var(--text-muted)' },
+    { key: 'cex',   label: t('wallets.groupCex'), icon: '⇄', color: 'var(--cyan)' },
+    { key: 'other', label: t('wallets.groupOther'), icon: '•', color: 'var(--text-muted)' },
   ];
   const byGroup = {};
   (state.wallets || []).forEach(w => { const g = classify(w); (byGroup[g] = byGroup[g] || []).push(w); });
@@ -15969,7 +16021,7 @@ function renderWallets() {
       <div class="panel-body" style="padding:1rem">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.6rem;margin-bottom:0.5rem">
           <div style="font-weight:600;font-size:0.95rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.name}</div>
-          ${isActive?'<span class="badge badge-gold" style="flex-shrink:0">Activa</span>':''}
+          ${isActive?`<span class="badge badge-gold" style="flex-shrink:0">${t('wallets.active')}</span>`:''}
         </div>
         <div style="font-family:var(--mono);font-size:0.68rem;color:var(--text-muted);margin-bottom:0.5rem;word-break:break-all">${w.kind==='cex'?('Exchange · '+(w.addr||'').replace(/^cex:/,'')):(w.addr? (w.addr.slice(0,14)+'…'+w.addr.slice(-6)) :'—')}</div>
         ${w.bitcoinXpub ? `<div style="font-family:var(--mono);font-size:0.66rem;color:#F7931A;margin-bottom:0.2rem">₿ ${w.bitcoinXpub.slice(0,10)}…${w.bitcoinXpub.slice(-6)} <span style="opacity:0.6">(xpub)</span></div>` : ''}
@@ -15977,7 +16029,7 @@ function renderWallets() {
         ${w.sol?`<div style="font-family:var(--mono);font-size:0.66rem;color:var(--blue);margin-bottom:0.2rem">◎ ${w.sol.slice(0,8)}...${w.sol.slice(-4)}</div>`:''}
         ${w.notes?`<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem" title="${w.notes.replace(/"/g,'&quot;')}">📝 ${w.notes.slice(0,40)}${w.notes.length>40?'…':''}</div>`:''}
         <div style="display:flex;gap:0.4rem;margin-top:0.7rem;flex-wrap:wrap">
-          ${!isActive?`<button class="btn btn-outline btn-sm" onclick="setActiveWallet('${w.id}')">Activar</button>`:''}
+          ${!isActive?`<button class="btn btn-outline btn-sm" onclick="setActiveWallet('${w.id}')">${t('wallets.activate')}</button>`:''}
           <button class="btn btn-outline btn-sm" onclick="editWallet('${w.id}')">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deleteWallet('${w.id}')">✕</button>
         </div>
@@ -15998,7 +16050,7 @@ function renderWallets() {
     </div>`).join('');
 
   return `
-    <div class="section-row"><div class="section-label">Gestão de Wallets</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="openCexImportModal()">↑ Importar Exchange (CSV)</button><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">+ Adicionar Wallet</button></div></div>
+    <div class="section-row"><div class="section-label">${t('wallets.management')}</div><div style="display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="openCexImportModal()">${t('wallets.importCex')}</button><button class="btn btn-gold btn-sm" onclick="openModal('modalWallet')">${t('wallets.addWallet')}</button></div></div>
     ${state.wallets.length ? groupsHTML : `<div class="empty"><span class="empty-icon">👻</span><p>${t('empty.noWallets')}</p></div>`}`;
 }
 
@@ -22087,8 +22139,8 @@ function buildWalletDD() {
   const dd=document.getElementById('walletDD'); if (!dd) return;
   dd.innerHTML = state.wallets.map(w=>`<div class="wallet-option${w.id===state.activeWId?' active':''}" onclick="setActiveWallet('${w.id}');closeWalletDD()">
     <div><div class="wallet-option-name">${w.name}</div><div class="wallet-option-addr">${truncAddr(w.addr)}</div></div>
-    ${w.id===state.activeWId?'<span class="badge badge-gold">Activa</span>':''}
-  </div>`).join('')+`<div style="padding:0.5rem 0.75rem;border-top:1px solid var(--border)"><button class="btn btn-gold btn-sm" style="width:100%" onclick="openModal('modalWallet');closeWalletDD()">+ Adicionar Wallet</button></div>`;
+    ${w.id===state.activeWId?`<span class="badge badge-gold">${t('wallets.active')}</span>`:''}
+  </div>`).join('')+`<div style="padding:0.5rem 0.75rem;border-top:1px solid var(--border)"><button class="btn btn-gold btn-sm" style="width:100%" onclick="openModal('modalWallet');closeWalletDD()">${t('wallets.addWallet')}</button></div>`;
 }
 
 function toggleWalletDD() {
