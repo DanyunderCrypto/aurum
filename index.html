@@ -2836,11 +2836,11 @@ body.stealth-mode .stealth-badge {
         <details style="margin-top:0.5rem;font-size:0.8rem">
           <summary style="cursor:pointer;color:var(--gold,#C6A35A);user-select:none">📖 Como obter a API key do Alchemy (1 minuto, grátis)</summary>
           <ol style="margin:0.6rem 0 0;padding-left:1.2rem;line-height:1.7;color:var(--text-muted,#aaa)">
-            <li>Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> e cria conta grátis (Google/email).</li>
-            <li>No dashboard, clica <strong>Create new app</strong> (ou "Apps" → "+ Create app").</li>
-            <li>Dá um nome qualquer (ex: "Taxesly") e cria.</li>
-            <li>Abre a app → botão <strong>API Key</strong> (canto superior direito).</li>
-            <li>Copia a <strong>API Key</strong> e cola aqui em cima.</li>
+            <li data-i18n-html="wmodal.alchemyStep1">Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> e cria conta grátis (Google/email).</li>
+            <li data-i18n-html="wmodal.alchemyStep2">No dashboard, clica <strong>Create new app</strong> (ou "Apps" → "+ Create app").</li>
+            <li data-i18n="wmodal.alchemyStep3">Dá um nome qualquer (ex: "Taxesly") e cria.</li>
+            <li data-i18n-html="wmodal.alchemyStep4">Abre a app → botão <strong>API Key</strong> (canto superior direito).</li>
+            <li data-i18n-html="wmodal.alchemyStep5">Copia a <strong>API Key</strong> e cola aqui em cima.</li>
           </ol>
           <div style="margin-top:0.5rem;padding:0.5rem 0.7rem;background:rgba(198,163,90,0.08);border-radius:6px;color:var(--text-muted,#aaa)">
             ✓ Uma só key funciona para <strong>todas as chains</strong> (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.
@@ -3498,12 +3498,13 @@ const I18N = {
     'wmodal.alchemyRequired': '(necessária para indexar — grátis)',
     'wmodal.alchemyPlaceholder': 'Cola a tua API key do Alchemy',
     'wmodal.alchemyHelp': '📖 Como obter a API key do Alchemy (1 minuto, grátis)',
+    'wmodal.alchemyStep1': 'Vai a <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> e cria conta grátis (Google/email).',
     'wmodal.alchemyStep1pre': 'Vai a',
     'wmodal.alchemyStep1post': 'e cria conta grátis (Google/email).',
-    'wmodal.alchemyStep2': 'No dashboard, clica Create new app (ou "Apps" → "+ Create app").',
+    'wmodal.alchemyStep2': 'No dashboard, clica <strong>Create new app</strong> (ou "Apps" → "+ Create app").',
     'wmodal.alchemyStep3': 'Dá um nome qualquer (ex: "Taxesly") e cria.',
-    'wmodal.alchemyStep4': 'Abre a app → botão API Key (canto superior direito).',
-    'wmodal.alchemyStep5': 'Copia a API Key e cola aqui em cima.',
+    'wmodal.alchemyStep4': 'Abre a app → botão <strong>API Key</strong> (canto superior direito).',
+    'wmodal.alchemyStep5': 'Copia a <strong>API Key</strong> e cola aqui em cima.',
     'wmodal.alchemyOneKey': '✓ Uma só key funciona para todas as chains (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.',
     'wmodal.advanced': 'Opções avançadas',
     'wmodal.etherscanLabel': 'Etherscan API Key',
@@ -3973,10 +3974,11 @@ const I18N = {
     'wmodal.alchemyHelp': '📖 How to get an Alchemy API key (1 minute, free)',
     'wmodal.alchemyStep1pre': 'Go to',
     'wmodal.alchemyStep1post': 'and create a free account (Google/email).',
-    'wmodal.alchemyStep2': 'In the dashboard, click Create new app (or "Apps" → "+ Create app").',
+    'wmodal.alchemyStep1': 'Go to <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--gold,#C6A35A)">alchemy.com</a> and create a free account (Google/email).',
+    'wmodal.alchemyStep2': 'In the dashboard, click <strong>Create new app</strong> (or "Apps" → "+ Create app").',
     'wmodal.alchemyStep3': 'Give it any name (e.g. "Taxesly") and create it.',
-    'wmodal.alchemyStep4': 'Open the app → API Key button (top right).',
-    'wmodal.alchemyStep5': 'Copy the API Key and paste it above.',
+    'wmodal.alchemyStep4': 'Open the app → <strong>API Key</strong> button (top right).',
+    'wmodal.alchemyStep5': 'Copy the <strong>API Key</strong> and paste it above.',
     'wmodal.alchemyOneKey': '✓ A single key works for all chains (Ethereum, Base, Arbitrum, Optimism, etc.) — you don\'t need one per chain. The free plan is enough for personal use.',
     'wmodal.advanced': 'Advanced options',
     'wmodal.etherscanLabel': 'Etherscan API Key',
@@ -4219,6 +4221,12 @@ function applyStaticI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (key) el.textContent = t(key);
+  });
+  // data-i18n-html: para textos que CONTÊM HTML (links, <strong>). Usa innerHTML.
+  // A tradução tem de ser confiável (vem do nosso dicionário, não de input do user).
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    const key = el.getAttribute('data-i18n-html');
+    if (key) el.innerHTML = t(key);
   });
   document.querySelectorAll('[data-i18n-title]').forEach(el => {
     const key = el.getAttribute('data-i18n-title');
