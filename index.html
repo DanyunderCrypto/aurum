@@ -7142,6 +7142,24 @@ const fifoEngine = (() => {
     for (const pat of SPAM_NAME_PATTERNS) {
       if (pat.test(name) || pat.test(sym)) return true;
     }
+
+    // SPAM "valor 0 recebido sem preço" (apenas VISUAL — fiscalmente já é ignorado:
+    // o classifyEvent salta valor 0 e NFTs). Limpa a vista do History dos airdrops
+    // de lixo (ex: tokens "Reward" ERC-1155 que aparecem como ETH valor 0 na CELO/
+    // Blast). Salvaguardas para NUNCA esconder algo real:
+    //   - só RECEBIDO (in) — nunca o que tu enviaste
+    //   - só valor 0 — nada com quantidade real
+    //   - só SEM preço conhecido — se tem preço de mercado, não é lixo
+    //   - allowlist de contratos (LEGIT_CONTRACTS) já saiu acima
+    // Como é só visual, o botão "mostrar spam" do History continua a revelá-los.
+    const _amt = +event.amount || 0;
+    const _isIncoming = (event.direction === 'in');
+    const _hasPrice = (typeof event.priceEUR === 'number' && event.priceEUR > 0)
+                   || (typeof event.priceUSD === 'number' && event.priceUSD > 0);
+    // Qualquer ENTRADA de valor 0 sem preço conhecido = lixo visual (inclui os NFT
+    // "Reward" ERC-1155 e os tokens que aparecem como ETH valor-0).
+    if (_isIncoming && _amt === 0 && !_hasPrice) return true;
+
     return false;
   }
 
