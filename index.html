@@ -3706,6 +3706,7 @@ const I18N = {
     'cfg.testConnection': '▶ Testar Conexão',
     'cfg.historyDiag': 'Diagnóstico de Histórico',
     'cfg.pricesBtn': '▶ Preços',
+    'cfg.resolveDates': '🕐 Resolver datas em falta',
     'cfg.copyReport': '📋 Copiar Relatório',
     'cfg.homepage': '🌐 Página inicial',
     'cfg.invalidHash': 'Hash inválido. Deve começar por 0x e ter 66 caracteres.',
@@ -4252,6 +4253,7 @@ const I18N = {
     'cfg.testConnection': '▶ Test Connection',
     'cfg.historyDiag': 'History Diagnostics',
     'cfg.pricesBtn': '▶ Prices',
+    'cfg.resolveDates': '🕐 Resolve missing dates',
     'cfg.copyReport': '📋 Copy Report',
     'cfg.homepage': '🌐 Homepage',
     'cfg.invalidHash': 'Invalid hash. Must start with 0x and be 66 characters long.',
@@ -9621,6 +9623,66 @@ async function testMorphoAPI() {
   el.innerHTML = lines.join('<br>');
 }
 
+// CAMADA 3: botão UI para resolver as datas em falta (via blockNumber). Corre o
+// resolvedor da Camada 2 nos eventos da carteira ativa, com barra de progresso, e
+// persiste as datas resolvidas. Manual (não automático) para o utilizador controlar
+// o consumo da quota Alchemy.
+async function resolveMissingDatesUI() {
+  const w = activeWallet();
+  if (!w) { alert(t('empty.noWallet') || 'Sem wallet ativa'); return; }
+  const key = resolveAlchemyKey(w);
+  const lang = (state.lang || 'pt');
+
+  // Eventos da carteira ativa sem data mas com blockNumber (recuperáveis)
+  const addrs = [(w.addr || w.evm || '').toLowerCase()].filter(Boolean);
+  const evs = (state.events || []).filter(e =>
+    addrs.includes((e.walletAddress || '').toLowerCase()) &&
+    (!e.timestamp || e.timestamp <= 0) && !e.date &&
+    e.blockNumber && isFinite(e.blockNumber) && e.chain
+  );
+
+  const progEl = document.getElementById('resolveDatesProgress');
+  const barEl = document.getElementById('resolveDatesBar');
+  const lblEl = document.getElementById('resolveDatesLabel');
+
+  if (!evs.length) {
+    if (lblEl) lblEl.textContent = lang === 'en' ? 'No missing dates to resolve.' : 'Sem datas em falta para resolver.';
+    if (progEl) progEl.style.display = 'block';
+    if (barEl) barEl.style.width = '100%';
+    return;
+  }
+
+  if (progEl) progEl.style.display = 'block';
+  if (barEl) barEl.style.width = '0%';
+  if (lblEl) lblEl.textContent = (lang === 'en'
+    ? `Resolving ${evs.length} dates…`
+    : `A resolver ${evs.length} datas…`);
+
+  try {
+    const res = await resolveMissingDates(evs, key, (done, total) => {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 100;
+      if (barEl) barEl.style.width = pct + '%';
+      if (lblEl) lblEl.textContent = (lang === 'en'
+        ? `Resolving blocks… ${done}/${total}`
+        : `A resolver blocos… ${done}/${total}`);
+    });
+    // Persistir as datas resolvidas (os objetos foram modificados in-place)
+    saveState();
+    try { if (typeof _eventsCache !== 'undefined') _eventsCache.clear(); } catch {}
+    if (lblEl) lblEl.textContent = (lang === 'en'
+      ? `✓ Done: ${res.resolved} resolved, ${res.failed} failed (${res.blocksQueried} blocks queried).`
+      : `✓ Concluído: ${res.resolved} resolvidas, ${res.failed} falharam (${res.blocksQueried} blocos consultados).`);
+    if (barEl) barEl.style.width = '100%';
+    // Re-render para o motor fiscal recalcular com as novas datas
+    if (typeof render === 'function') render();
+  } catch (err) {
+    if (lblEl) lblEl.textContent = (lang === 'en'
+      ? `Error: ${err.message}`
+      : `Erro: ${err.message}`);
+  }
+}
+window.resolveMissingDatesUI = resolveMissingDatesUI;
+
 async function testPricesAPI() {
   const el = document.getElementById('histDiagResult');
   if (!el) return;
@@ -10373,7 +10435,106 @@ async function _alchemyRpc(chain, method, params, key) {
   return j.result;
 }
 
-// ── EVM RPC + ABI encoding helpers (browser port of MyWalletPulse rpc.js) ──
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CAMADA 2 — Resolvedor de DATAS via blockNumber                            ║
+// ║  Algumas chains (Soneium, zkSync, Linea, Scroll…) não devolvem o           ║
+// ║  blockTimestamp no metadata do getAssetTransfers → eventos ficam sem data. ║
+// ║  Mas têm blockNumber. Aqui resolvemos blockNumber→timestamp via            ║
+// ║  eth_getBlockByNumber, com cache agressivo (memória + IDB) para minimizar  ║
+// ║  chamadas: muitos eventos partilham o mesmo bloco, e o cache persiste      ║
+// ║  entre sessões (um bloco nunca muda de timestamp).                         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const _BLOCK_TS_IDB_KEY = 'blockts_v1';
+let _blockTsCache = null; // Map "chain:block" → ts(segundos)
+
+async function _loadBlockTsCache() {
+  if (_blockTsCache) return _blockTsCache;
+  _blockTsCache = new Map();
+  try {
+    const stored = await idb.get(_BLOCK_TS_IDB_KEY);
+    if (stored && typeof stored === 'object') {
+      for (const [k, v] of Object.entries(stored)) {
+        if (typeof v === 'number' && v > 0) _blockTsCache.set(k, v);
+      }
+    }
+  } catch { /* cache vazio, sem problema */ }
+  return _blockTsCache;
+}
+
+let _blockTsSaveTimer = null;
+function _scheduleBlockTsSave() {
+  if (_blockTsSaveTimer) return;
+  _blockTsSaveTimer = setTimeout(async () => {
+    _blockTsSaveTimer = null;
+    try {
+      const obj = {};
+      for (const [k, v] of _blockTsCache.entries()) obj[k] = v;
+      await idb.set(_BLOCK_TS_IDB_KEY, obj);
+    } catch { /* persistência best-effort */ }
+  }, 1500);
+}
+
+// Resolve o timestamp de UM bloco (com cache). Devolve ts(segundos) ou null.
+async function _resolveBlockTs(chain, blockNumber, key) {
+  if (!chain || !blockNumber || !isFinite(blockNumber)) return null;
+  await _loadBlockTsCache();
+  const cacheKey = `${chain}:${blockNumber}`;
+  if (_blockTsCache.has(cacheKey)) return _blockTsCache.get(cacheKey);
+  // eth_getBlockByNumber aceita o nº em hex; false = sem transações (mais leve)
+  const hexBlock = '0x' + Number(blockNumber).toString(16);
+  const block = await _alchemyRpc(chain, 'eth_getBlockByNumber', [hexBlock, false], key);
+  if (!block || !block.timestamp) return null;
+  const ts = parseInt(block.timestamp, 16);
+  if (!isFinite(ts) || ts <= 0) return null;
+  _blockTsCache.set(cacheKey, ts);
+  _scheduleBlockTsSave();
+  return ts;
+}
+
+// Resolve as datas em falta de uma lista de eventos (in-place). Agrupa por bloco
+// único para minimizar chamadas. Devolve { resolved, failed, blocksQueried }.
+// onProgress(done, total) opcional para barra de progresso.
+async function resolveMissingDates(events, key, onProgress) {
+  const undated = (events || []).filter(e =>
+    (!e.timestamp || e.timestamp <= 0) && !e.date &&
+    e.blockNumber && isFinite(e.blockNumber) && e.chain
+  );
+  if (!undated.length) return { resolved: 0, failed: 0, blocksQueried: 0 };
+
+  // Blocos únicos (chain:block) → lista de eventos que dependem dele
+  const byBlock = new Map();
+  for (const e of undated) {
+    const k = `${e.chain}:${e.blockNumber}`;
+    if (!byBlock.has(k)) byBlock.set(k, []);
+    byBlock.get(k).push(e);
+  }
+
+  await _loadBlockTsCache();
+  const uniqueBlocks = [...byBlock.keys()];
+  let resolved = 0, failed = 0, queried = 0, done = 0;
+
+  for (const blockKey of uniqueBlocks) {
+    const [chain, blockStr] = blockKey.split(':');
+    const blockNum = parseInt(blockStr, 10);
+    let ts = _blockTsCache.get(blockKey);
+    if (ts === undefined) {
+      ts = await _resolveBlockTs(chain, blockNum, key);
+      queried++;
+    }
+    const deps = byBlock.get(blockKey);
+    if (ts && ts > 0) {
+      const dateStr = new Date(ts * 1000).toISOString().slice(0, 10);
+      for (const e of deps) { e.timestamp = ts; e.date = dateStr; }
+      resolved += deps.length;
+    } else {
+      failed += deps.length;
+    }
+    done++;
+    if (onProgress) { try { onProgress(done, uniqueBlocks.length); } catch {} }
+  }
+  return { resolved, failed, blocksQueried: queried };
+}
+window.resolveMissingDates = resolveMissingDates;
 // Low-level helpers for reading on-chain contract state. Ported from a Node.js LP tracker;
 // the only change is Buffer→TextDecoder for browser string decoding. These power the Uniswap
 // V3 / Aerodrome LP readers below.
@@ -18861,6 +19022,13 @@ function renderSettings(w) {
             <button class="btn btn-outline btn-sm" onclick="testAlchemyAPI('linea')">▶ Alchemy (Linea)</button>
             <button class="btn btn-blue btn-sm" onclick="testMorphoAPI()">▶ Morpho</button>
             <button class="btn btn-blue btn-sm" onclick="testPricesAPI()" data-i18n="cfg.pricesBtn">▶ Preços</button>
+            <button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()" data-i18n="cfg.resolveDates">🕐 Resolver datas em falta</button>
+          </div>
+          <div id="resolveDatesProgress" style="display:none;margin-bottom:0.8rem">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
+            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div id="resolveDatesBar" style="height:100%;width:0%;background:var(--gold);transition:width 0.2s"></div>
+            </div>
           </div>
           <div class="alert alert-info" style="font-size:0.75rem;margin-bottom:0.6rem">
             <span>ℹ</span><div>Wallet activa: <strong style="color:var(--gold)">${activeWallet()?.addr||'nenhuma'}</strong></div>
