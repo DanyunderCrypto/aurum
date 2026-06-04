@@ -3636,6 +3636,17 @@ const I18N = {
     'th.type': 'Tipo',
     'th.occurrences': 'Ocorrências',
     'th.explanation': 'Explicação',
+    // Dashboard / posições
+    'dash.taxOptim': '🎯 Optimização Fiscal · Tax Loss Harvesting',
+    'dash.realizeLosses': 'Realizar todos os losses reduzia-o até',
+    'dash.utilization': 'Utilização',
+    'dash.defiDistribution': '⚖ Distribuição DeFi',
+    'dash.recordedHistory': '📋 Histórico registado:',
+    'dash.taxedOnFiat': 'tributado só na conversão a fiat',
+    'dash.collectingCurve': 'A recolher histórico — a curva aparece a partir de amanhã',
+    'dash.addCollateralNow': 'Adiciona colateral ou reduz dívida imediatamente.',
+    'dash.collecting24h': 'Recolhendo histórico para mostrar variação 24h…',
+    'dash.totalNetWorth': 'Património total',
   },
   en: {
     // Tabs
@@ -4096,6 +4107,17 @@ const I18N = {
     'th.type': 'Type',
     'th.occurrences': 'Occurrences',
     'th.explanation': 'Explanation',
+    // Dashboard / positions
+    'dash.taxOptim': '🎯 Tax Optimization · Tax Loss Harvesting',
+    'dash.realizeLosses': 'Realizing all losses would reduce it to',
+    'dash.utilization': 'Utilization',
+    'dash.defiDistribution': '⚖ DeFi Distribution',
+    'dash.recordedHistory': '📋 Recorded history:',
+    'dash.taxedOnFiat': 'taxed only on conversion to fiat',
+    'dash.collectingCurve': 'Collecting history — the curve appears from tomorrow',
+    'dash.addCollateralNow': 'Add collateral or reduce debt immediately.',
+    'dash.collecting24h': 'Collecting history to show 24h change…',
+    'dash.totalNetWorth': 'Total Net Worth',
   },
 };
 
@@ -12005,7 +12027,7 @@ function renderTaxLossHarvest(w) {
     return `
       <div class="panel" style="margin-top:1.5rem">
         <div class="panel-head">
-          <span class="panel-title">🎯 Optimização Fiscal · Tax Loss Harvesting</span>
+          <span class="panel-title">${t('dash.taxOptim')}</span>
         </div>
         <div class="panel-body">
           <div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:0.82rem">
@@ -12025,7 +12047,7 @@ function renderTaxLossHarvest(w) {
   return `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
-        <span class="panel-title">🎯 Optimização Fiscal · Tax Loss Harvesting</span>
+        <span class="panel-title">${t('dash.taxOptim')}</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">${losses.length} posições com loss não realizado</span>
       </div>
       <div class="panel-body">
@@ -12034,7 +12056,7 @@ function renderTaxLossHarvest(w) {
           <div>
             Tens <strong>€${fmt(Math.abs(totalLossEUR))}</strong> em losses não realizados.
             Realizá-los antes de 31 Dez compensa ganhos do Anexo G no mesmo ano.
-            ${yr.anexoG.gain > 0 ? `<br><strong>Imposto actual estimado: €${fmt(yr.taxEstimateEUR)}.</strong> Realizar todos os losses reduzia-o até <strong>€${fmt(Math.max(0, yr.anexoG.gain + totalLossEUR) * 0.28)}</strong>.` : '<br>Sem ganhos G a compensar este ano — o loss pode ser reportado para os 5 anos seguintes.'}
+            ${yr.anexoG.gain > 0 ? `<br><strong>Imposto actual estimado: €${fmt(yr.taxEstimateEUR)}.</strong> ${t('dash.realizeLosses')} <strong>€${fmt(Math.max(0, yr.anexoG.gain + totalLossEUR) * 0.28)}</strong>.` : '<br>Sem ganhos G a compensar este ano — o loss pode ser reportado para os 5 anos seguintes.'}
           </div>
         </div>
 
@@ -12189,7 +12211,7 @@ function renderDefiPositions(w) {
         metricsLine: `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;font-family:var(--mono)">
           <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LLTV</div><span style="color:var(--white);font-size:0.85rem">${fmt(m.lltv,1)}%</span></div>
           <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Borrow APR</div><span style="color:var(--red);font-size:0.85rem">${(m.borrowApy*100).toFixed(2)}%</span></div>
-          <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Utilização</div><span style="color:${m.utilization>0.9?'var(--red)':m.utilization>0.7?'var(--gold)':'var(--green)'};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
+          <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('dash.utilization')}</div><span style="color:${m.utilization>0.9?'var(--red)':m.utilization>0.7?'var(--gold)':'var(--green)'};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
         </div>${m.supplyUsd > 0 ? `<div style="margin-top:0.6rem;font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">Supply (yield): <span style="color:var(--green)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>` : ''}`,
       })) : null,
       health: hf ? { type: 'hf', value: hf, color: hfColor,
@@ -12795,7 +12817,7 @@ function renderDefiPositions(w) {
     ${defiDonutHtml ? `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
-        <span class="panel-title">⚖ Distribuição DeFi</span>
+        <span class="panel-title">${t('dash.defiDistribution')}</span>
         <span style="font-size:0.74rem;color:var(--text-muted)">total <strong style="color:var(--text);font-weight:600">€${fmt(_donutTotalEUR)}</strong></span>
       </div>
       <div class="panel-body">
@@ -12829,10 +12851,10 @@ function renderDefiPositions(w) {
             const parts = [];
             if (fees) parts.push(`${fees} de fees`);
             if (emis) parts.push(`${emis} de emissões`);
-            return `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem">📋 Histórico registado: <strong>${inc.length}</strong> recebimentos (${parts.join(', ')}) — guardado para eventual tratamento Cat. E.</div>`;
+            return `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem">${t('dash.recordedHistory')} <strong>${inc.length}</strong> recebimentos (${parts.join(', ')}) — guardado para eventual tratamento Cat. E.</div>`;
           })()}
           <div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.2rem;line-height:1.5">
-            Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>tributado só na conversão a fiat</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.85">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
+            Fees e emissões ainda por reclamar. Tratamento fiscal por defeito: <strong>${t('dash.taxedOnFiat')}</strong> (mais-valia G/G1, como staking — validado por TOCs). ${state.settings?.defiIncomeTreatment === 'cat_e' ? 'Modo atual: <strong>Categoria E</strong> na receção.' : ''} <span style="opacity:0.85">Tratamento a confirmar com TOC; ainda não aplicado ao relatório.</span>
           </div>
         </div>` : ''}
         <details style="margin-top:0.8rem">
@@ -13334,7 +13356,7 @@ function recordPortfolioValue(wid, eur) {
 function portfolioSparkline(wid, width = 260, height = 56) {
   const hist = (state.valueHistory && state.valueHistory[wid]) || [];
   if (hist.length < 2) {
-    return `<div style="display:flex;align-items:center;justify-content:center;height:${height}px;font-size:0.7rem;color:var(--text-dim);text-align:center;padding:0 1rem">A recolher histórico — a curva aparece a partir de amanhã</div>`;
+    return `<div style="display:flex;align-items:center;justify-content:center;height:${height}px;font-size:0.7rem;color:var(--text-dim);text-align:center;padding:0 1rem">${t('dash.collectingCurve')}</div>`;
   }
   const vals = hist.map(p => p.v);
   const min = Math.min(...vals), max = Math.max(...vals);
@@ -13421,7 +13443,7 @@ function renderDashboard(w) {
   const _liqDismissed = window._dismissedLiqAlert === _liqKey;
   const alertHTML = (minHF!==null&&minHF<1.2&&!_liqDismissed)
     ? `<div class="alert alert-danger" style="margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
-         <span>⚠️ <strong>LIQUIDAÇÃO EM RISCO — HF ${minHF.toFixed(3)}</strong> Adiciona colateral ou reduz dívida imediatamente.</span>
+         <span>⚠️ <strong>LIQUIDAÇÃO EM RISCO — HF ${minHF.toFixed(3)}</strong> ${t('dash.addCollateralNow')}</span>
          <button onclick="window._dismissedLiqAlert='${_liqKey}';render()" style="background:none;border:none;color:inherit;font-size:1.1rem;cursor:pointer;opacity:0.7;flex-shrink:0;padding:0 0.3rem" title="Dispensar (continua visível o aviso no canto)">×</button>
        </div>`
     : minHF!==null&&minHF<1.5
@@ -13454,7 +13476,7 @@ function renderDashboard(w) {
       <span class="hero-delta-pct">(${delta.abs>=0?'+':''}${delta.pct.toFixed(2)}%)</span>
       <span class="hero-delta-period">· ${delta.days <= 1 ? '1d' : delta.days + 'd'}</span>
     </div>
-  ` : delta ? `<div class="hero-delta neutral"><span>${t('empty.no24hChange')}</span></div>` : `<div class="hero-delta neutral"><span class="hero-delta-period">Recolhendo histórico para mostrar variação 24h…</span></div>`;
+  ` : delta ? `<div class="hero-delta neutral"><span>${t('empty.no24hChange')}</span></div>` : `<div class="hero-delta neutral"><span class="hero-delta-period">${t('dash.collecting24h')}</span></div>`;
 
   return `
     ${alertHTML}
@@ -13463,7 +13485,7 @@ function renderDashboard(w) {
     <!-- HERO BLOCK — património centrado, gráfico de evolução por baixo -->
     <div class="hero-block" style="display:flex;flex-direction:column;align-items:center;text-align:center">
       <div class="hero-main" style="align-items:center;width:100%;box-sizing:border-box">
-        <div class="hero-label">Património total</div>
+        <div class="hero-label">${t('dash.totalNetWorth')}</div>
         <div class="hero-value">
           ${walletTotalEUR
             ? `<span class="currency-symbol">€</span>${fmt(walletTotalEUR, 2)}`
@@ -13745,7 +13767,7 @@ function renderMorphoMarketCard(m) {
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
       <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LLTV</div><span style="font-family:var(--mono);color:var(--white);font-size:0.85rem">${fmt(m.lltv,1)}%</span></div>
       <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Borrow APR</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(m.borrowApy*100).toFixed(2)}%</span></div>
-      <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Utilização</div><span style="font-family:var(--mono);color:${utilColor};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
+      <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('dash.utilization')}</div><span style="font-family:var(--mono);color:${utilColor};font-size:0.85rem">${(m.utilization*100).toFixed(1)}%</span></div>
     </div>
     ${m.supplyUsd > 0 ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07);font-family:var(--mono);font-size:0.72rem;color:var(--text-muted)">Supply (yield): <span style="color:var(--green)">${m.supplyAmt.toFixed(4)} ${m.loanSym}</span> ($${fmt(m.supplyUsd)}) @ <span style="color:var(--green)">${(m.supplyApy*100).toFixed(2)}%</span></div>`:''}
   </div>`;
@@ -18438,7 +18460,7 @@ function renderSettings(w) {
           <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'var(--gold)':'var(--border-soft)'};cursor:pointer;margin-bottom:0.6rem">
             <input type="radio" name="defiTreatment" value="deferred" ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'checked':''} onchange="setDefiTreatment('deferred')" style="margin-top:0.2rem">
             <div>
-              <div style="font-weight:600;font-size:0.85rem">Diferido — tributado só na conversão a fiat <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
+              <div style="font-weight:600;font-size:0.85rem">Diferido — ${t('dash.taxedOnFiat')} <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
               <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">O rendimento em cripto não é tributado na receção. Só gera imposto quando convertido a fiat, como mais-valia (G/G1), à semelhança do staking. Interpretação validada por 2 TOCs.</div>
             </div>
           </label>
