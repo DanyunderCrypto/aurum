@@ -2815,7 +2815,7 @@ body.stealth-mode .stealth-badge {
 <!-- ADD/EDIT WALLET -->
 <div class="modal-overlay hidden" id="modalWallet">
 <div class="modal">
-  <div class="modal-head"><span class="modal-title" id="modalWalletTitle">Registar Wallet</span><button class="btn-ghost" onclick="closeModal('modalWallet')">✕</button></div>
+  <div class="modal-head"><span class="modal-title" id="modalWalletTitle" data-i18n="wmodal.title">Registar Wallet</span><button class="btn-ghost" onclick="closeModal('modalWallet')">✕</button></div>
   <div class="modal-body">
     <div class="form-row">
       <div class="form-group form-full"><label class="form-label" data-i18n="wmodal.name">Nome</label><input class="form-input" id="w_name" data-i18n-placeholder="wmodal.namePlaceholder" placeholder="ex: Wallet Principal DeFi"></div>
@@ -2828,7 +2828,7 @@ body.stealth-mode .stealth-badge {
         </span>
       </div>
       <div class="form-group form-full">
-        <label class="form-label">Alchemy API Key <span style="color:var(--green)">(necessária para indexar — grátis)</span></label>
+        <label class="form-label" data-i18n-html="wmodal.alchemyLabelFull">Alchemy API Key <span style="color:var(--green)">(necessária para indexar — grátis)</span></label>
         <input class="form-input" id="w_alchemy_key" placeholder="Cole a tua API key do Alchemy">
         <details style="margin-top:0.5rem;font-size:0.8rem">
           <summary style="cursor:pointer;color:var(--gold,#C6A35A);user-select:none">📖 Como obter a API key do Alchemy (1 minuto, grátis)</summary>
@@ -2847,14 +2847,14 @@ body.stealth-mode .stealth-badge {
       <details style="margin:0 0 0.5rem">
         <summary style="cursor:pointer;color:var(--text-muted,#888);font-size:0.78rem;user-select:none">Opções avançadas</summary>
         <div class="form-group form-full" style="margin-top:0.6rem">
-          <label class="form-label">Etherscan API Key <span style="color:var(--muted)">(alternativa — só ETH mainnet)</span></label>
+          <label class="form-label" data-i18n-html="wmodal.etherscanLabelFull">Etherscan API Key <span style="color:var(--muted)">(alternativa — só ETH mainnet)</span></label>
           <input class="form-input" id="w_apikey" placeholder="Opcional — só se não usares Alchemy">
-          <span class="form-note">etherscan.io → My Account → API Keys. Limitada a ETH mainnet no plano gratuito. A Alchemy é recomendada por cobrir todas as chains.</span>
+          <span class="form-note" data-i18n="wmodal.etherscanNote">etherscan.io → My Account → API Keys. Limitada a ETH mainnet no plano gratuito. A Alchemy é recomendada por cobrir todas as chains.</span>
         </div>
       </details>
       <div class="form-group form-full">
-        <label class="form-label">Notas <span style="color:var(--muted)">(opcional)</span></label>
-        <input class="form-input" id="w_notes" placeholder="ex: wallet principal MetaMask">
+        <label class="form-label" data-i18n-html="wmodal.notesLabelFull">Notas <span style="color:var(--muted)">(opcional)</span></label>
+        <input class="form-input" id="w_notes" data-i18n-placeholder="wmodal.notesPlaceholder" placeholder="ex: wallet principal MetaMask">
       </div>
     </div>
   </div>
@@ -3513,6 +3513,11 @@ const I18N = {
     'wmodal.notesPlaceholder': 'ex: wallet principal MetaMask',
     'wmodal.save': 'Guardar Wallet',
     'wmodal.cancel': 'Cancelar',
+    'wmodal.title': 'Registar Wallet',
+    'wmodal.editTitle': 'Editar Wallet',
+    'wmodal.alchemyLabelFull': 'Alchemy API Key <span style="color:var(--green)">(necessária para indexar — grátis)</span>',
+    'wmodal.etherscanLabelFull': 'Etherscan API Key <span style="color:var(--muted)">(alternativa — só ETH mainnet)</span>',
+    'wmodal.notesLabelFull': 'Notas <span style="color:var(--muted)">(opcional)</span>',
     // Modal adicionar cartão
     'cmodal.title': 'Adicionar Cartão',
     'cmodal.nameLabel': 'Nome do Cartão *',
@@ -4054,6 +4059,11 @@ const I18N = {
     'wmodal.notesPlaceholder': 'e.g. main MetaMask wallet',
     'wmodal.save': 'Save Wallet',
     'wmodal.cancel': 'Cancel',
+    'wmodal.title': 'Add Wallet',
+    'wmodal.editTitle': 'Edit Wallet',
+    'wmodal.alchemyLabelFull': 'Alchemy API Key <span style="color:var(--green)">(required for indexing — free)</span>',
+    'wmodal.etherscanLabelFull': 'Etherscan API Key <span style="color:var(--muted)">(alternative — ETH mainnet only)</span>',
+    'wmodal.notesLabelFull': 'Notes <span style="color:var(--muted)">(optional)</span>',
     // Add card modal
     'cmodal.title': 'Add Card',
     'cmodal.nameLabel': 'Card Name *',
@@ -22101,7 +22111,7 @@ function editWallet(id) {
   if (alchemyEl) alchemyEl.value = w.alchemyKey || '';
   const notesEl = document.getElementById('w_notes');
   if (notesEl) notesEl.value = w.notes || '';
-  document.getElementById('modalWalletTitle').textContent = 'Editar Wallet';
+  document.getElementById('modalWalletTitle').textContent = t('wmodal.editTitle');
   window._editWalletId = id;
   openModal('modalWallet');
   // Patch save button to update instead of add
