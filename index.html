@@ -3597,6 +3597,18 @@ const I18N = {
     'empty.noSimPositions': 'Sem posições activas para simular. Faz Refresh primeiro.',
     'empty.noAaveTransfers': 'Nenhuma transferência AAVE encontrada nesta chain.',
     'empty.no24hChange': 'Sem variação significativa nas últimas 24h',
+    // Labels dos cards de posições (AAVE/Morpho) — sem risco fiscal
+    'pos.title': 'Posições',
+    'pos.collateral': 'Colateral',
+    'pos.debt': 'Dívida',
+    'pos.ltv': 'LTV',
+    'pos.liqThreshold': 'Liq. Threshold',
+    'pos.available': 'Disponível',
+    'pos.healthFactor': 'Health Factor',
+    'pos.openInAave': '→ Abrir em app.aave.com',
+    'pos.howWeCalc': 'ⓘ Como calculamos estes valores & notas fiscais',
+    'pos.collateralSupply': 'Colateral+Supply',
+    'pos.collateralBorrow': 'Colateral (borrow)',
   },
   en: {
     // Tabs
@@ -4018,6 +4030,18 @@ const I18N = {
     'empty.noSimPositions': 'No active positions to simulate. Refresh first.',
     'empty.noAaveTransfers': 'No AAVE transfers found on this chain.',
     'empty.no24hChange': 'No significant change in the last 24h',
+    // Position card labels (AAVE/Morpho) — no fiscal risk
+    'pos.title': 'Positions',
+    'pos.collateral': 'Collateral',
+    'pos.debt': 'Debt',
+    'pos.ltv': 'LTV',
+    'pos.liqThreshold': 'Liq. Threshold',
+    'pos.available': 'Available',
+    'pos.healthFactor': 'Health Factor',
+    'pos.openInAave': '→ Open in app.aave.com',
+    'pos.howWeCalc': 'ⓘ How we calculate these values & tax notes',
+    'pos.collateralSupply': 'Collateral+Supply',
+    'pos.collateralBorrow': 'Collateral (borrow)',
   },
 };
 
@@ -12728,7 +12752,7 @@ function renderDefiPositions(w) {
     ${_unifiedRows.length ? `
     <div class="panel">
       <div class="panel-head">
-        <span class="panel-title">Posições</span>
+        <span class="panel-title">${t('pos.title')}</span>
         <span style="font-size:0.7rem;color:var(--text-muted)">${_unifiedRows.length} ${_unifiedRows.length === 1 ? 'posição' : 'posições'} · €${fmt(grandTotalWithMoralis)}</span>
       </div>
       ${_activeTabs.length > 1 ? `
@@ -12758,7 +12782,7 @@ function renderDefiPositions(w) {
           </div>
         </div>` : ''}
         <details style="margin-top:0.8rem">
-          <summary style="font-size:0.7rem;color:var(--text-muted);cursor:pointer;list-style:none;user-select:none">ⓘ Como calculamos estes valores &amp; notas fiscais</summary>
+          <summary style="font-size:0.7rem;color:var(--text-muted);cursor:pointer;list-style:none;user-select:none">${t('pos.howWeCalc')}</summary>
           <div style="margin-top:0.5rem;padding:0.7rem 0.85rem;background:var(--surface-soft);border-radius:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.6">
             <div><strong style="color:var(--text)">Valores:</strong> Loops/lending = colateral − dívida. Vaults (ERC-4626) = valor resgatável do subjacente. Pools (Uniswap V3) = valor dos dois tokens + fees por reclamar.</div>
             <div style="margin-top:0.5rem"><strong style="color:var(--text)">Fiscal:</strong> depositar, pedir emprestado ou entrar em vault/pool <strong>não é alienação</strong> — só o yield/fees realizado em fiat é tributável (ver parecer OCC).</div>
@@ -13420,7 +13444,7 @@ function renderDashboard(w) {
     <div class="metrics-grid">
       ${hasLeveraged ? `
       <div class="metric-card">
-        <div class="metric-label">Health Factor</div>
+        <div class="metric-label">${t('pos.healthFactor')}</div>
         <div class="metric-value" style="color:${hfColor}">${minHF!==null?minHF.toFixed(3):'—'}</div>
         <div class="metric-badge" style="background:${hfColor}22;color:${hfColor};border-color:${hfColor}66">${hfBadge}</div>
       </div>
@@ -13594,7 +13618,7 @@ function renderUnifiedPositions() {
               ].map(([l,v,c])=>`<div style="background:rgba(59,130,246,0.03);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
             </div>
             <div style="margin-top:1rem;font-family:var(--mono);font-size:0.7rem;color:var(--muted)">
-              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">→ Abrir em app.aave.com</a>
+              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">${t('pos.openInAave')}</a>
             </div>
           </div>
         </td></tr>`;
@@ -13613,11 +13637,11 @@ function renderUnifiedPositions() {
       <th style="width:28px"></th>
       <th>Protocolo</th>
       <th>Rede</th>
-      <th>Colateral</th>
-      <th>Dívida</th>
+      <th>${t('pos.collateral')}</th>
+      <th>${t('pos.debt')}</th>
       <th>HF</th>
-      <th>LTV</th>
-      <th>Disponível</th>
+      <th>${t('pos.ltv')}</th>
+      <th>${t('pos.available')}</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     <tfoot><tr style="background:var(--bg2);border-top:2px solid var(--gold)">
@@ -13649,17 +13673,17 @@ function renderMorphoMarketCard(m) {
       </div>
       <div style="text-align:right">
         <div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:${hfColor};line-height:1">${m.hf?m.hf.toFixed(3):'—'}</div>
-        <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">Health Factor</div>
+        <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">${t('pos.healthFactor')}</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.85rem">
       <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
+        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.collateral')}</div>
         <div style="color:var(--white);font-weight:600;font-size:0.95rem">${m.colAmt.toFixed(4)} ${m.colSym}</div>
         <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.collateralUsd)}</div>
       </div>
       <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
+        <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.debt')}</div>
         <div style="color:var(--amber);font-weight:600;font-size:0.95rem">${m.borrowAmt.toFixed(4)} ${m.loanSym}</div>
         <div style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(m.borrowUsd)}</div>
       </div>
@@ -13757,7 +13781,7 @@ function renderDefiCard(c) {
   let metricHTML = '';
   if (c.hf != null) {
     metricHTML = `<div style="font-family:var(--num);font-weight:700;font-size:1.5rem;color:${hfColor};line-height:1">${c.hf.toFixed(3)}</div>
-      <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">Health Factor</div>`;
+      <div style="font-size:0.64rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:0.2rem">${t('pos.healthFactor')}</div>`;
   } else if (c.rangeBadge) {
     const rc = c.rangeBadge.inRange ? 'var(--green)' : 'var(--gold)';
     metricHTML = `<div style="font-size:0.66rem;color:${rc};margin-top:0.3rem">${c.rangeBadge.inRange ? '● In range' : '○ Out of range'}</div>`;
@@ -13800,18 +13824,18 @@ function renderDefiCard(c) {
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Colateral</div>
+          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.collateral')}</div>
           <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
         </div>
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">Dívida</div>
+          <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.debt')}</div>
           <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
-        <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">LTV</div><span style="font-family:var(--mono);color:${ltvColor};font-size:0.85rem">${fmt(ag.ltv||0,1)}%</span></div>
-        ${ag.liqThreshold != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Liq. Threshold</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(ag.liqThreshold/100).toFixed(2)}%</span></div>` : '<div></div>'}
-        ${ag.availableUSD != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">Disponível</div><span style="font-family:var(--mono);color:var(--blue);font-size:0.85rem">$${fmt(ag.availableUSD)}</span></div>` : '<div></div>'}
+        <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.ltv')}</div><span style="font-family:var(--mono);color:${ltvColor};font-size:0.85rem">${fmt(ag.ltv||0,1)}%</span></div>
+        ${ag.liqThreshold != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.liqThreshold')}</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(ag.liqThreshold/100).toFixed(2)}%</span></div>` : '<div></div>'}
+        ${ag.availableUSD != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.available')}</div><span style="font-family:var(--mono);color:var(--blue);font-size:0.85rem">$${fmt(ag.availableUSD)}</span></div>` : '<div></div>'}
       </div>`;
   } else if (c.variant === 'single' && c.single) {
     const sg = c.single;
@@ -13858,7 +13882,7 @@ function renderPositionsTable() {
       <td class="mono" style="color:var(--blue)">$${fmt(p?.available||0)}</td>
     </tr>`;
   }).join('');
-  return `<table><thead><tr><th>Rede</th><th>Colateral</th><th>Dívida</th><th>HF</th><th>LTV</th><th>Disponível</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table><thead><tr><th>Rede</th><th>${t('pos.collateral')}</th><th>${t('pos.debt')}</th><th>HF</th><th>${t('pos.ltv')}</th><th>${t('pos.available')}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderHFRing(chainKey) {
@@ -14188,8 +14212,8 @@ function renderAaveFullDetail(w) {
         </div>
       </div>
       <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-        <div style="text-align:right"><div class="stat-label">Colateral</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--gold)">$${fmt(totalCol)}</div></div>
-        <div style="text-align:right"><div class="stat-label">Dívida</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--amber)">$${fmt(totalDebt)}</div></div>
+        <div style="text-align:right"><div class="stat-label">${t('pos.collateral')}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--gold)">$${fmt(totalCol)}</div></div>
+        <div style="text-align:right"><div class="stat-label">${t('pos.debt')}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--amber)">$${fmt(totalDebt)}</div></div>
         <div style="text-align:right"><div class="stat-label">HF Mín</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${hfColor}">${minHF?minHF.toFixed(3):'—'}</div></div>
       </div>
     </div>
@@ -14210,10 +14234,10 @@ function renderAaveFullDetail(w) {
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Colateral</div><div class="gold mono" style="font-weight:600">$${fmt(p.totalCollateral)}</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Dívida</div><div class="amber mono" style="font-weight:600">$${fmt(p.totalDebt)}</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">LTV</div><div class="mono" style="font-weight:600;color:${p.ltv>70?'var(--red)':p.ltv>50?'var(--gold)':'var(--green)'}">${fmt(p.ltv,2)}%</div></div>
-              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">Disponível</div><div class="blue mono" style="font-weight:600">$${fmt(p.available||0)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.collateral')}</div><div class="gold mono" style="font-weight:600">$${fmt(p.totalCollateral)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.debt')}</div><div class="amber mono" style="font-weight:600">$${fmt(p.totalDebt)}</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.ltv')}</div><div class="mono" style="font-weight:600;color:${p.ltv>70?'var(--red)':p.ltv>50?'var(--gold)':'var(--green)'}">${fmt(p.ltv,2)}%</div></div>
+              <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.available')}</div><div class="blue mono" style="font-weight:600">$${fmt(p.available||0)}</div></div>
             </div>
             <div style="margin-top:0.5rem"><a href="https://app.aave.com" target="_blank" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.aave.com</a></div>
           </div>`;
@@ -14240,8 +14264,8 @@ function renderMorphoFullDetail(w) {
         </div>
       </div>
       <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-        <div style="text-align:right"><div class="stat-label">Colateral+Supply</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--gold)">$${fmt(m.totalCollateral)}</div></div>
-        <div style="text-align:right"><div class="stat-label">Dívida</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--amber)">$${fmt(m.totalDebt)}</div></div>
+        <div style="text-align:right"><div class="stat-label">${t('pos.collateralSupply')}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--gold)">$${fmt(m.totalCollateral)}</div></div>
+        <div style="text-align:right"><div class="stat-label">${t('pos.debt')}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:var(--amber)">$${fmt(m.totalDebt)}</div></div>
         <div style="text-align:right"><div class="stat-label">HF Mín</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${hfColor}">${m.hf?m.hf.toFixed(3):'—'}</div></div>
       </div>
     </div>
@@ -14284,7 +14308,7 @@ function renderProtoDetail(proto, chain, w) {
           </div>`).join('')}
       </div>
       ${mp.positions?.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Mercado</th><th>Token Emprestado</th><th>Supply (yield)</th><th>Colateral (borrow)</th><th>Dívida</th><th>Supply APY</th><th>Borrow APY</th></tr></thead>
+        <thead><tr><th>Mercado</th><th>Token Emprestado</th><th>Supply (yield)</th><th>${t('pos.collateralBorrow')}</th><th>${t('pos.debt')}</th><th>Supply APY</th><th>Borrow APY</th></tr></thead>
         <tbody>${mp.positions.map(pos=>`<tr>
           <td><span style="font-size:0.8rem;color:var(--muted)">${pos.collateral}/${pos.loan}</span></td>
           <td style="font-weight:600">${pos.loan}</td>
