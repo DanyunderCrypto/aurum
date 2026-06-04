@@ -2822,12 +2822,9 @@ body.stealth-mode .stealth-badge {
       <div class="form-group form-full"><label class="form-label" data-i18n="wmodal.evmLabel">Endereço EVM (AAVE/Morpho/etc.) *</label><input class="form-input" id="w_addr" placeholder="0x..."><span class="form-note" data-i18n="wmodal.evmNote">Usado para buscar posições on-chain automaticamente</span></div>
       <div class="form-group form-full"><label class="form-label" data-i18n="wmodal.solLabel">Endereço Solana (Kamino/Jupiter)</label><input class="form-input" id="w_sol" placeholder="...Solana public key..."></div>
       <div class="form-group form-full">
-        <label class="form-label">Bitcoin — Endereço <strong>OU</strong> xpub/ypub/zpub <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+        <label class="form-label" data-i18n-html="wmodal.btcLabel">Bitcoin — Endereço <strong>OU</strong> xpub/ypub/zpub</label>
         <input class="form-input" id="w_btc" placeholder="bc1q... ou xpub...">
-        <span class="form-note">
-          <strong>Address:</strong> 1 só endereço (legacy 1..., P2SH 3..., bech32 bc1...).
-          <strong>xpub/zpub:</strong> deriva automaticamente milhares de endereços (BIP44/49/84) — recomendado para carteiras de hardware.
-          Indexação via Mempool.space (sem API key).
+        <span class="form-note" data-i18n-html="wmodal.btcNote"><strong>Address:</strong> 1 só endereço (legacy 1..., P2SH 3..., bech32 bc1...). <strong>xpub/zpub:</strong> deriva automaticamente milhares de endereços (BIP44/49/84) — recomendado para carteiras de hardware. Indexação via Mempool.space (sem API key).
         </span>
       </div>
       <div class="form-group form-full">
@@ -2842,7 +2839,7 @@ body.stealth-mode .stealth-badge {
             <li data-i18n-html="wmodal.alchemyStep4">Abre a app → botão <strong>API Key</strong> (canto superior direito).</li>
             <li data-i18n-html="wmodal.alchemyStep5">Copia a <strong>API Key</strong> e cola aqui em cima.</li>
           </ol>
-          <div style="margin-top:0.5rem;padding:0.5rem 0.7rem;background:rgba(198,163,90,0.08);border-radius:6px;color:var(--text-muted,#aaa)">
+          <div style="margin-top:0.5rem;padding:0.5rem 0.7rem;background:rgba(198,163,90,0.08);border-radius:6px;color:var(--text-muted,#aaa)" data-i18n-html="wmodal.alchemyOneKey">
             ✓ Uma só key funciona para <strong>todas as chains</strong> (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.
           </div>
         </details>
@@ -3491,9 +3488,9 @@ const I18N = {
     'wmodal.evmLabel': 'Endereço EVM (AAVE/Morpho/etc.) *',
     'wmodal.evmNote': 'Usado para buscar posições on-chain automaticamente',
     'wmodal.solLabel': 'Endereço Solana (Kamino/Jupiter)',
-    'wmodal.btcLabel': 'Bitcoin — Endereço OU xpub/ypub/zpub',
+    'wmodal.btcLabel': 'Bitcoin — Endereço <strong>OU</strong> xpub/ypub/zpub',
     'wmodal.btcOptional': '(opcional)',
-    'wmodal.btcNote': 'Address: 1 só endereço (legacy 1..., P2SH 3..., bech32 bc1...). xpub/zpub: deriva automaticamente milhares de endereços (BIP44/49/84) — recomendado para carteiras de hardware. Indexação via Mempool.space (sem API key).',
+    'wmodal.btcNote': '<strong>Address:</strong> 1 só endereço (legacy 1..., P2SH 3..., bech32 bc1...). <strong>xpub/zpub:</strong> deriva automaticamente milhares de endereços (BIP44/49/84) — recomendado para carteiras de hardware. Indexação via Mempool.space (sem API key).',
     'wmodal.alchemyLabel': 'Alchemy API Key',
     'wmodal.alchemyRequired': '(necessária para indexar — grátis)',
     'wmodal.alchemyPlaceholder': 'Cola a tua API key do Alchemy',
@@ -3505,7 +3502,7 @@ const I18N = {
     'wmodal.alchemyStep3': 'Dá um nome qualquer (ex: "Taxesly") e cria.',
     'wmodal.alchemyStep4': 'Abre a app → botão <strong>API Key</strong> (canto superior direito).',
     'wmodal.alchemyStep5': 'Copia a <strong>API Key</strong> e cola aqui em cima.',
-    'wmodal.alchemyOneKey': '✓ Uma só key funciona para todas as chains (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.',
+    'wmodal.alchemyOneKey': '✓ Uma só key funciona para <strong>todas as chains</strong> (Ethereum, Base, Arbitrum, Optimism, etc.) — não precisas de uma por chain. Plano grátis chega para uso pessoal.',
     'wmodal.advanced': 'Opções avançadas',
     'wmodal.etherscanLabel': 'Etherscan API Key',
     'wmodal.etherscanAlt': '(alternativa — só ETH mainnet)',
@@ -3965,9 +3962,9 @@ const I18N = {
     'wmodal.evmLabel': 'EVM Address (AAVE/Morpho/etc.) *',
     'wmodal.evmNote': 'Used to fetch on-chain positions automatically',
     'wmodal.solLabel': 'Solana Address (Kamino/Jupiter)',
-    'wmodal.btcLabel': 'Bitcoin — Address OR xpub/ypub/zpub',
+    'wmodal.btcLabel': 'Bitcoin — Address <strong>OR</strong> xpub/ypub/zpub',
     'wmodal.btcOptional': '(optional)',
-    'wmodal.btcNote': 'Address: a single address (legacy 1..., P2SH 3..., bech32 bc1...). xpub/zpub: automatically derives thousands of addresses (BIP44/49/84) — recommended for hardware wallets. Indexing via Mempool.space (no API key).',
+    'wmodal.btcNote': '<strong>Address:</strong> a single address (legacy 1..., P2SH 3..., bech32 bc1...). <strong>xpub/zpub:</strong> automatically derives thousands of addresses (BIP44/49/84) — recommended for hardware wallets. Indexing via Mempool.space (no API key).',
     'wmodal.alchemyLabel': 'Alchemy API Key',
     'wmodal.alchemyRequired': '(required for indexing — free)',
     'wmodal.alchemyPlaceholder': 'Paste your Alchemy API key',
@@ -3979,7 +3976,7 @@ const I18N = {
     'wmodal.alchemyStep3': 'Give it any name (e.g. "Taxesly") and create it.',
     'wmodal.alchemyStep4': 'Open the app → <strong>API Key</strong> button (top right).',
     'wmodal.alchemyStep5': 'Copy the <strong>API Key</strong> and paste it above.',
-    'wmodal.alchemyOneKey': '✓ A single key works for all chains (Ethereum, Base, Arbitrum, Optimism, etc.) — you don\'t need one per chain. The free plan is enough for personal use.',
+    'wmodal.alchemyOneKey': '✓ A single key works for <strong>all chains</strong> (Ethereum, Base, Arbitrum, Optimism, etc.) — you don\'t need one per chain. The free plan is enough for personal use.',
     'wmodal.advanced': 'Advanced options',
     'wmodal.etherscanLabel': 'Etherscan API Key',
     'wmodal.etherscanAlt': '(alternative — ETH mainnet only)',
