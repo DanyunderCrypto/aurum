@@ -7081,9 +7081,13 @@ const fifoEngine = (() => {
     'base:0x102d758f688a4c1c5a80b116bd945d4455460282', // USD₮0 (USDT0) on Base — legit
   ]);
   const SPAM_NAME_PATTERNS = [
-    /claim/i, /reward.*at/i, /visit/i, /\.(com|net|io|org|xyz|app|site|finance|cash)\b/i,
+    /claim/i, /reward.*at/i, /visit/i, /\.(com|net|io|org|xyz|app|site|finance|cash|pro|vip|top|club)\b/i,
     /t\.me\//i, /airdrop.*at/i, /just keep clicking/i, /www\./i, /https?:/i,
     /\bfree\b/i, /\bbonus\b/i, /voucher/i, /redeem/i, /\$\s?\d.*(claim|reward|visit)/i,
+    // Publicidade de scam no próprio nome do token: "Telegram @user", "@handle", "join",
+    // "winner", "gift", "giveaway", "rebate", "eligible". Tokens legítimos não fazem isto.
+    /telegram/i, /@[a-z0-9_]{3,}/i, /\bjoin\b/i, /winner/i, /\bgift\b/i, /giveaway/i,
+    /eligible/i, /rebate/i, /\bdrop\b.*\bnow\b/i,
   ];
   function _asciiFold(sym) {
     const map = { 'Ѕ':'S','С':'C','с':'c','ꓴ':'U','ꓢ':'S','ꓓ':'D','О':'O','о':'o','А':'A','а':'a','Е':'E','е':'e','Р':'P','р':'p','Т':'T','К':'K','М':'M','Н':'H','В':'B','Х':'X','і':'i','ј':'j','ɑ':'a','０':'0','Ⅾ':'D','ᗞ':'D' };
