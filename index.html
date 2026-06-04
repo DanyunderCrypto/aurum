@@ -3605,7 +3605,8 @@ const I18N = {
     'pos.liqThreshold': 'Liq. Threshold',
     'pos.available': 'Disponível',
     'pos.healthFactor': 'Health Factor',
-    'pos.openInAave': '→ Abrir em app.aave.com',
+    'pos.openInAave': 'Abrir em app.aave.com',
+    'pos.openInMorpho': 'Abrir em app.morpho.org',
     'pos.howWeCalc': 'ⓘ Como calculamos estes valores & notas fiscais',
     'pos.collateralSupply': 'Colateral+Supply',
     'pos.collateralBorrow': 'Colateral (borrow)',
@@ -4038,7 +4039,8 @@ const I18N = {
     'pos.liqThreshold': 'Liq. Threshold',
     'pos.available': 'Available',
     'pos.healthFactor': 'Health Factor',
-    'pos.openInAave': '→ Open in app.aave.com',
+    'pos.openInAave': 'Open in app.aave.com',
+    'pos.openInMorpho': 'Open in app.morpho.org',
     'pos.howWeCalc': 'ⓘ How we calculate these values & tax notes',
     'pos.collateralSupply': 'Collateral+Supply',
     'pos.collateralBorrow': 'Collateral (borrow)',
@@ -13618,7 +13620,7 @@ function renderUnifiedPositions() {
               ].map(([l,v,c])=>`<div style="background:rgba(59,130,246,0.03);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
             </div>
             <div style="margin-top:1rem;font-family:var(--mono);font-size:0.7rem;color:var(--muted)">
-              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">${t('pos.openInAave')}</a>
+              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">→ ${t('pos.openInAave')}</a>
             </div>
           </div>
         </td></tr>`;
@@ -13850,7 +13852,7 @@ function renderDefiCard(c) {
   // ── Rodapé: métricas extra + link ──
   const footer = [
     c.metricsLine ? `<div style="margin-top:0.85rem;padding-top:0.85rem;border-top:1px solid rgba(255,255,255,0.07)">${c.metricsLine}</div>` : '',
-    c.link ? `<div style="margin-top:0.85rem;font-family:var(--mono);font-size:0.7rem"><a href="${c.link.url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none">→ ${c.link.label}</a></div>` : '',
+    c.link ? `<div style="margin-top:0.85rem;font-family:var(--mono);font-size:0.7rem"><a href="${c.link.url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none">→ ${t(c.link.url.includes('morpho') ? 'pos.openInMorpho' : 'pos.openInAave')}</a></div>` : '',
   ].join('');
 
   return `
