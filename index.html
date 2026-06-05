@@ -8814,7 +8814,15 @@ const aurumBasisBridge = (() => {
     const cfg = Object.assign({}, DEFAULTS, opts || {});
     const addrToGroup = buildAddressToGroup(ownerGroups);
     const links = []; const stats = { candidatesOut: 0, candidatesIn: 0, linked: 0 };
-    const tsOf = (e) => _safeEventTs(e) ?? 0;
+    // _safeEventTs vive dentro do módulo fifoEngine; aqui (basis-bridge, fora desse
+    // módulo) usamos uma versão inline equivalente: ts válido ou 0, nunca NaN.
+    const tsOf = (e) => {
+      if (!e) return 0;
+      const t = e.timestamp;
+      if (typeof t === 'number' && isFinite(t) && t > 0) return t;
+      if (e.date) { const ms = new Date(e.date).getTime(); if (isFinite(ms) && ms > 0) return Math.floor(ms / 1000); }
+      return 0;
+    };
     const grp = (e) => addrToGroup.get(String(e.walletAddress || '').toLowerCase());
     const inGroup = events.filter(e => grp(e) !== undefined);
     const isMovable = (e) => {
