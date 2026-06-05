@@ -3467,6 +3467,23 @@ const I18N = {
     'config.refreshStatus': '↺ Atualizar Status',
     'config.deleteAll': '🗑 Apagar Tudo',
     'config.backupNote': 'Os dados ficam no teu browser (IndexedDB + localStorage fallback). Não há servidor. Auto-snapshots mantêm as últimas 5 versões. Exporta backup para guardar em Drive/Dropbox.',
+    'config.section.transfers': '🔗 Transferências entre as Tuas Carteiras',
+    'config.transfersInfo': 'Quando moves cripto entre as tuas carteiras (ex: sacar da Binance para a tua carteira on-chain), isso não é venda. Com esta opção ligada, o custo de aquisição viaja com a cripto e o relatório fiscal junta as tuas carteiras num só cálculo (regra FIFO sobre o conjunto).',
+    'config.consolidateLabel': 'Consolidar todas as minhas carteiras',
+    'config.consolidateDesc': 'Liga transferências internas automaticamente e calcula o relatório fiscal sobre o conjunto. Desliga só se quiseres um relatório separado por carteira.',
+    'config.walletsToConsolidate': 'Carteiras a consolidar',
+    'config.noWalletsYet': 'Ainda sem carteiras adicionadas.',
+    'config.recommended': 'RECOMENDADO',
+    'config.section.defiTax': '🧾 Tratamento Fiscal — Rendimentos DeFi',
+    'config.defiTaxInfo': 'Como tratar fees de LP, emissões e yield de DeFi recebidos em cripto. Esta definição ainda <strong>não é aplicada ao relatório</strong> — está a ser preparada e deve ser confirmada com um TOC certificado.',
+    'config.defiDeferredLabel': 'Diferido — tributado só na conversão para fiat',
+    'config.defiDeferredDesc': 'O rendimento em cripto não é tributado na receção. Só gera imposto quando convertido a fiat, como mais-valia (G/G1), à semelhança do staking. Interpretação validada por 2 TOCs.',
+    'config.defiCatELabel': 'Categoria E — tributado na receção',
+    'config.defiCatEDesc': 'Trata o rendimento como rendimento de capital (Cat. E) no momento em que é recebido. Escolhe esta opção se o teu TOC preferir, ou se a AT vier a esclarecer que é este o tratamento.',
+    'config.section.about': 'ℹ️ Sobre o Taxesly',
+    'config.aboutTagline': 'CRYPTO TAXES · DONE RIGHT',
+    'config.aboutDesc': 'Tracker fiscal DeFi <strong>local-first</strong> e open source para Portugal. Ao contrário das ferramentas tradicionais, os teus dados — carteiras, transações e cálculos — ficam guardados <strong>apenas no teu browser</strong> (IndexedDB), nunca num servidor. Não há conta para criar, nem base de dados central. Sem tracking, sem ads. FIFO automático, Anexo G/G1/E, regra dos 365 dias. Preços históricos via DefiLlama + ECB.',
+    'config.disclaimer': '<strong>Disclaimer fiscal.</strong> Taxesly é uma ferramenta informativa. Não constitui aconselhamento fiscal. Os cálculos seguem a interpretação dos autores da Lei 24-D/2022 e OE/2023, mas <strong>devem ser validados por um TOC certificado</strong> antes de submeter o IRS. Os autores não se responsabilizam por divergências com a AT.',
     'config.currency': 'Moeda principal',
     'config.decimals': 'Decimais nos valores',
     'config.decimals0': 'Sem decimais (€100)',
@@ -4048,6 +4065,23 @@ const I18N = {
     'config.refreshStatus': '↺ Refresh Status',
     'config.deleteAll': '🗑 Delete All',
     'config.backupNote': 'Your data stays in your browser (IndexedDB + localStorage fallback). There is no server. Auto-snapshots keep the last 5 versions. Export a backup to save it to Drive/Dropbox.',
+    'config.section.transfers': '🔗 Transfers Between Your Wallets',
+    'config.transfersInfo': 'When you move crypto between your own wallets (e.g. withdrawing from Binance to your on-chain wallet), that is not a sale. With this option enabled, the acquisition cost travels with the crypto and the tax report combines your wallets into a single calculation (FIFO across the whole set).',
+    'config.consolidateLabel': 'Consolidate all my wallets',
+    'config.consolidateDesc': 'Automatically links internal transfers and calculates the tax report across the whole set. Turn off only if you want a separate report per wallet.',
+    'config.walletsToConsolidate': 'Wallets to consolidate',
+    'config.noWalletsYet': 'No wallets added yet.',
+    'config.recommended': 'RECOMMENDED',
+    'config.section.defiTax': '🧾 Tax Treatment — DeFi Income',
+    'config.defiTaxInfo': 'How to treat LP fees, emissions and DeFi yield received in crypto. This setting is <strong>not yet applied to the report</strong> — it is being prepared and should be confirmed with a certified accountant (TOC).',
+    'config.defiDeferredLabel': 'Deferred — taxed only on conversion to fiat',
+    'config.defiDeferredDesc': 'Crypto income is not taxed on receipt. It only triggers tax when converted to fiat, as a capital gain (G/G1), similar to staking. Interpretation validated by 2 accountants (TOCs).',
+    'config.defiCatELabel': 'Category E — taxed on receipt',
+    'config.defiCatEDesc': 'Treats the income as investment income (Cat. E) at the moment it is received. Choose this option if your accountant prefers it, or if the tax authority clarifies that this is the correct treatment.',
+    'config.section.about': 'ℹ️ About Taxesly',
+    'config.aboutTagline': 'CRYPTO TAXES · DONE RIGHT',
+    'config.aboutDesc': 'A <strong>local-first</strong>, open-source DeFi tax tracker for Portugal. Unlike traditional tools, your data — wallets, transactions and calculations — is stored <strong>only in your browser</strong> (IndexedDB), never on a server. No account to create, no central database. No tracking, no ads. Automatic FIFO, Annex G/G1/E, the 365-day rule. Historical prices via DefiLlama + ECB.',
+    'config.disclaimer': '<strong>Tax disclaimer.</strong> Taxesly is an informational tool. It does not constitute tax advice. Calculations follow the interpretation by the authors of Law 24-D/2022 and the 2023 State Budget, but <strong>must be validated by a certified accountant (TOC)</strong> before filing your tax return. The authors are not responsible for discrepancies with the tax authority.',
     'config.currency': 'Main currency',
     'config.decimals': 'Value decimals',
     'config.decimals0': 'No decimals (€100)',
@@ -5577,11 +5611,20 @@ const storageManager = (() => {
   let _saveSeq = 0;
   let _lastBackupAt = 0;
 
-  // A state "looks valid" if it has the core structure. Guards against promoting an empty
-  // or corrupt blob over a good one during auto-restore.
+  // A state "looks valid" if it has REAL CONTENT — at least one wallet or one event.
+  // CRITICAL: this must require actual content, not just the array shape. An empty state
+  // (wallets:[], events:[]) is the default `state` object; if we treated that as "valid",
+  // a failed/partial load on startup could let the empty default pass as good, skip the
+  // backup auto-restore, and then the first saveState() would overwrite the real data with
+  // nothing (and rotation could propagate the empty blob into the backups). Requiring real
+  // content here is what keeps the safety net (auto-restore) armed and stops an empty blob
+  // from ever winning over a populated one. A genuine fresh install has no IDB record at
+  // all, so load() falls through to source:'fresh' and boots on defaults — unaffected.
   function _looksValid(st) {
     if (!st || typeof st !== 'object') return false;
-    return Array.isArray(st.wallets) || Array.isArray(st.events);
+    const hasWallets = Array.isArray(st.wallets) && st.wallets.length > 0;
+    const hasEvents  = Array.isArray(st.events)  && st.events.length  > 0;
+    return hasWallets || hasEvents;
   }
 
   function _dayStamp(ts) {
@@ -5600,7 +5643,16 @@ const storageManager = (() => {
       const b0Day = b0 ? _dayStamp(b0.savedAt || b0._backupAt) : null;
 
       if (b0Day === today) {
-        // Same day → just refresh backup_0 in place, don't rotate (preserves older days)
+        // Same day → refresh backup_0 in place, don't rotate (preserves older days).
+        // DEFENCE IN DEPTH: never let a same-day refresh shrink a populated backup to empty.
+        // _looksValid(main) already passed above, but we also guard against overwriting a
+        // backup that has MORE content than the current main (a sign main was partially lost).
+        const b0Count = (b0?.state?.wallets?.length || 0) + (b0?.state?.events?.length || 0);
+        const mainCount = (main.state.wallets?.length || 0) + (main.state.events?.length || 0);
+        if (b0 && b0.state && _looksValid(b0.state) && b0Count > mainCount) {
+          console.warn(`[storage] rotation skipped: backup_0 has more content (${b0Count}) than main (${mainCount}) — keeping backup_0`);
+          return;
+        }
         await idb.set('backup_0', { ...main, _backupAt: Date.now(), _day: today });
         return;
       }
@@ -5639,6 +5691,30 @@ const storageManager = (() => {
         schemaVersion: stateObj._schemaVersion || 1,
       };
       try {
+        // ── CRITICAL GUARD: never overwrite a populated main with an empty state ──
+        // This is the last line of defence against the data-loss cascade. If the new state
+        // has no content (no wallets, no events) but the main already on disk DOES, this is
+        // almost certainly a failed/partial load on startup trying to persist the empty
+        // default. Refuse the write and warn loudly — the real data stays intact and the
+        // next load() will auto-restore it. We only allow an empty save when there is no
+        // populated main to protect (genuine fresh state / explicit reset via skipGuard).
+        if (!opts.skipGuard) {
+          const newHasContent = (Array.isArray(stateObj.wallets) && stateObj.wallets.length > 0) ||
+                                (Array.isArray(stateObj.events)  && stateObj.events.length  > 0);
+          if (!newHasContent) {
+            try {
+              const existing = await idb.get(IDB_KEY_MAIN);
+              const existingHasContent = existing?.state && (
+                (Array.isArray(existing.state.wallets) && existing.state.wallets.length > 0) ||
+                (Array.isArray(existing.state.events)  && existing.state.events.length  > 0)
+              );
+              if (existingHasContent) {
+                console.error('[storage] BLOCKED: refused to overwrite populated data with an empty state. Real data preserved. (If this was an intentional reset, use skipGuard.)');
+                return { ok: false, source: 'idb', blocked: 'empty_over_populated', seq };
+              }
+            } catch (e) { /* if we cannot read existing, fall through and save normally */ }
+          }
+        }
         // Daily backup BEFORE overwriting main (idempotent per-day, cheap to call always).
         // This guarantees the previous good state is snapshotted before we risk the new write.
         if (!opts.skipBackup) {
@@ -18961,25 +19037,25 @@ function renderSettings(w) {
 
     <!-- ── Tratamento Fiscal — Rendimentos DeFi ── -->
     <div class="panel" style="margin-bottom:1rem">
-      <div class="panel-head"><span class="panel-title">🧾 Tratamento Fiscal — Rendimentos DeFi</span></div>
+      <div class="panel-head"><span class="panel-title" data-i18n="config.section.defiTax">🧾 Tratamento Fiscal — Rendimentos DeFi</span></div>
       <div class="panel-body">
         <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
           <span>ℹ</span>
-          <div>Como tratar fees de LP, emissões e yield de DeFi recebidos em cripto. Esta definição ainda <strong>não é aplicada ao relatório</strong> — está a ser preparada e deve ser confirmada com um TOC certificado.</div>
+          <div data-i18n-html="config.defiTaxInfo">Como tratar fees de LP, emissões e yield de DeFi recebidos em cripto. Esta definição ainda <strong>não é aplicada ao relatório</strong> — está a ser preparada e deve ser confirmada com um TOC certificado.</div>
         </div>
         <div class="form-group">
           <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'var(--gold)':'var(--border-soft)'};cursor:pointer;margin-bottom:0.6rem">
             <input type="radio" name="defiTreatment" value="deferred" ${(state.settings?.defiIncomeTreatment||'deferred')==='deferred'?'checked':''} onchange="setDefiTreatment('deferred')" style="margin-top:0.2rem">
             <div>
-              <div style="font-weight:600;font-size:0.85rem">Diferido — ${t('dash.taxedOnFiat')} <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
-              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">O rendimento em cripto não é tributado na receção. Só gera imposto quando convertido a fiat, como mais-valia (G/G1), à semelhança do staking. Interpretação validada por 2 TOCs.</div>
+              <div style="font-weight:600;font-size:0.85rem"><span data-i18n="config.defiDeferredLabel">Diferido — tributado só na conversão para fiat</span> <span style="color:var(--green);font-size:0.65rem" data-i18n="config.recommended">RECOMENDADO</span></div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem" data-i18n="config.defiDeferredDesc">O rendimento em cripto não é tributado na receção. Só gera imposto quando convertido a fiat, como mais-valia (G/G1), à semelhança do staking. Interpretação validada por 2 TOCs.</div>
             </div>
           </label>
           <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${state.settings?.defiIncomeTreatment==='cat_e'?'var(--gold)':'var(--border-soft)'};cursor:pointer">
             <input type="radio" name="defiTreatment" value="cat_e" ${state.settings?.defiIncomeTreatment==='cat_e'?'checked':''} onchange="setDefiTreatment('cat_e')" style="margin-top:0.2rem">
             <div>
-              <div style="font-weight:600;font-size:0.85rem">Categoria E — tributado na receção</div>
-              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">Trata o rendimento como rendimento de capital (Cat. E) no momento em que é recebido. Escolhe esta opção se o teu TOC preferir, ou se a AT vier a esclarecer que é este o tratamento.</div>
+              <div style="font-weight:600;font-size:0.85rem" data-i18n="config.defiCatELabel">Categoria E — tributado na receção</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem" data-i18n="config.defiCatEDesc">Trata o rendimento como rendimento de capital (Cat. E) no momento em que é recebido. Escolhe esta opção se o teu TOC preferir, ou se a AT vier a esclarecer que é este o tratamento.</div>
             </div>
           </label>
         </div>
@@ -18988,23 +19064,23 @@ function renderSettings(w) {
 
     <!-- ── Transferências entre as Tuas Carteiras (basis bridge) ── -->
     <div class="panel" style="margin-bottom:1rem">
-      <div class="panel-head"><span class="panel-title">🔗 Transferências entre as Tuas Carteiras</span></div>
+      <div class="panel-head"><span class="panel-title" data-i18n="config.section.transfers">🔗 Transferências entre as Tuas Carteiras</span></div>
       <div class="panel-body">
         <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
           <span>ℹ</span>
-          <div>Quando moves cripto entre as tuas carteiras (ex: sacar da Binance para a tua carteira on-chain), isso não é venda. Com esta opção ligada, o custo de aquisição viaja com a cripto e o relatório fiscal junta as tuas carteiras num só cálculo (regra FIFO sobre o conjunto).</div>
+          <div data-i18n="config.transfersInfo">Quando moves cripto entre as tuas carteiras (ex: sacar da Binance para a tua carteira on-chain), isso não é venda. Com esta opção ligada, o custo de aquisição viaja com a cripto e o relatório fiscal junta as tuas carteiras num só cálculo (regra FIFO sobre o conjunto).</div>
         </div>
         <label style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem;border-radius:8px;border:1px solid ${state.settings?.consolidateOwner?'var(--gold)':'var(--border-soft)'};cursor:pointer;margin-bottom:1rem">
           <input type="checkbox" ${state.settings?.consolidateOwner?'checked':''} onchange="toggleConsolidateOwner(this.checked)" style="margin-top:0.2rem">
           <div>
-            <div style="font-weight:600;font-size:0.85rem">Consolidar todas as minhas carteiras <span style="color:var(--green);font-size:0.65rem">RECOMENDADO</span></div>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">Liga transferências internas automaticamente e calcula o relatório fiscal sobre o conjunto. Desliga só se quiseres um relatório separado por carteira.</div>
+            <div style="font-weight:600;font-size:0.85rem"><span data-i18n="config.consolidateLabel">Consolidar todas as minhas carteiras</span> <span style="color:var(--green);font-size:0.65rem" data-i18n="config.recommended">RECOMENDADO</span></div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem" data-i18n="config.consolidateDesc">Liga transferências internas automaticamente e calcula o relatório fiscal sobre o conjunto. Desliga só se quiseres um relatório separado por carteira.</div>
           </div>
         </label>
-        ${state.wallets && state.wallets.length ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--gold);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.5rem">Carteiras a consolidar · ${state.wallets.length}</div>
+        ${state.wallets && state.wallets.length ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--gold);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.5rem">${t('config.walletsToConsolidate')} · ${state.wallets.length}</div>
         <div style="display:flex;flex-wrap:wrap;gap:0.35rem">
           ${state.wallets.map(ww=>`<span class="badge ${ww.kind==='cex'?'badge-cyan':'badge-muted'}">${ww.name}</span>`).join('')}
-        </div>` : '<div style="font-size:0.72rem;color:var(--text-muted)">Ainda sem carteiras adicionadas.</div>'}
+        </div>` : `<div style="font-size:0.72rem;color:var(--text-muted)">${t('config.noWalletsYet')}</div>`}
       </div>
     </div>
       <div class="panel-body">
@@ -19200,19 +19276,17 @@ function renderSettings(w) {
 
     <!-- ── Sobre ── -->
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">ℹ️ Sobre o Taxesly</span></div>
+      <div class="panel-head"><span class="panel-title" data-i18n="config.section.about">ℹ️ Sobre o Taxesly</span></div>
       <div class="panel-body">
         <div style="display:flex;align-items:center;gap:1.2rem;margin-bottom:1rem">
           <img src="data:image/png;base64,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" alt="Taxesly" width="52" height="50" style="object-fit:contain;display:block;flex-shrink:0"/>
           <div>
             <div style="font-family:var(--display);font-size:1.3rem;font-weight:600;color:var(--gold);letter-spacing:0.06em">TAXESLY</div>
-            <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.25em;color:var(--text-muted);margin-top:0.2rem">CRYPTO TAXES · DONE RIGHT</div>
+            <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.25em;color:var(--text-muted);margin-top:0.2rem" data-i18n="config.aboutTagline">CRYPTO TAXES · DONE RIGHT</div>
             <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.6rem">v0.9.0 · Sprint 9.0 · Schema v${state._schemaVersion||7}</div>
           </div>
         </div>
-        <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem">
-          Tracker fiscal DeFi <strong>local-first</strong> e open source para Portugal. Ao contrário das ferramentas tradicionais, os teus dados — carteiras, transações e cálculos — ficam guardados <strong>apenas no teu browser</strong> (IndexedDB), nunca num servidor. Não há conta para criar, nem base de dados central. Sem tracking, sem ads. FIFO automático, Anexo G/G1/E, regra dos 365 dias. Preços históricos via DefiLlama + ECB.
-        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem" data-i18n-html="config.aboutDesc">Tracker fiscal DeFi local-first e open source para Portugal.</div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem">
           <a class="btn btn-gold btn-sm" href="./landing.html" target="_blank" rel="noopener" data-i18n="cfg.homepage">🌐 Página inicial</a>
           <a class="btn btn-outline btn-sm" href="https://github.com/danyundercrypto/aurum" target="_blank" rel="noopener">📦 GitHub</a>
@@ -19222,10 +19296,7 @@ function renderSettings(w) {
         </div>
         <div class="alert alert-info" style="font-size:0.75rem">
           <span>⚖️</span>
-          <div>
-            <strong>Disclaimer fiscal.</strong> Taxesly é uma ferramenta informativa. Não constitui aconselhamento fiscal.
-            Os cálculos seguem a interpretação dos autores da Lei 24-D/2022 e OE/2023, mas <strong>devem ser validados por um TOC certificado</strong> antes de submeter o IRS. Os autores não se responsabilizam por divergências com a AT.
-          </div>
+          <div data-i18n-html="config.disclaimer">Disclaimer fiscal.</div>
         </div>
       </div>
     </div>
@@ -23198,7 +23269,13 @@ async function clearAll() {
   }
 
   state = {wallets:[],activeWId:null,cards:[],txs:[],imports:[],collateral:[],hfHistory:{},events:[]};
-  saveState();
+  // Intentional reset: bypass the empty-over-populated guard (the user explicitly confirmed,
+  // twice, and was offered a backup). Also mirror to localStorage and snapshot a backup so
+  // the reset is itself recoverable for a day if it was a mistake.
+  storageManager.saveLocalStorageMirror(state);
+  storageManager.save(state, { skipGuard: true }).catch(err => {
+    console.warn('[clearAll] save failed:', err.message);
+  });
   // Bust dashboard FIFO cache
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
   render();
