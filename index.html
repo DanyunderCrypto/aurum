@@ -3443,6 +3443,40 @@ const I18N = {
     'config.themeLight': '☀️ Claro',
     'config.fiatCurrency': 'Moeda fiat de referência',
     'config.stealthMode': 'Modo Stealth (oculta valores)',
+    'config.section.prefs': '🎨 Preferências',
+    'config.title': 'Configurações Taxesly',
+    'config.section.alerts': '🔔 Alertas In-App',
+    'config.alertsDesc': 'Quando o teu Health Factor (lending positions) cair abaixo deste valor, vês um aviso amarelo no topo da app.',
+    'config.alertHfLabel': 'Alerta quando HF cair abaixo de',
+    'config.etherscanOptLabel': 'Etherscan API Key (opcional)',
+    'config.etherscanConfigured': '✓ Configurada',
+    'config.etherscanPlaceholder': 'Apenas se precisares (Alchemy chega para tudo)',
+    'config.saveKeys': 'Guardar Keys',
+    'config.save': 'Guardar',
+    'config.storageBackend': 'Storage Backend',
+    'config.autoBackupsActive': 'auto-backups activos',
+    'config.fallbackMode': 'fallback mode',
+    'config.currentState': 'Estado actual',
+    'config.browserQuota': 'Quota Browser',
+    'config.used': 'usado',
+    'config.autoBackupsRolling': 'Auto-backups (rolling)',
+    'config.thSize': 'Tamanho',
+    'config.restore': 'Restaurar',
+    'config.exportBackup': '⬇ Exportar Backup Completo',
+    'config.importBackup': '⬆ Importar Backup',
+    'config.refreshStatus': '↺ Atualizar Status',
+    'config.deleteAll': '🗑 Apagar Tudo',
+    'config.backupNote': 'Os dados ficam no teu browser (IndexedDB + localStorage fallback). Não há servidor. Auto-snapshots mantêm as últimas 5 versões. Exporta backup para guardar em Drive/Dropbox.',
+    'config.currency': 'Moeda principal',
+    'config.decimals': 'Decimais nos valores',
+    'config.decimals0': 'Sem decimais (€100)',
+    'config.decimals2': '2 decimais (€100,50)',
+    'config.decimals4': '4 decimais (€100,5000)',
+    'config.language': 'Língua / Language',
+    'config.stealthLabel': 'Modo Stealth (ocultar valores)',
+    'config.stealthDesc': 'Substitui valores por ••• em sítios públicos. Clica num valor para revelar temporariamente.',
+    'config.hideSpamLabel': 'Ocultar spam tokens',
+    'config.hideSpamDesc': 'Esconde tokens sem cobertura DefiLlama (airdrops lixo). Tokens "sem preço" não aparecem na tabela.',
     'config.hideSpam': 'Ocultar tokens marcados como spam',
     'config.debugMode': 'Debug Mode (Ctrl+Shift+D para toggle)',
     'config.alchemyKey': 'Alchemy API Key (global)',
@@ -3990,6 +4024,40 @@ const I18N = {
     'config.themeLight': '☀️ Light',
     'config.fiatCurrency': 'Reference fiat currency',
     'config.stealthMode': 'Stealth Mode (hides values)',
+    'config.section.prefs': '🎨 Preferences',
+    'config.title': 'Taxesly Settings',
+    'config.section.alerts': '🔔 In-App Alerts',
+    'config.alertsDesc': 'When your Health Factor (lending positions) drops below this value, you see a yellow warning at the top of the app.',
+    'config.alertHfLabel': 'Alert when HF drops below',
+    'config.etherscanOptLabel': 'Etherscan API Key (optional)',
+    'config.etherscanConfigured': '✓ Configured',
+    'config.etherscanPlaceholder': 'Only if you need it (Alchemy covers everything)',
+    'config.saveKeys': 'Save Keys',
+    'config.save': 'Save',
+    'config.storageBackend': 'Storage Backend',
+    'config.autoBackupsActive': 'auto-backups active',
+    'config.fallbackMode': 'fallback mode',
+    'config.currentState': 'Current state',
+    'config.browserQuota': 'Browser Quota',
+    'config.used': 'used',
+    'config.autoBackupsRolling': 'Auto-backups (rolling)',
+    'config.thSize': 'Size',
+    'config.restore': 'Restore',
+    'config.exportBackup': '⬇ Export Full Backup',
+    'config.importBackup': '⬆ Import Backup',
+    'config.refreshStatus': '↺ Refresh Status',
+    'config.deleteAll': '🗑 Delete All',
+    'config.backupNote': 'Your data stays in your browser (IndexedDB + localStorage fallback). There is no server. Auto-snapshots keep the last 5 versions. Export a backup to save it to Drive/Dropbox.',
+    'config.currency': 'Main currency',
+    'config.decimals': 'Value decimals',
+    'config.decimals0': 'No decimals (€100)',
+    'config.decimals2': '2 decimals (€100.50)',
+    'config.decimals4': '4 decimals (€100.5000)',
+    'config.language': 'Language / Língua',
+    'config.stealthLabel': 'Stealth Mode (hide values)',
+    'config.stealthDesc': 'Replaces values with ••• in public places. Click a value to reveal it temporarily.',
+    'config.hideSpamLabel': 'Hide spam tokens',
+    'config.hideSpamDesc': 'Hides tokens with no DefiLlama coverage (junk airdrops). "No price" tokens do not appear in the table.',
     'config.hideSpam': 'Hide tokens marked as spam',
     'config.debugMode': 'Debug Mode (Ctrl+Shift+D to toggle)',
     'config.alchemyKey': 'Alchemy API Key (global)',
@@ -18690,31 +18758,31 @@ async function refreshDiagnostics() {
     el.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:0.8rem;margin-bottom:1rem">
         <div style="padding:0.75rem 1rem;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius)">
-          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem">Storage Backend</div>
+          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem" data-i18n="config.storageBackend">Storage Backend</div>
           <div style="font-family:var(--num);font-weight:600;color:${idbSupported?'var(--green)':'var(--amber)'}">${idbSupported?'IndexedDB ✓':'localStorage only ⚠'}</div>
-          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">${idbSupported?'auto-backups activos':'fallback mode'}</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">${idbSupported?t('config.autoBackupsActive'):t('config.fallbackMode')}</div>
         </div>
         <div style="padding:0.75rem 1rem;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius)">
-          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem">Estado actual</div>
+          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem" data-i18n="config.currentState">Estado actual</div>
           <div style="font-family:var(--num);font-weight:600;color:var(--gold)">${fmtBytes(stateBytes)}</div>
           <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">Schema v${state._schemaVersion||1}</div>
         </div>
         ${usage ? `
         <div style="padding:0.75rem 1rem;background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius)">
-          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem">Quota Browser</div>
+          <div style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.3rem" data-i18n="config.browserQuota">Quota Browser</div>
           <div style="font-family:var(--num);font-weight:600;color:var(--text)">${fmtBytes(usage.usedBytes)} / ${fmtBytes(usage.quotaBytes)}</div>
-          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">${usage.usedPct.toFixed(2)}% usado</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">${usage.usedPct.toFixed(2)}% ${t('config.used')}</div>
         </div>
         ` : ''}
       </div>
 
-      <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.5rem">Auto-backups (rolling)</div>
+      <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.5rem" data-i18n="config.autoBackupsRolling">Auto-backups (rolling)</div>
       ${backups.length === 0 ? `
         <div style="padding:0.6rem 0;font-size:0.78rem;color:var(--text-muted)">Sem backups ainda. Primeiro backup é criado após próxima alteração.</div>
       ` : `
         <div class="table-wrap">
           <table style="font-size:0.78rem">
-            <thead><tr><th>#</th><th>Data</th><th>Schema</th><th>Tamanho</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>${t('th.date')}</th><th>Schema</th><th>${t('config.thSize')}</th><th></th></tr></thead>
             <tbody>
               ${backups.map(b => `
                 <tr>
@@ -18722,7 +18790,7 @@ async function refreshDiagnostics() {
                   <td>${fmtDate(b.savedAt)}</td>
                   <td>v${b.schemaVersion||'?'}</td>
                   <td style="font-family:var(--num)">${fmtBytes(b.size)}</td>
-                  <td><button class="btn btn-outline btn-xs" onclick="restoreBackupFromDiag(${b.index})">Restaurar</button></td>
+                  <td><button class="btn btn-outline btn-xs" onclick="restoreBackupFromDiag(${b.index})">${t('config.restore')}</button></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -18888,7 +18956,7 @@ window.importFullBackup = importFullBackup;
 function renderSettings(w) {
   return `
     <div class="section-row" style="margin-bottom:1.5rem">
-      <div class="section-label">Configurações Taxesly</div>
+      <div class="section-label" data-i18n="config.title">Configurações Taxesly</div>
     </div>
 
     <!-- ── Tratamento Fiscal — Rendimentos DeFi ── -->
@@ -18957,23 +19025,23 @@ function renderSettings(w) {
         </div>
         <div style="height:1px;background:var(--border-soft);margin:1rem 0"></div>
         <div class="form-group">
-          <label class="form-label">Etherscan API Key (opcional) ${w.apiKey?'<span style="color:var(--text-muted)">✓ Configurada</span>':''}</label>
-          <input class="form-input" id="set_apikey" value="${w.apiKey||''}" placeholder="Apenas se precisares (Alchemy chega para tudo)">
+          <label class="form-label"><span data-i18n="config.etherscanOptLabel">Etherscan API Key (opcional)</span> ${w.apiKey?`<span style="color:var(--text-muted)">${t('config.etherscanConfigured')}</span>`:''}</label>
+          <input class="form-input" id="set_apikey" value="${w.apiKey||''}" data-i18n-placeholder="config.etherscanPlaceholder" placeholder="Apenas se precisares (Alchemy chega para tudo)">
         </div>
-        <button class="btn btn-gold btn-sm" onclick="saveApiKey()">Guardar Keys</button>
+        <button class="btn btn-gold btn-sm" onclick="saveApiKey()" data-i18n="config.saveKeys">Guardar Keys</button>
       </div>
     </div>
 
     <!-- ── Alertas In-App ── -->
     <div class="panel" style="margin-bottom:1rem">
-      <div class="panel-head"><span class="panel-title">🔔 Alertas In-App</span></div>
+      <div class="panel-head"><span class="panel-title" data-i18n="config.section.alerts">🔔 Alertas In-App</span></div>
       <div class="panel-body">
         <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
           <span>ℹ</span>
-          <div>Quando o teu Health Factor (lending positions) cair abaixo deste valor, vês um aviso amarelo no topo da app.</div>
+          <div data-i18n="config.alertsDesc">Quando o teu Health Factor (lending positions) cair abaixo deste valor, vês um aviso amarelo no topo da app.</div>
         </div>
         <div class="form-group">
-          <label class="form-label">Alerta quando HF cair abaixo de</label>
+          <label class="form-label" data-i18n="config.alertHfLabel">Alerta quando HF cair abaixo de</label>
           <input class="form-input" id="set_hf_threshold" type="number" step="0.1" min="1.0" max="3.0" value="${w.hfThreshold||1.2}" placeholder="1.2">
         </div>
         <button class="btn btn-gold btn-sm" onclick="saveAlertSettings()">Guardar</button>
@@ -18982,26 +19050,26 @@ function renderSettings(w) {
 
     <!-- ── Preferências ── -->
     <div class="panel" style="margin-bottom:1rem">
-      <div class="panel-head"><span class="panel-title">🎨 Preferências</span></div>
+      <div class="panel-head"><span class="panel-title" data-i18n="config.section.prefs">🎨 Preferências</span></div>
       <div class="panel-body">
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Moeda principal</label>
+            <label class="form-label" data-i18n="config.currency">Moeda principal</label>
             <select class="form-select" id="set_currency" onchange="savePref('currency', this.value)">
               <option value="EUR" ${(w.currency||'EUR')==='EUR'?'selected':''}>EUR (€)</option>
               <option value="USD" ${(w.currency||'EUR')==='USD'?'selected':''}>USD ($)</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Decimais nos valores</label>
+            <label class="form-label" data-i18n="config.decimals">Decimais nos valores</label>
             <select class="form-select" id="set_decimals" onchange="savePref('decimals', this.value)">
-              <option value="0" ${(w.decimals||2)==0?'selected':''}>Sem decimais (€100)</option>
-              <option value="2" ${(w.decimals||2)==2?'selected':''}>2 decimais (€100,50)</option>
-              <option value="4" ${(w.decimals||2)==4?'selected':''}>4 decimais (€100,5000)</option>
+              <option value="0" ${(w.decimals||2)==0?'selected':''} data-i18n="config.decimals0">Sem decimais (€100)</option>
+              <option value="2" ${(w.decimals||2)==2?'selected':''} data-i18n="config.decimals2">2 decimais (€100,50)</option>
+              <option value="4" ${(w.decimals||2)==4?'selected':''} data-i18n="config.decimals4">4 decimais (€100,5000)</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Língua / Language</label>
+            <label class="form-label" data-i18n="config.language">Língua / Language</label>
             <select class="form-select" id="set_lang" onchange="setAppLanguage(this.value)">
               <option value="pt" ${(state.lang||'pt')==='pt'?'selected':''}>🇵🇹 Português</option>
               <option value="en" ${(state.lang||'pt')==='en'?'selected':''}>🇬🇧 English</option>
@@ -19018,16 +19086,16 @@ function renderSettings(w) {
           <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
             <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
               <input type="checkbox" id="set_stealth" ${w.stealthMode?'checked':''} onchange="savePref('stealthMode', this.checked); render()">
-              <span style="font-size:0.85rem">Modo Stealth (ocultar valores)</span>
+              <span style="font-size:0.85rem" data-i18n="config.stealthLabel">Modo Stealth (ocultar valores)</span>
             </label>
-            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem;line-height:1.4">Substitui valores por ••• em sítios públicos. Clica num valor para revelar temporariamente.</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem;line-height:1.4" data-i18n="config.stealthDesc">Substitui valores por ••• em sítios públicos. Clica num valor para revelar temporariamente.</div>
           </div>
           <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
             <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
               <input type="checkbox" id="set_hide_spam" ${w.hideSpam!==false?'checked':''} onchange="savePref('hideSpam', this.checked); render()">
-              <span style="font-size:0.85rem">Ocultar spam tokens</span>
+              <span style="font-size:0.85rem" data-i18n="config.hideSpamLabel">Ocultar spam tokens</span>
             </label>
-            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem;line-height:1.4">Esconde tokens sem cobertura DefiLlama (airdrops lixo). Tokens "sem preço" não aparecem na tabela.</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem;line-height:1.4" data-i18n="config.hideSpamDesc">Esconde tokens sem cobertura DefiLlama (airdrops lixo). Tokens "sem preço" não aparecem na tabela.</div>
           </div>
         </div>
       </div>
@@ -19085,20 +19153,17 @@ function renderSettings(w) {
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:1rem">
-          <button class="btn btn-gold btn-sm" onclick="exportFullBackup()">⬇ Exportar Backup Completo</button>
+          <button class="btn btn-gold btn-sm" onclick="exportFullBackup()" data-i18n="config.exportBackup">⬇ Exportar Backup Completo</button>
           <label class="btn btn-outline btn-sm" style="cursor:pointer">
-            ⬆ Importar Backup
+            <span data-i18n="config.importBackup">⬆ Importar Backup</span>
             <input type="file" accept=".json" style="display:none" onchange="importFullBackup(event)">
           </label>
-          <button class="btn btn-outline btn-sm" onclick="refreshDiagnostics()">↺ Atualizar Status</button>
-          <button class="btn btn-danger btn-sm" onclick="clearAll()" style="margin-left:auto">🗑 Apagar Tudo</button>
+          <button class="btn btn-outline btn-sm" onclick="refreshDiagnostics()" data-i18n="config.refreshStatus">↺ Atualizar Status</button>
+          <button class="btn btn-danger btn-sm" onclick="clearAll()" style="margin-left:auto" data-i18n="config.deleteAll">🗑 Apagar Tudo</button>
         </div>
         <div class="alert alert-info" style="margin-top:1rem;font-size:0.78rem">
           <span>ℹ</span>
-          <div>
-            Os dados ficam no <strong>teu browser</strong> (IndexedDB + localStorage fallback). Não há servidor.
-            Auto-snapshots mantêm as últimas 5 versões. <strong>Exporta backup</strong> para guardar em Drive/Dropbox.
-          </div>
+          <div data-i18n="config.backupNote">Os dados ficam no teu browser (IndexedDB + localStorage fallback). Não há servidor. Auto-snapshots mantêm as últimas 5 versões. Exporta backup para guardar em Drive/Dropbox.</div>
         </div>
       </div>
     </div>
