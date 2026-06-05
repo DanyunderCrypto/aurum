@@ -9641,10 +9641,15 @@ async function resolveMissingDatesUI() {
   const key = resolveAlchemyKey(w);
   const lang = (state.lang || 'pt');
 
-  // Eventos da carteira ativa sem data mas com blockNumber (recuperáveis)
-  const addrs = [(w.addr || w.evm || '').toLowerCase()].filter(Boolean);
-  const evs = (state.events || []).filter(e =>
-    addrs.includes((e.walletAddress || '').toLowerCase()) &&
+  // Mesmo ÂMBITO que o aviso/cálculo fiscal: se a consolidação por dono está ligada
+  // (default), os eventos sem data podem estar em QUALQUER carteira do dono, não só
+  // na ativa. Usar a mesma fonte que o render fiscal evita a contradição "aviso diz
+  // 113, botão diz 0" (que acontecia quando a carteira ativa estava limpa mas outra não).
+  const _consolidated = state.settings && state.settings.consolidateOwner;
+  const sourceEvents = _consolidated
+    ? (typeof _eventsForOwnerOf === 'function' ? _eventsForOwnerOf(w) : (state.events || []))
+    : (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : (state.events || []));
+  const evs = sourceEvents.filter(e =>
     (!e.timestamp || e.timestamp <= 0) && !e.date &&
     e.blockNumber && isFinite(e.blockNumber) && e.chain
   );
@@ -9677,6 +9682,9 @@ async function resolveMissingDatesUI() {
     // Persistir as datas resolvidas (os objetos foram modificados in-place)
     saveState();
     try { if (typeof _eventsCache !== 'undefined') _eventsCache.clear(); } catch {}
+    // Invalidar os caches do FIFO (por-carteira e consolidado) para o re-render
+    // recalcular com as datas novas. Mesmo padrão usado após re-indexação.
+    try { Object.keys(window).filter(k => k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_')).forEach(k => delete window[k]); } catch {}
     if (lblEl) lblEl.textContent = (lang === 'en'
       ? `✓ Done: ${res.resolved} resolved, ${res.failed} failed (${res.blocksQueried} blocks queried).`
       : `✓ Concluído: ${res.resolved} resolvidas, ${res.failed} falharam (${res.blocksQueried} blocos consultados).`);
