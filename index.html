@@ -18591,26 +18591,34 @@ function _buildFiscalSummaryBar(events, disposals, fiscalYear, lang) {
   </div>`;
 }
 
-// Builds the "End of Year Holdings" report: the balance of each asset held at 31 Dec of the
+// Builds the "End of Year Holdings" report: the balance of each token held at 31 Dec of the
 // fiscal year. This is what Portugal's Annex J (foreign custody) requires you to declare.
-// Pure, unambiguous calculation: balance = sum(inflows) − sum(outflows) up to 31 Dec.
-// Quantities are exact; the EUR value uses the best per-unit price we have for the asset
-// (clearly labelled as an estimate, since a precise 31-Dec spot price would need extra lookups).
-// Returns { rows:[{asset, chain, qty, valueEUR, priceSource}], totalEUR, asOf }.
+// Pure, unambiguous quantity calculation: balance = sum(inflows) − sum(outflows) up to 31 Dec.
+//
+// CRITICAL grouping rule: tokens are grouped by CONTRACT (asset|chain|contract), NOT by symbol.
+// Many scam tokens reuse well-known symbols (a fake "AAVE" with 2.6B supply on Base). Grouping
+// by symbol and reusing "the last known price for AAVE" would value 2.6B fake AAVE at the REAL
+// AAVE price → €726 BILLION phantom. So each distinct contract is its own row, and its EUR value
+// uses ONLY the price seen for THAT contract — a price is never borrowed from another contract.
+// Tokens with no own price (typically junk/spam airdrops with no DefiLlama coverage) are shown
+// with quantity only and NO value (and skipped if the engine flags them as spam).
+// Returns { rows:[{asset, chain, contract, qty, valueEUR}], totalEUR, asOf, hiddenSpam }.
 function _buildEndOfYearHoldings(events, fiscalYear) {
   const asOf = new Date(`${fiscalYear}-12-31T23:59:59Z`).getTime() / 1000;
-  const bal = new Map();   // key asset|chain → { asset, chain, qty }
-  const lastPrice = new Map(); // asset|chain → { priceEUR, ts }  (best-known per-unit price)
+  const eng = window.aurumFifoEngine;
+  const bal = new Map();        // key asset|chain|contract → { asset, chain, contract, qty, sample }
+  const lastPrice = new Map();  // SAME key → { priceEUR, ts }  (price for THIS contract only)
 
   for (const e of (events || [])) {
     if (!e || typeof e.amount !== 'number' || e.amount <= 0) continue;
     if (!(e.timestamp <= asOf)) continue;     // only events up to 31 Dec of the year
-    const key = `${e.asset}|${e.chain || ''}`;
-    if (!bal.has(key)) bal.set(key, { asset: e.asset, chain: e.chain || '', qty: 0 });
+    const contract = (e.assetContract || '').toLowerCase();
+    const key = `${e.asset}|${e.chain || ''}|${contract}`;  // group by CONTRACT, not symbol
+    if (!bal.has(key)) bal.set(key, { asset: e.asset, chain: e.chain || '', contract, qty: 0, sample: e });
     const row = bal.get(key);
     if (e.direction === 'in') row.qty += e.amount;
     else if (e.direction === 'out') row.qty -= e.amount;
-    // Track the most recent per-unit EUR price we have seen for this asset (any date ≤ asOf).
+    // Track the most recent per-unit EUR price seen for THIS exact contract (never another's).
     if (typeof e.priceEUR === 'number' && e.priceEUR > 0) {
       const prev = lastPrice.get(key);
       if (!prev || e.timestamp > prev.ts) lastPrice.set(key, { priceEUR: e.priceEUR, ts: e.timestamp });
@@ -18619,22 +18627,28 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
 
   const rows = [];
   let totalEUR = 0;
+  let hiddenSpam = 0;
   for (const [key, row] of bal) {
     if (row.qty <= 1e-9) continue;            // no meaningful balance held
-    const lp = lastPrice.get(key);
+    // Skip tokens the engine considers spam (same rule the rest of the app uses).
+    if (eng?.isSpamToken?.({ asset: row.asset, chain: row.chain, assetContract: row.contract, amount: row.qty })) {
+      hiddenSpam++;
+      continue;
+    }
+    const lp = lastPrice.get(key);            // price for THIS contract only — never borrowed
     const valueEUR = lp ? row.qty * lp.priceEUR : null;
     if (valueEUR != null) totalEUR += valueEUR;
     rows.push({
       asset: row.asset,
       chain: row.chain,
+      contract: row.contract,
       qty: row.qty,
       valueEUR,
-      priceSource: lp ? 'last_known' : 'none',
     });
   }
-  // Sort by EUR value desc (assets without value go last).
-  rows.sort((a, b) => (b.valueEUR || -1) - (a.valueEUR || -1));
-  return { rows, totalEUR, asOf, fiscalYear };
+  // Sort by EUR value desc (tokens without a price go last).
+  rows.sort((a, b) => (b.valueEUR ?? -1) - (a.valueEUR ?? -1));
+  return { rows, totalEUR, asOf, fiscalYear, hiddenSpam };
 }
 
 // Builds the Asset Maturity view: for every OPEN lot still held, says whether it has already
@@ -18820,7 +18834,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               📅 ${t2('End of Year Holdings', 'Saldos a 31 de Dezembro')} · ${fiscalYear}
-              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}</span>
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}${eoy.hiddenSpam ? ` · ${eoy.hiddenSpam} ${t2('spam hidden', 'spam ocultado')}` : ''}</span>
             </summary>
             <div style="padding:0.6rem 0.9rem">
               <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;line-height:1.5">
