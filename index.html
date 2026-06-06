@@ -7175,6 +7175,23 @@ window.aurumBitcoin = bitcoinIndexer;
 window.aurumMempool = mempoolAdapter;
 window.aurumCoinStatsBtc = coinStatsBtcAdapter;
 
+// Deep-link from the "Review needed" integrity panel to the History tab, pre-filtered to the
+// transactions behind a warning (e.g. all missing-price txs), so the user can review/fix them
+// in one place — the workflow Koinly uses ("each warning links straight to the transaction").
+window.aurumReviewIssue = function (issueType, walletId) {
+  window._histFilterIssue = issueType || 'all';
+  window._histShowSpam = true;          // reveal everything so nothing relevant is hidden while reviewing
+  window._histFilterChain = 'all';
+  window._histFilterType = 'all';
+  window._histFilterGroup = 'all';
+  window._histFilterAsset = '';
+  window._histFilterProto = 'all';
+  window._histPage = 0;
+  if (walletId != null) state.activeWId = walletId;
+  if (typeof showTab === 'function') showTab('history');
+  if (typeof render === 'function') render();
+};
+
 // One-off cleanup: removes the zkSync-family native-ETH ERC-20 mirror events (system contract
 // 0x…800a) that were double-counted in PAST indexing runs, before we started dropping them at
 // ingestion. Fixes phantom open balances (e.g. the inflated ETH position on Lens/zkSync/Abstract).
@@ -17989,6 +18006,7 @@ function renderHistory(w) {
   const filterGroup = window._histFilterGroup || 'all';
   const filterAsset = window._histFilterAsset || '';
   const filterProto = window._histFilterProto || 'all';
+  const filterIssue = window._histFilterIssue || 'all';  // 'missing_price' | 'no_basis' | 'all' — set by integrity panel deep-link
   const hideSpam = (w.hideSpam !== false); // default true
   const showSpamOverride = window._histShowSpam === true; // user can temporarily reveal
 
@@ -18000,6 +18018,11 @@ function renderHistory(w) {
   if (filterAsset) filtered = filtered.filter(e => (e.asset || '').toUpperCase().includes(filterAsset.toUpperCase()));
   if (filterProto === '__unknown__') filtered = filtered.filter(e => !e.protocol);
   else if (filterProto !== 'all') filtered = filtered.filter(e => e.protocol === filterProto);
+  // Issue filter — deep-link target from the "Review needed" integrity panel. Shows only the
+  // transactions behind a given warning so the user can review/fix them in one place.
+  if (filterIssue === 'missing_price') {
+    filtered = filtered.filter(e => e.amount > 0 && !(typeof e.priceEUR === 'number' && e.priceEUR > 0));
+  }
 
   // Hide spam (user-marked OR engine-auto-detected via isSpamToken)
   const beforeSpamCount = filtered.length;
@@ -18235,6 +18258,14 @@ function renderHistory(w) {
       </div>
     ` : `
       <!-- Filters -->
+      ${filterIssue !== 'all' ? `<div class="alert alert-warning" style="margin-bottom:1rem;font-size:0.82rem;align-items:center">
+        <span>🔍</span>
+        <div style="flex:1">
+          <strong>${(state.lang||'pt')==='en' ? 'Reviewing: transactions without a market price' : 'A rever: transações sem preço de mercado'}</strong>
+          — ${(state.lang||'pt')==='en' ? 'these had no historical price found. Mark spam, or set them aside for your accountant.' : 'estas não têm preço histórico encontrado. Marca como spam, ou separa-as para o teu contabilista.'}
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="window._histFilterIssue='all';window._histPage=0;render()">${(state.lang||'pt')==='en' ? '✕ Clear filter' : '✕ Limpar filtro'}</button>
+      </div>` : ''}
       <div class="panel" style="margin-bottom:1rem">
         <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end">
           <div>
@@ -18446,7 +18477,7 @@ function getTxUrl(chain, txHash) {
 // modelled on Koinly's Review needed / Warnings panel. Aggregates the engine's warnings
 // by type into clear, counted categories so the user (and their accountant) can see exactly
 // what to fix before trusting the numbers. Returns '' (clean) when there are no issues.
-function _buildIntegrityPanel(warnings, undatedCount, lang) {
+function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   warnings = Array.isArray(warnings) ? warnings : [];
 
   // Map engine warning types → user-facing categories (aligned with Koinly's wording).
@@ -18500,8 +18531,9 @@ function _buildIntegrityPanel(warnings, undatedCount, lang) {
       icon: '💶',
       title: t2(`${byCat.missingPrice.count} transactions without a market price`,
                 `${byCat.missingPrice.count} transações sem preço de mercado`),
-      desc: t2(`No historical price was found for these on their date. Affected: ${assets}. Re-run the Price Oracle, or the value may be incomplete.`,
-               `Não foi encontrado preço histórico para estas na respetiva data. Afetados: ${assets}. Corre o Price Oracle de novo, ou o valor pode ficar incompleto.`),
+      desc: t2(`No historical price was found for these on their date. Affected: ${assets}. Re-run the Price Oracle, or review them one by one.`,
+               `Não foi encontrado preço histórico para estas na respetiva data. Afetados: ${assets}. Corre o Price Oracle de novo, ou revê-as uma a uma.`),
+      action: `<button class="btn btn-gold btn-sm" onclick="window.aurumReviewIssue('missing_price', ${JSON.stringify(walletId || null)})">${t2('🔍 Review these transactions', '🔍 Rever estas transações')}</button>`,
     });
   }
 
@@ -18799,7 +18831,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
       </div>
       <div class="panel-body">
 
-        ${_buildIntegrityPanel(warnings, undatedCount, lang)}
+        ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
         ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
 
@@ -18851,7 +18883,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
           const eoy = _buildEndOfYearHoldings(events, fiscalYear);
           if (!eoy.rows.length) return '';
           const t2 = (en, pt) => (lang === 'en' ? en : pt);
-          const top = eoy.rows.slice(0, 30);
+          const eoyExpanded = window._eoyExpanded === true;
+          const top = eoyExpanded ? eoy.rows : eoy.rows.slice(0, 30);
           const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
           return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
@@ -18877,7 +18910,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                     <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
                     <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${r.valueEUR != null ? '€' + fmt(r.valueEUR) : `<span style="color:var(--text-muted)">${t2('no price', 'sem preço')}</span>`}</td>
                   </tr>`).join('')}
-                  ${eoy.rows.length > 30 ? `<tr><td colspan="4" style="padding:0.4rem;text-align:center;color:var(--text-muted)">+ ${eoy.rows.length - 30} ${t2('more', 'mais')}</td></tr>` : ''}
+                  ${eoy.rows.length > 30 ? `<tr><td colspan="4" style="padding:0.5rem;text-align:center"><a href="javascript:void(0)" onclick="window._eoyExpanded=${eoyExpanded?'false':'true'};render()" style="color:var(--gold);font-size:0.76rem;text-decoration:none;font-weight:600">${eoyExpanded ? t2('▲ Show less', '▲ Mostrar menos') : `▼ ${t2(`Show all ${eoy.rows.length}`, `Mostrar todos (${eoy.rows.length})`)}`}</a></td></tr>` : ''}
                 </tbody>
               </table>
             </div>
@@ -18890,7 +18923,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
           if (!mat.rows.length) return '';
           const t2 = (en, pt) => (lang === 'en' ? en : pt);
           const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
-          const top = mat.rows.slice(0, 40);
+          const matExpanded = window._matExpanded === true;
+          const top = matExpanded ? mat.rows : mat.rows.slice(0, 40);
           return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               🌱 ${t2('Asset Maturity', 'Maturidade dos Ativos')} · ${t2('365-day rule', 'regra 365 dias')}
@@ -18920,7 +18954,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                       <td style="padding:0.3rem 0.4rem;text-align:right">${badge}</td>
                     </tr>`;
                   }).join('')}
-                  ${mat.rows.length > 40 ? `<tr><td colspan="4" style="padding:0.4rem;text-align:center;color:var(--text-muted)">+ ${mat.rows.length - 40} ${t2('more', 'mais')}</td></tr>` : ''}
+                  ${mat.rows.length > 40 ? `<tr><td colspan="4" style="padding:0.5rem;text-align:center"><a href="javascript:void(0)" onclick="window._matExpanded=${matExpanded?'false':'true'};render()" style="color:var(--gold);font-size:0.76rem;text-decoration:none;font-weight:600">${matExpanded ? t2('▲ Show less', '▲ Mostrar menos') : `▼ ${t2(`Show all ${mat.rows.length}`, `Mostrar todos (${mat.rows.length})`)}`}</a></td></tr>` : ''}
                 </tbody>
               </table>
             </div>
