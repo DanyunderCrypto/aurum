@@ -18396,7 +18396,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang) {
       </div>
     </div>`).join('');
 
-  return `<div class="alert alert-warning integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:var(--gold)">
+  return `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
     <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
       <span style="font-size:1.1rem">⚠️</span>
       <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
@@ -18462,6 +18462,52 @@ function _buildFiscalSummaryBar(events, disposals, fiscalYear, lang) {
     </div>
     ${settingsBox}
   </div>`;
+}
+
+// Builds the "End of Year Holdings" report: the balance of each asset held at 31 Dec of the
+// fiscal year. This is what Portugal's Annex J (foreign custody) requires you to declare.
+// Pure, unambiguous calculation: balance = sum(inflows) − sum(outflows) up to 31 Dec.
+// Quantities are exact; the EUR value uses the best per-unit price we have for the asset
+// (clearly labelled as an estimate, since a precise 31-Dec spot price would need extra lookups).
+// Returns { rows:[{asset, chain, qty, valueEUR, priceSource}], totalEUR, asOf }.
+function _buildEndOfYearHoldings(events, fiscalYear) {
+  const asOf = new Date(`${fiscalYear}-12-31T23:59:59Z`).getTime() / 1000;
+  const bal = new Map();   // key asset|chain → { asset, chain, qty }
+  const lastPrice = new Map(); // asset|chain → { priceEUR, ts }  (best-known per-unit price)
+
+  for (const e of (events || [])) {
+    if (!e || typeof e.amount !== 'number' || e.amount <= 0) continue;
+    if (!(e.timestamp <= asOf)) continue;     // only events up to 31 Dec of the year
+    const key = `${e.asset}|${e.chain || ''}`;
+    if (!bal.has(key)) bal.set(key, { asset: e.asset, chain: e.chain || '', qty: 0 });
+    const row = bal.get(key);
+    if (e.direction === 'in') row.qty += e.amount;
+    else if (e.direction === 'out') row.qty -= e.amount;
+    // Track the most recent per-unit EUR price we have seen for this asset (any date ≤ asOf).
+    if (typeof e.priceEUR === 'number' && e.priceEUR > 0) {
+      const prev = lastPrice.get(key);
+      if (!prev || e.timestamp > prev.ts) lastPrice.set(key, { priceEUR: e.priceEUR, ts: e.timestamp });
+    }
+  }
+
+  const rows = [];
+  let totalEUR = 0;
+  for (const [key, row] of bal) {
+    if (row.qty <= 1e-9) continue;            // no meaningful balance held
+    const lp = lastPrice.get(key);
+    const valueEUR = lp ? row.qty * lp.priceEUR : null;
+    if (valueEUR != null) totalEUR += valueEUR;
+    rows.push({
+      asset: row.asset,
+      chain: row.chain,
+      qty: row.qty,
+      valueEUR,
+      priceSource: lp ? 'last_known' : 'none',
+    });
+  }
+  // Sort by EUR value desc (assets without value go last).
+  rows.sort((a, b) => (b.valueEUR || -1) - (a.valueEUR || -1));
+  return { rows, totalEUR, asOf, fiscalYear };
 }
 
 function renderFiscalEngineV2(w, fiscalYear) {
@@ -18593,6 +18639,44 @@ function renderFiscalEngineV2(w, fiscalYear) {
             </div>
           </div>
         ` : ''}
+
+        ${(() => {
+          // End of Year Holdings — balances held at 31 Dec (what Annex J declares).
+          const eoy = _buildEndOfYearHoldings(events, fiscalYear);
+          if (!eoy.rows.length) return '';
+          const t2 = (en, pt) => (lang === 'en' ? en : pt);
+          const top = eoy.rows.slice(0, 30);
+          const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
+          return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
+              📅 ${t2('End of Year Holdings', 'Saldos a 31 de Dezembro')} · ${fiscalYear}
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}</span>
+            </summary>
+            <div style="padding:0.6rem 0.9rem">
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;line-height:1.5">
+                ${t2('Balances held at 31 Dec — what Annex J (foreign custody) asks you to declare. Quantities are exact; EUR values are estimates from the last known price (not the 31-Dec spot). Confirm with your accountant (TOC).',
+                     'Saldos detidos a 31 de Dezembro — o que o Anexo J (custódia estrangeira) pede para declarar. As quantidades são exatas; os valores em EUR são estimativas do último preço conhecido (não a cotação de 31 Dez). Confirma com o teu TOC.')}
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.76rem">
+                <thead><tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border)">
+                  <th style="padding:0.3rem 0.4rem">${t2('Asset', 'Ativo')}</th>
+                  <th style="padding:0.3rem 0.4rem">${t2('Chain', 'Rede')}</th>
+                  <th style="padding:0.3rem 0.4rem;text-align:right">${t2('Quantity', 'Quantidade')}</th>
+                  <th style="padding:0.3rem 0.4rem;text-align:right">${t2('Est. value (EUR)', 'Valor est. (EUR)')}</th>
+                </tr></thead>
+                <tbody>
+                  ${top.map(r => `<tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:0.3rem 0.4rem;font-weight:600">${r.asset}</td>
+                    <td style="padding:0.3rem 0.4rem;color:var(--text-muted)">${r.chain || '—'}</td>
+                    <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
+                    <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${r.valueEUR != null ? '€' + fmt(r.valueEUR) : `<span style="color:var(--text-muted)">${t2('no price', 'sem preço')}</span>`}</td>
+                  </tr>`).join('')}
+                  ${eoy.rows.length > 30 ? `<tr><td colspan="4" style="padding:0.4rem;text-align:center;color:var(--text-muted)">+ ${eoy.rows.length - 30} ${t2('more', 'mais')}</td></tr>` : ''}
+                </tbody>
+              </table>
+            </div>
+          </details>`;
+        })()}
 
         ${warnings.length > 0 ? (() => {
           // Group warnings by type for an honest data-quality summary
