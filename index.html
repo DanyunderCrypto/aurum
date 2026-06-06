@@ -7188,13 +7188,38 @@ window.aurumCleanZkSyncEthMirror = async function () {
     !((e.assetContract || '').toLowerCase() === SYS && (e.asset || '').toUpperCase() === 'ETH'));
   const after = state.events.length;
   console.log(`[cleanup] removed ${before - after} duplicated zkSync-family ETH-mirror events (800a).`);
-  // Show per-chain breakdown of what was removed
   const byChain = {};
   removed.forEach(e => { byChain[e.chain] = (byChain[e.chain] || 0) + 1; });
   console.table(byChain);
   if (typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
   if (typeof render === 'function') render();
   return { removed: before - after, byChain };
+};
+
+// One-off cleanup: re-labels NATIVE-transfer events that were wrongly tagged as "ETH" on chains
+// whose native coin is NOT ETH (Lens=GHO, Polygon=POL, BSC=BNB, …). Past indexing used Alchemy's
+// default "ETH" label for native transfers on every chain, so e.g. 4.48 GHO on Lens was stored
+// as 4.48 ETH and valued at ETH's price (~€11k phantom). This fixes already-stored events.
+// Only touches NATIVE events (no token contract) on non-ETH chains; ERC-20 events are untouched.
+// Run from the console: await window.aurumFixNativeAssetLabels()
+window.aurumFixNativeAssetLabels = async function () {
+  let fixed = 0;
+  const byChain = {};
+  for (const e of (state.events || [])) {
+    if (e.assetContract) continue;                 // only native (no token contract)
+    if ((e.asset || '').toUpperCase() !== 'ETH') continue;  // only the wrong ETH label
+    const correct = (typeof _nativeSymbol === 'function') ? _nativeSymbol(e.chain) : 'ETH';
+    if (correct !== 'ETH') {                        // only chains whose native isn't ETH
+      e.asset = correct;
+      fixed++;
+      byChain[e.chain] = (byChain[e.chain] || 0) + 1;
+    }
+  }
+  console.log(`[cleanup] re-labelled ${fixed} native events from ETH to their correct native symbol.`);
+  console.table(byChain);
+  if (fixed > 0 && typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  if (typeof render === 'function') render();
+  return { fixed, byChain };
 };
 
 
@@ -9522,6 +9547,18 @@ const universalIndexer = (() => {
       dateStr = blockTimestamp.slice(0, 10);
     }
 
+    // Asset: for NATIVE transfers (external/internal, no token contract) the asset is the
+    // chain's native currency — which is NOT always ETH (Lens=GHO, Polygon=POL, BSC=BNB, …).
+    // Alchemy defaults the asset name to "ETH" for native transfers on every chain, so on
+    // non-ETH chains that mislabels the native coin as ETH and values it at ETH's price —
+    // e.g. 4.48 GHO on Lens showing up as 4.48 ETH (~€11k phantom). We override using the
+    // chain's known native symbol. Token (erc20) transfers keep the asset Alchemy reports.
+    const isNativeTransfer = !(raw.rawContract?.address) &&
+      (raw.category === 'external' || raw.category === 'internal');
+    const resolvedAsset = isNativeTransfer
+      ? _nativeSymbol(chain)
+      : (raw.asset || _nativeSymbol(chain));
+
     return {
       id: `evm:${chain}:${walletAddress}:${raw.hash}:${raw.uniqueId || raw.asset || ''}`,
       chain,
@@ -9533,7 +9570,7 @@ const universalIndexer = (() => {
       type: 'unknown',  // will be classified below
       direction,
       // Asset info
-      asset: raw.asset || 'ETH',
+      asset: resolvedAsset,
       assetContract: raw.rawContract?.address || '',
       amount,
       decimals: parseInt(raw.rawContract?.decimal || '0x12', 16) || 18,
