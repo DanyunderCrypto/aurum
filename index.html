@@ -6619,6 +6619,21 @@ window.aurumEnrichEvent = enrichEvent;
 // ─────────────────────────────────────────────────
 
 const MEMPOOL_BASE = 'https://mempool.space/api';
+// Esplora-compatible sources, tried in order. mempool.space and blockstream.info are both
+// Esplora forks → IDENTICAL endpoints, pagination and response shape, so our parser works
+// unchanged across all of them. If one times out (mempool.space has been flaky), we fall
+// through to the next. The official esplora-client uses this exact mempool→blockstream
+// fallback. NOTE: only mempool-family sources expose /xpub/ (blockstream.info does not),
+// so xpub lookups use ESPLORA_XPUB_BASES below; single-address lookups use all of them.
+const ESPLORA_BASES = [
+  'https://mempool.space/api',
+  'https://blockstream.info/api',
+  'https://mempool.emzy.de/api',   // community mempool.space mirror
+];
+const ESPLORA_XPUB_BASES = [
+  'https://mempool.space/api',
+  'https://mempool.emzy.de/api',   // mirror also supports /xpub/ (blockstream.info does not)
+];
 const BITCOIN_RATE_LIMIT_DELAY_MS = 200;  // 5 req/s to be safe
 
 const mempoolAdapter = (() => {
@@ -6631,6 +6646,24 @@ const mempoolAdapter = (() => {
       await _delay(BITCOIN_RATE_LIMIT_DELAY_MS - since);
     }
     _lastCallAt = Date.now();
+  }
+
+  // Fetch a path (e.g. "/address/abc/txs") trying each Esplora base in order. Returns the
+  // first success; only throws if EVERY base fails. This is the multi-source resilience that
+  // stops a single provider outage (mempool.space timing out) from breaking BTC indexing.
+  async function _getMulti(path, bases) {
+    let lastErr = null;
+    for (const base of bases) {
+      try {
+        return await _get(base + path);
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[btc] source failed (${base}): ${err.message} — trying next`);
+        // checksum/invalid is a user-input problem, not a source problem → stop early
+        if (err.message.includes('checksum') || err.message.includes('inválido')) throw err;
+      }
+    }
+    throw new Error(`Todas as fontes Bitcoin falharam para ${path.split('/').slice(0,3).join('/')}: ${lastErr?.message || 'sem detalhe'}`);
   }
 
   async function _get(url, attempt = 0) {
@@ -6693,15 +6726,15 @@ const mempoolAdapter = (() => {
     const maxPages = 60;  // headroom; we stop when a page returns no more results
 
     for (let p = 0; p < maxPages; p++) {
-      const url = lastSeenTxid
-        ? `${MEMPOOL_BASE}/address/${address}/txs/chain/${lastSeenTxid}`
-        : `${MEMPOOL_BASE}/address/${address}/txs`;
+      const path = lastSeenTxid
+        ? `/address/${address}/txs/chain/${lastSeenTxid}`
+        : `/address/${address}/txs`;
       let batch;
       try {
-        batch = await _get(url);
+        batch = await _getMulti(path, ESPLORA_BASES);
       } catch (err) {
-        // A page failed even after retries. Do NOT silently keep partial data.
-        throw new Error(`Leitura incompleta do Bitcoin: a página ${p + 1} falhou (${err.message}). Tenta re-indexar — a mempool.space pode estar lenta.`);
+        // Every source failed for this page. Do NOT silently keep partial data.
+        throw new Error(`Leitura incompleta do Bitcoin: a página ${p + 1} falhou em todas as fontes (${err.message}). Tenta re-indexar mais tarde.`);
       }
       if (batch === null) break;                       // 404 → no txs at all
       if (!Array.isArray(batch) || batch.length === 0) break;  // end of history
@@ -6721,14 +6754,14 @@ const mempoolAdapter = (() => {
     let lastSeenTxid = null;
     const maxPages = 60;
     for (let p = 0; p < maxPages; p++) {
-      const url = lastSeenTxid
-        ? `${MEMPOOL_BASE}/xpub/${xpub}/txs/chain/${lastSeenTxid}`
-        : `${MEMPOOL_BASE}/xpub/${xpub}/txs`;
+      const path = lastSeenTxid
+        ? `/xpub/${xpub}/txs/chain/${lastSeenTxid}`
+        : `/xpub/${xpub}/txs`;
       let batch;
       try {
-        batch = await _get(url);
+        batch = await _getMulti(path, ESPLORA_XPUB_BASES);
       } catch (err) {
-        throw new Error(`Leitura incompleta do Bitcoin (xpub): a página ${p + 1} falhou (${err.message}). Tenta re-indexar — a mempool.space pode estar lenta.`);
+        throw new Error(`Leitura incompleta do Bitcoin (xpub): a página ${p + 1} falhou em todas as fontes (${err.message}). Tenta re-indexar mais tarde.`);
       }
       if (batch === null) break;
       if (!Array.isArray(batch) || batch.length === 0) break;
@@ -6742,7 +6775,7 @@ const mempoolAdapter = (() => {
   // Get list of addresses associated with xpub (for self-transfer detection)
   async function getXpubAddresses(xpub) {
     try {
-      const data = await _get(`${MEMPOOL_BASE}/v1/xpub/${xpub}`);
+      const data = await _getMulti(`/v1/xpub/${xpub}`, ESPLORA_XPUB_BASES);
       if (data?.addresses) return data.addresses;
     } catch (e) { /* fall back */ }
     return [];
