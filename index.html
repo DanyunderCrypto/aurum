@@ -18305,6 +18305,97 @@ function getTxUrl(chain, txHash) {
 // ════════════════════════════════════════════════════════
 // Sprint 8.2: Render Fiscal Engine v2 panel — consumes fifoEngine
 // ════════════════════════════════════════════════════════
+// Builds the "Review needed" data-integrity panel for the top of the fiscal report,
+// modelled on Koinly's Review needed / Warnings panel. Aggregates the engine's warnings
+// by type into clear, counted categories so the user (and their accountant) can see exactly
+// what to fix before trusting the numbers. Returns '' (clean) when there are no issues.
+function _buildIntegrityPanel(warnings, undatedCount, lang) {
+  warnings = Array.isArray(warnings) ? warnings : [];
+
+  // Map engine warning types → user-facing categories (aligned with Koinly's wording).
+  // missing_price / disposal_partial_basis  → "missing prices"
+  // disposal_no_basis_lot / phantom_disposal_skipped → "missing acquisition (no cost basis)"
+  const byCat = {
+    missingAcq:   { count: 0, assets: new Set() },  // disposal with no/zero basis
+    missingPrice: { count: 0, assets: new Set() },  // acquisition/disposal without market price
+  };
+  for (const w of warnings) {
+    if (w.type === 'disposal_no_basis_lot' || w.type === 'phantom_disposal_skipped') {
+      byCat.missingAcq.count++;
+      if (w.asset) byCat.missingAcq.assets.add(w.asset);
+    } else if (w.type === 'missing_price' || w.type === 'disposal_partial_basis') {
+      byCat.missingPrice.count++;
+      if (w.asset) byCat.missingPrice.assets.add(w.asset);
+    }
+  }
+
+  const issues = [];
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+
+  if (undatedCount > 0) {
+    issues.push({
+      icon: '🕐',
+      title: t2(`${undatedCount} transactions without a date`, `${undatedCount} transações sem data`),
+      desc: t2('Excluded from the calculation — they cannot be placed in time for FIFO / the 365-day rule. Recoverable from the block number.',
+               'Excluídas do cálculo — não podem ser situadas no tempo para o FIFO / regra dos 365 dias. Recuperáveis a partir do número do bloco.'),
+      action: `<button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()">${t2('🕐 Resolve dates now', '🕐 Resolver datas agora')}</button>
+        <div id="resolveDatesProgress" style="display:none;margin-top:0.6rem">
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div id="resolveDatesBar" style="height:100%;width:0%;background:var(--gold);transition:width 0.2s"></div>
+          </div>
+        </div>`,
+    });
+  }
+  if (byCat.missingAcq.count > 0) {
+    const assets = [...byCat.missingAcq.assets].slice(0, 6).join(', ');
+    issues.push({
+      icon: '🧩',
+      title: t2(`${byCat.missingAcq.count} disposals without acquisition (cost basis €0)`,
+                `${byCat.missingAcq.count} alienações sem aquisição (custo €0)`),
+      desc: t2(`The sale has no matching purchase, so cost basis was assumed to be €0 — which OVERSTATES the gain. Affected: ${assets}. Import the missing acquisition or transfer history.`,
+               `A venda não tem compra correspondente, por isso o custo foi assumido como €0 — o que SOBREAVALIA a mais-valia. Afetados: ${assets}. Importa o histórico de aquisição ou de transferências em falta.`),
+    });
+  }
+  if (byCat.missingPrice.count > 0) {
+    const assets = [...byCat.missingPrice.assets].slice(0, 6).join(', ');
+    issues.push({
+      icon: '💶',
+      title: t2(`${byCat.missingPrice.count} transactions without a market price`,
+                `${byCat.missingPrice.count} transações sem preço de mercado`),
+      desc: t2(`No historical price was found for these on their date. Affected: ${assets}. Re-run the Price Oracle, or the value may be incomplete.`,
+               `Não foi encontrado preço histórico para estas na respetiva data. Afetados: ${assets}. Corre o Price Oracle de novo, ou o valor pode ficar incompleto.`),
+    });
+  }
+
+  if (issues.length === 0) {
+    // Clean state — green confirmation, like Koinly's green check.
+    return `<div class="alert" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
+      <span style="font-size:1.1rem">✓</span>
+      <div><strong style="color:var(--green)">${t2('Data looks complete', 'Dados parecem completos')}</strong> — ${t2('no integrity issues detected for this report. Always confirm with a certified accountant (TOC).', 'sem problemas de integridade detetados para este relatório. Confirma sempre com um TOC certificado.')}</div>
+    </div>`;
+  }
+
+  const rows = issues.map(it => `
+    <div style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.55rem 0;border-top:1px solid var(--border)">
+      <span style="font-size:1rem;flex-shrink:0">${it.icon}</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:0.82rem">${it.title}</div>
+        <div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.15rem;line-height:1.45">${it.desc}</div>
+        ${it.action ? `<div style="margin-top:0.5rem">${it.action}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  return `<div class="alert alert-warning" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:var(--gold)">
+    <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
+      <span style="font-size:1.1rem">⚠️</span>
+      <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
+      <span style="font-size:0.72rem;color:var(--text-muted);margin-left:auto">${t2(`${issues.length} item(s) to check before filing`, `${issues.length} ponto(s) a verificar antes de declarar`)}</span>
+    </div>
+    <div style="width:100%;margin-top:0.2rem">${rows}</div>
+  </div>`;
+}
+
 function renderFiscalEngineV2(w, fiscalYear) {
   const lang = state.lang || 'pt';
   // Recolhe os eventos. Se a consolidação por dono estiver ligada, junta TODAS
@@ -18388,26 +18479,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
       </div>
       <div class="panel-body">
 
-        ${undatedCount > 0 ? `<div class="alert alert-warning" style="margin-bottom:1rem;font-size:0.82rem;align-items:flex-start">
-          <span style="font-size:1rem">⚠️</span>
-          <div>
-            <strong>${lang === 'en'
-              ? `${undatedCount} transactions without a date were excluded from the calculation.`
-              : `${undatedCount} transações sem data foram excluídas do cálculo.`}</strong><br>
-            ${lang === 'en'
-              ? 'These transactions (on newer chains) lack a timestamp, so they cannot be placed in time for FIFO / the 365-day rule. The date is recoverable from the block number.'
-              : 'Estas transações (em chains mais recentes) não têm data, por isso não podem ser situadas no tempo para o FIFO / regra dos 365 dias. A data é recuperável a partir do número do bloco.'}
-            <div style="margin-top:0.6rem">
-              <button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()">${lang === 'en' ? '🕐 Resolve dates now' : '🕐 Resolver datas agora'}</button>
-            </div>
-            <div id="resolveDatesProgress" style="display:none;margin-top:0.6rem">
-              <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
-              <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-                <div id="resolveDatesBar" style="height:100%;width:0%;background:var(--gold);transition:width 0.2s"></div>
-              </div>
-            </div>
-          </div>
-        </div>` : ''}
+        ${_buildIntegrityPanel(warnings, undatedCount, lang)}
 
         ${(consolidated && _bridgeLinks.length) ? `<div class="alert alert-info" style="font-size:0.78rem;margin-bottom:1rem">
           <span>🔗</span>
