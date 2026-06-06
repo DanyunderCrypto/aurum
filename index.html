@@ -18007,6 +18007,17 @@ function renderHistory(w) {
   const filterAsset = window._histFilterAsset || '';
   const filterProto = window._histFilterProto || 'all';
   const filterIssue = window._histFilterIssue || 'all';  // 'missing_price' | 'no_basis' | 'all' — set by integrity panel deep-link
+
+  // Clear the event selection whenever the filter set changes. Otherwise a selection made under
+  // one filter (e.g. 8 spam tokens) carries over when the user switches to another token, which
+  // is confusing and risks bulk-acting on the wrong rows. We track a signature of the active
+  // filters and reset the selection on change.
+  const _filterSig = `${filterChain}|${filterType}|${filterGroup}|${filterAsset}|${filterProto}|${filterIssue}`;
+  if (window._histLastFilterSig !== undefined && window._histLastFilterSig !== _filterSig) {
+    window._selectedEventIds = new Set();
+  }
+  window._histLastFilterSig = _filterSig;
+
   const hideSpam = (w.hideSpam !== false); // default true
   const showSpamOverride = window._histShowSpam === true; // user can temporarily reveal
 
