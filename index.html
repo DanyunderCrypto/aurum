@@ -6888,8 +6888,25 @@ const coinStatsBtcAdapter = (() => {
   async function getXpubEvents(xpub, opts = {}) {
     await _sync(xpub);
     opts.onProgress?.({ phase: 'fetching_txs', input: xpub });
-    const url = `${_base()}/coinstats/wallet/transactions?address=${encodeURIComponent(xpub)}&connectionId=${CONNECTION_ID}&limit=1000`;
-    const res = await safeFetch(url, { timeout: 45000 }, 'coinstats.txs');
+    // CoinStats free tier: max limit is 100 per request, and the rate limit is tight.
+    // 100 covers the vast majority of wallets; deeper pagination is a future improvement.
+    const url = `${_base()}/coinstats/wallet/transactions?address=${encodeURIComponent(xpub)}&connectionId=${CONNECTION_ID}&limit=100`;
+    let res, attempt = 0;
+    while (true) {
+      res = await safeFetch(url, { timeout: 45000 }, 'coinstats.txs');
+      if (res.status === 429 && attempt < 3) {
+        // Rate limited — wait with backoff and retry (free tier has tight limits).
+        const waitMs = Math.pow(2, attempt) * 2000;  // 2s, 4s, 8s
+        console.warn(`[coinstats] rate limited (429), waiting ${waitMs}ms before retry ${attempt + 1}/3`);
+        await new Promise(r => setTimeout(r, waitMs));
+        attempt++;
+        continue;
+      }
+      break;
+    }
+    if (res.status === 429) {
+      throw new Error('CoinStats: limite de pedidos atingido (plano gratuito). Espera um minuto e re-indexa.');
+    }
     if (!res.ok) throw new Error(`CoinStats transactions HTTP ${res.status}`);
     const data = await res.json();
     const arr = Array.isArray(data?.result) ? data.result
