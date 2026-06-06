@@ -360,6 +360,16 @@ body::before { content:''; position:fixed; inset:0; z-index:1; pointer-events:no
 @keyframes avatarPulse { from{box-shadow:0 0 10px rgba(59,130,246,0.3)} to{box-shadow:0 0 25px rgba(59,130,246,0.6)} }
 @keyframes warnPulse { 0%,100%{box-shadow:0 0 10px rgba(59,130,246,0.3)} 50%{box-shadow:0 0 25px rgba(59,130,246,0.7)} }
 @keyframes dangerPulse { 0%,100%{box-shadow:0 0 15px rgba(255,68,68,0.5)} 50%{box-shadow:0 0 40px rgba(255,68,68,0.9)} }
+/* Integrity panel glows — calm green "breathing" when clean, gentle amber attention when review needed. */
+@keyframes integrityOkGlow { 0%,100%{box-shadow:0 0 0 rgba(52,211,153,0)} 50%{box-shadow:0 0 22px rgba(52,211,153,0.30)} }
+@keyframes integrityWarnGlow { 0%,100%{box-shadow:0 0 6px rgba(245,180,60,0.18)} 50%{box-shadow:0 0 26px rgba(245,180,60,0.55)} }
+.integrity-ok { animation: integrityOkGlow 3.2s ease-in-out infinite; }
+.integrity-warn { animation: integrityWarnGlow 2.2s ease-in-out infinite; }
+/* Respect users who prefer reduced motion — keep a static soft glow instead of pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .integrity-ok { animation: none; box-shadow: 0 0 16px rgba(52,211,153,0.22); }
+  .integrity-warn { animation: none; box-shadow: 0 0 16px rgba(245,180,60,0.35); }
+}
 
 .brand-name {
   font-family: var(--display);
@@ -18370,7 +18380,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang) {
 
   if (issues.length === 0) {
     // Clean state — green confirmation, like Koinly's green check.
-    return `<div class="alert" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
+    return `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
       <span style="font-size:1.1rem">✓</span>
       <div><strong style="color:var(--green)">${t2('Data looks complete', 'Dados parecem completos')}</strong> — ${t2('no integrity issues detected for this report. Always confirm with a certified accountant (TOC).', 'sem problemas de integridade detetados para este relatório. Confirma sempre com um TOC certificado.')}</div>
     </div>`;
@@ -18386,7 +18396,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang) {
       </div>
     </div>`).join('');
 
-  return `<div class="alert alert-warning" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:var(--gold)">
+  return `<div class="alert alert-warning integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:var(--gold)">
     <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
       <span style="font-size:1.1rem">⚠️</span>
       <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
