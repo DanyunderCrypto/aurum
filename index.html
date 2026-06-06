@@ -18637,6 +18637,49 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
   return { rows, totalEUR, asOf, fiscalYear };
 }
 
+// Builds the Asset Maturity view: for every OPEN lot still held, says whether it has already
+// crossed Portugal's 365-day holding period (→ exempt, G1, 0%) or is still maturing (→ taxable,
+// G, 28%) and how many days remain. This is our strongest PT-specific angle — it turns the
+// 365-day rule into actionable info: "wait N days on this lot and the gain becomes tax-free".
+// Pure read over the engine's lots; no tax calculation changed.
+function _buildAssetMaturity(lots) {
+  const HOLD_DAYS = 365;
+  const HOLD_SECS = HOLD_DAYS * 86400;
+  const nowTs = Math.floor(Date.now() / 1000);
+  const open = (lots || []).filter(l => l.qtyRemaining > 1e-9);
+
+  const rows = open.map(l => {
+    const ageDays = Math.floor((nowTs - l.acqTimestamp) / 86400);
+    const exempt = ageDays >= HOLD_DAYS;
+    const daysUntilExempt = exempt ? 0 : Math.ceil((l.acqTimestamp + HOLD_SECS - nowTs) / 86400);
+    const basisEUR = (l.basisEURPerUnit || 0) * l.qtyRemaining;
+    return {
+      asset: l.asset,
+      chain: l.chain || '',
+      qty: l.qtyRemaining,
+      acqDate: l.acqDate,
+      ageDays,
+      exempt,
+      daysUntilExempt,
+      basisEUR,
+    };
+  });
+
+  // Exempt first won't help action; sort maturing by soonest-to-exempt, then exempt ones.
+  rows.sort((a, b) => {
+    if (a.exempt !== b.exempt) return a.exempt ? 1 : -1;          // maturing before exempt
+    if (!a.exempt) return a.daysUntilExempt - b.daysUntilExempt;  // soonest first
+    return b.basisEUR - a.basisEUR;                               // exempt: biggest first
+  });
+
+  const exemptCount = rows.filter(r => r.exempt).length;
+  const maturingCount = rows.length - exemptCount;
+  const exemptBasis = rows.filter(r => r.exempt).reduce((s, r) => s + r.basisEUR, 0);
+  const maturingBasis = rows.filter(r => !r.exempt).reduce((s, r) => s + r.basisEUR, 0);
+
+  return { rows, exemptCount, maturingCount, exemptBasis, maturingBasis };
+}
+
 function renderFiscalEngineV2(w, fiscalYear) {
   const lang = state.lang || 'pt';
   // Recolhe os eventos. Se a consolidação por dono estiver ligada, junta TODAS
@@ -18805,46 +18848,86 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </details>`;
         })()}
 
+        ${(() => {
+          // Asset Maturity — 365-day holding-period status of each open lot (PT G1 exemption).
+          const mat = _buildAssetMaturity(lots);
+          if (!mat.rows.length) return '';
+          const t2 = (en, pt) => (lang === 'en' ? en : pt);
+          const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
+          const top = mat.rows.slice(0, 40);
+          return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
+              🌱 ${t2('Asset Maturity', 'Maturidade dos Ativos')} · ${t2('365-day rule', 'regra 365 dias')}
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${mat.maturingCount} ${t2('maturing', 'a amadurecer')} · ${mat.exemptCount} ${t2('exempt', 'isentos')}</span>
+            </summary>
+            <div style="padding:0.6rem 0.9rem">
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;line-height:1.5">
+                ${t2('In Portugal, a holding sold after 365 days is exempt (Annex G1, 0%); sold before, it is taxed at 28% (Annex G). This shows how long until each lot becomes tax-free.',
+                     'Em Portugal, uma posição vendida após 365 dias é isenta (Anexo G1, 0%); vendida antes, é tributada a 28% (Anexo G). Isto mostra quanto falta para cada lote ficar isento.')}
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:0.76rem">
+                <thead><tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border)">
+                  <th style="padding:0.3rem 0.4rem">${t2('Asset', 'Ativo')}</th>
+                  <th style="padding:0.3rem 0.4rem;text-align:right">${t2('Quantity', 'Quantidade')}</th>
+                  <th style="padding:0.3rem 0.4rem">${t2('Acquired', 'Adquirido')}</th>
+                  <th style="padding:0.3rem 0.4rem;text-align:right">${t2('Status', 'Estado')}</th>
+                </tr></thead>
+                <tbody>
+                  ${top.map(r => {
+                    const badge = r.exempt
+                      ? `<span style="color:var(--green);font-weight:600">✓ ${t2('Exempt (G1)', 'Isento (G1)')}</span>`
+                      : `<span style="color:var(--gold)">${r.daysUntilExempt} ${t2('days left', 'dias p/ isenção')}</span>`;
+                    return `<tr style="border-bottom:1px solid var(--border)">
+                      <td style="padding:0.3rem 0.4rem;font-weight:600">${r.asset}${r.chain ? `<span style="color:var(--text-muted);font-weight:400;font-size:0.7rem"> · ${r.chain}</span>` : ''}</td>
+                      <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
+                      <td style="padding:0.3rem 0.4rem;color:var(--text-muted);font-size:0.72rem">${r.acqDate || '—'}</td>
+                      <td style="padding:0.3rem 0.4rem;text-align:right">${badge}</td>
+                    </tr>`;
+                  }).join('')}
+                  ${mat.rows.length > 40 ? `<tr><td colspan="4" style="padding:0.4rem;text-align:center;color:var(--text-muted)">+ ${mat.rows.length - 40} ${t2('more', 'mais')}</td></tr>` : ''}
+                </tbody>
+              </table>
+            </div>
+          </details>`;
+        })()}
+
         ${warnings.length > 0 ? (() => {
-          // Group warnings by type for an honest data-quality summary
+          // Data-quality / transparency block. NOTE: the actionable issues (missing date,
+          // missing acquisition, missing price) are already surfaced at the top by the
+          // "Review needed" integrity panel — so here we show ONLY the engine-DECISION types
+          // that aren't problems to fix but choices worth documenting (stablecoin transfers
+          // treated as non-fiat, dust skipped, on-chain-derived prices, etc.). This avoids
+          // duplicating what the integrity panel already lists.
+          const PANEL_TYPES = new Set(['disposal_no_basis_lot', 'phantom_disposal_skipped', 'missing_price', 'disposal_partial_basis', 'missing_date']);
           const wByType = {};
-          warnings.forEach(x => { wByType[x.type] = (wByType[x.type] || 0) + 1; });
+          warnings.forEach(x => { if (!PANEL_TYPES.has(x.type)) wByType[x.type] = (wByType[x.type] || 0) + 1; });
           const lang = state.lang || 'pt';
           const labels = {
-            disposal_no_basis_lot: lang === 'en'
-              ? 'disposals with no acquisition lot in this wallet (asset likely acquired in another wallet or before the indexed period — gain not counted to avoid over-reporting)'
-              : 'alienações sem lot de aquisição nesta wallet (ativo provavelmente adquirido noutra wallet ou antes do período indexado — ganho não contado para evitar sobre-declaração)',
-            missing_price: lang === 'en'
-              ? 'acquisitions without a EUR price (mostly tokens never sold — does not affect realised gain; run Price Oracle or set price manually)'
-              : 'aquisições sem preço EUR (na maioria tokens nunca vendidos — não afeta o ganho realizado; corre o Price Oracle ou define preço manual)',
             swap_shortfall: lang === 'en'
               ? 'swaps where part of the basis was missing (related to native-asset inflows not captured by the indexer)'
               : 'swaps onde faltava parte do basis (relacionado com entradas de ativo nativo não captadas pelo indexer)',
             insufficient_basis: lang === 'en' ? 'disposals with partial basis' : 'alienações com basis parcial',
-            disposal_partial_basis: lang === 'en'
-              ? 'disposals where you sold more than the indexed lots held — proceeds scaled to the matched portion (prevents phantom gains)'
-              : 'alienações onde vendeu mais do que os lots indexados — proceeds escalado à parte com base conhecida (evita ganhos fantasma)',
             stablecoin_transfer: lang === 'en'
               ? 'stablecoin outflows treated as transfers, not fiat sales (AT Nov 2025 — no tax on FX drift until a real off-ramp). If any was a real fiat sale, reclassify it.'
               : 'saídas de stablecoin tratadas como transferências, não vendas a fiat (AT Nov 2025 — sem imposto sobre flutuação cambial até off-ramp real). Se alguma foi venda real a fiat, reclassifica.',
-            phantom_disposal_skipped: lang === 'en' ? 'spam/dust outflows ignored' : 'saídas de spam/dust ignoradas',
             price_derived_onchain: lang === 'en' ? 'prices derived on-chain from swaps (automatic)' : 'preços derivados on-chain a partir de swaps (automático)',
           };
-          const order = ['disposal_no_basis_lot', 'disposal_partial_basis', 'stablecoin_transfer', 'swap_shortfall', 'missing_price', 'insufficient_basis', 'phantom_disposal_skipped', 'price_derived_onchain'];
+          const order = ['stablecoin_transfer', 'swap_shortfall', 'insufficient_basis', 'price_derived_onchain'];
           const rows = order.filter(t => wByType[t]).map(t =>
             `<li style="margin-bottom:0.3rem"><strong style="font-family:var(--mono)">${wByType[t]}×</strong> ${labels[t] || t}</li>`
           ).join('');
+          if (!rows) return '';  // nothing left to show after removing panel-covered types
           return `
           <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.76rem">
             <span>🔎</span>
             <div>
-              <strong>${lang === 'en' ? 'Data quality' : 'Qualidade dos dados'}</strong>
-              — ${lang === 'en' ? 'transparency on what the engine could and could not fully resolve:' : 'transparência sobre o que o motor conseguiu e não conseguiu resolver totalmente:'}
+              <strong>${lang === 'en' ? 'Engine decisions' : 'Decisões do motor'}</strong>
+              — ${lang === 'en' ? 'choices the engine made automatically (not errors):' : 'opções que o motor tomou automaticamente (não são erros):'}
               <ul style="margin:0.5rem 0 0;padding-left:1.2rem">${rows}</ul>
               <div style="margin-top:0.5rem;font-size:0.72rem;color:var(--text-muted)">
                 ${lang === 'en'
-                  ? 'These do not invalidate the calculation — they mark its known boundaries. Confirm with a certified accountant (TOC) before filing.'
-                  : 'Isto não invalida o cálculo — marca os seus limites conhecidos. Confirma com um TOC certificado antes de submeter.'}
+                  ? 'Confirm with a certified accountant (TOC) before filing.'
+                  : 'Confirma com um TOC certificado antes de submeter.'}
               </div>
             </div>
           </div>`;
