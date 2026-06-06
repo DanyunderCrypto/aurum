@@ -6648,53 +6648,67 @@ const mempoolAdapter = (() => {
     _lastCallAt = Date.now();
   }
 
-  // Fetch a path (e.g. "/address/abc/txs") trying each Esplora base in order. Returns the
-  // first success; only throws if EVERY base fails. This is the multi-source resilience that
-  // stops a single provider outage (mempool.space timing out) from breaking BTC indexing.
+  // Remember which source last worked, so once we find a live one (e.g. blockstream.info
+  // when mempool.space is blocked by the user's VPN) we hit it FIRST on subsequent pages
+  // instead of waiting for the dead source to time out on every single page.
+  let _preferredBase = null;
+
+  // Fetch a path (e.g. "/address/abc/txs") trying each Esplora base. Strategy for speed:
+  //  • Try the last-known-good base first (if any).
+  //  • Give each base a SHORT timeout and a single attempt — if a base is dead (VPN block,
+  //    outage), we bail in seconds and move on instead of burning minutes on retries.
+  //  • The LAST base in the list gets a patient try (longer timeout + retries) as a final
+  //    safety net before we give up on the page.
+  // Only throws if EVERY base fails — and then the caller reports an honest "incomplete".
   async function _getMulti(path, bases) {
+    // Order: preferred base first (deduped), then the rest in declared order.
+    const order = _preferredBase && bases.includes(_preferredBase)
+      ? [_preferredBase, ...bases.filter(b => b !== _preferredBase)]
+      : [...bases];
+
     let lastErr = null;
-    for (const base of bases) {
+    for (let i = 0; i < order.length; i++) {
+      const base = order[i];
+      const isLast = i === order.length - 1;
+      // Fast probe for non-last sources; patient try for the last one.
+      const opts = isLast ? { timeout: 30000, maxAttempts: 2 } : { timeout: 12000, maxAttempts: 0 };
       try {
-        return await _get(base + path);
+        const res = await _get(base + path, opts);
+        _preferredBase = base;  // remember the winner for next pages
+        return res;
       } catch (err) {
         lastErr = err;
         console.warn(`[btc] source failed (${base}): ${err.message} — trying next`);
-        // checksum/invalid is a user-input problem, not a source problem → stop early
         if (err.message.includes('checksum') || err.message.includes('inválido')) throw err;
       }
     }
     throw new Error(`Todas as fontes Bitcoin falharam para ${path.split('/').slice(0,3).join('/')}: ${lastErr?.message || 'sem detalhe'}`);
   }
 
-  async function _get(url, attempt = 0) {
+  async function _get(url, opts = {}, attempt = 0) {
     await _throttle();
-    const MAX_ATTEMPTS = 5;  // mempool.space can be flaky; give timeouts several retries
+    const maxAttempts = opts.maxAttempts != null ? opts.maxAttempts : 5;
+    const timeout = opts.timeout != null ? opts.timeout : 45000;
     try {
-      // Bump the per-request timeout — mempool.space pages can be slow under load.
-      const res = await safeFetch(url, { timeout: 45000 }, 'mempool');
+      const res = await safeFetch(url, { timeout }, 'esplora');
       if (!res.ok) {
         if (res.status === 404) return null;  // No txs / address not found
         if (res.status === 400) {
           // Bad request usually means invalid checksum
           throw new Error('Endereço/xpub inválido — verifica o checksum (cópia exacta?)');
         }
-        if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
+        if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
           await _delay(Math.pow(2, attempt) * 1000);
-          return _get(url, attempt + 1);
+          return _get(url, opts, attempt + 1);
         }
-        throw new Error(`Mempool HTTP ${res.status}`);
+        throw new Error(`Esplora HTTP ${res.status}`);
       }
       return await res.json();
     } catch (err) {
-      // CRITICAL FIX: a timeout (AbortError) is exactly the case we SHOULD retry — mempool.space
-      // frequently times out under load. The old code excluded AbortError from retries, so a
-      // single slow page aborted the whole indexing run and left the wallet with PARTIAL data
-      // (e.g. 2 of 6 BTC transactions). Now timeouts are retried with exponential backoff; only
-      // a genuine bad-checksum error (user input problem) is non-retryable.
       const isChecksum = err.message.includes('checksum') || err.message.includes('inválido');
-      if (attempt < MAX_ATTEMPTS && !isChecksum) {
+      if (attempt < maxAttempts && !isChecksum) {
         await _delay(Math.pow(2, attempt) * 1000);
-        return _get(url, attempt + 1);
+        return _get(url, opts, attempt + 1);
       }
       throw err;
     }
