@@ -18628,6 +18628,7 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
   const rows = [];
   let totalEUR = 0;
   let hiddenSpam = 0;
+  let hiddenNoPrice = 0;
   for (const [key, row] of bal) {
     if (row.qty <= 1e-9) continue;            // no meaningful balance held
     // Skip tokens the engine considers spam (same rule the rest of the app uses).
@@ -18637,7 +18638,15 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
     }
     const lp = lastPrice.get(key);            // price for THIS contract only — never borrowed
     const valueEUR = lp ? row.qty * lp.priceEUR : null;
-    if (valueEUR != null) totalEUR += valueEUR;
+    // No market price → not declarable for Annex J (which needs a value) and almost always a
+    // junk/phishing airdrop. Exclude from the panel but COUNT it (shown in the header), and it
+    // stays visible in History via "show spam". This keeps the fiscal report clean and usable —
+    // a report buried under hundreds of price-less junk tokens is worthless to a TOC.
+    if (valueEUR == null) {
+      hiddenNoPrice++;
+      continue;
+    }
+    totalEUR += valueEUR;
     rows.push({
       asset: row.asset,
       chain: row.chain,
@@ -18646,9 +18655,9 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
       valueEUR,
     });
   }
-  // Sort by EUR value desc (tokens without a price go last).
+  // Sort by EUR value desc.
   rows.sort((a, b) => (b.valueEUR ?? -1) - (a.valueEUR ?? -1));
-  return { rows, totalEUR, asOf, fiscalYear, hiddenSpam };
+  return { rows, totalEUR, asOf, fiscalYear, hiddenSpam, hiddenNoPrice };
 }
 
 // Builds the Asset Maturity view: for every OPEN lot still held, says whether it has already
@@ -18660,7 +18669,20 @@ function _buildAssetMaturity(lots) {
   const HOLD_DAYS = 365;
   const HOLD_SECS = HOLD_DAYS * 86400;
   const nowTs = Math.floor(Date.now() / 1000);
-  const open = (lots || []).filter(l => l.qtyRemaining > 1e-9);
+  const eng = window.aurumFifoEngine;
+  let hidden = 0;
+
+  // Keep only real, valued lots: positive balance, not spam, and with a known acquisition
+  // cost (basisEURPerUnit > 0). Junk/phishing airdrops have no cost basis and would otherwise
+  // flood the view with hundreds of "1.0000" scam lines — useless and misleading in a fiscal
+  // maturity view. Excluded lots are counted (shown in the header) and remain in History.
+  const open = (lots || []).filter(l => {
+    if (!(l.qtyRemaining > 1e-9)) return false;
+    const isSpam = eng?.isSpamToken?.({ asset: l.asset, chain: l.chain, assetContract: l.assetContract, amount: l.qtyRemaining });
+    const hasBasis = (l.basisEURPerUnit || 0) > 0;
+    if (isSpam || !hasBasis) { hidden++; return false; }
+    return true;
+  });
 
   const rows = open.map(l => {
     const ageDays = Math.floor((nowTs - l.acqTimestamp) / 86400);
@@ -18691,7 +18713,7 @@ function _buildAssetMaturity(lots) {
   const exemptBasis = rows.filter(r => r.exempt).reduce((s, r) => s + r.basisEUR, 0);
   const maturingBasis = rows.filter(r => !r.exempt).reduce((s, r) => s + r.basisEUR, 0);
 
-  return { rows, exemptCount, maturingCount, exemptBasis, maturingBasis };
+  return { rows, exemptCount, maturingCount, exemptBasis, maturingBasis, hidden };
 }
 
 function renderFiscalEngineV2(w, fiscalYear) {
@@ -18834,7 +18856,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               📅 ${t2('End of Year Holdings', 'Saldos a 31 de Dezembro')} · ${fiscalYear}
-              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}${eoy.hiddenSpam ? ` · ${eoy.hiddenSpam} ${t2('spam hidden', 'spam ocultado')}` : ''}</span>
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}${(eoy.hiddenSpam + eoy.hiddenNoPrice) ? ` · ${eoy.hiddenSpam + eoy.hiddenNoPrice} ${t2('hidden (no price/spam)', 'ocultados (sem preço/spam)')}` : ''}</span>
             </summary>
             <div style="padding:0.6rem 0.9rem">
               <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;line-height:1.5">
@@ -18872,7 +18894,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               🌱 ${t2('Asset Maturity', 'Maturidade dos Ativos')} · ${t2('365-day rule', 'regra 365 dias')}
-              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${mat.maturingCount} ${t2('maturing', 'a amadurecer')} · ${mat.exemptCount} ${t2('exempt', 'isentos')}</span>
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${mat.maturingCount} ${t2('maturing', 'a amadurecer')} · ${mat.exemptCount} ${t2('exempt', 'isentos')}${mat.hidden ? ` · ${mat.hidden} ${t2('hidden (no cost/spam)', 'ocultados (sem custo/spam)')}` : ''}</span>
             </summary>
             <div style="padding:0.6rem 0.9rem">
               <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.6rem;line-height:1.5">
