@@ -6635,15 +6635,17 @@ const mempoolAdapter = (() => {
 
   async function _get(url, attempt = 0) {
     await _throttle();
+    const MAX_ATTEMPTS = 5;  // mempool.space can be flaky; give timeouts several retries
     try {
-      const res = await safeFetch(url, { timeout: 30000 }, 'mempool');
+      // Bump the per-request timeout — mempool.space pages can be slow under load.
+      const res = await safeFetch(url, { timeout: 45000 }, 'mempool');
       if (!res.ok) {
         if (res.status === 404) return null;  // No txs / address not found
         if (res.status === 400) {
           // Bad request usually means invalid checksum
           throw new Error('Endereço/xpub inválido — verifica o checksum (cópia exacta?)');
         }
-        if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+        if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
           await _delay(Math.pow(2, attempt) * 1000);
           return _get(url, attempt + 1);
         }
@@ -6651,7 +6653,13 @@ const mempoolAdapter = (() => {
       }
       return await res.json();
     } catch (err) {
-      if (attempt < 3 && !err.message.includes('AbortError') && !err.message.includes('checksum')) {
+      // CRITICAL FIX: a timeout (AbortError) is exactly the case we SHOULD retry — mempool.space
+      // frequently times out under load. The old code excluded AbortError from retries, so a
+      // single slow page aborted the whole indexing run and left the wallet with PARTIAL data
+      // (e.g. 2 of 6 BTC transactions). Now timeouts are retried with exponential backoff; only
+      // a genuine bad-checksum error (user input problem) is non-retryable.
+      const isChecksum = err.message.includes('checksum') || err.message.includes('inválido');
+      if (attempt < MAX_ATTEMPTS && !isChecksum) {
         await _delay(Math.pow(2, attempt) * 1000);
         return _get(url, attempt + 1);
       }
@@ -6676,20 +6684,31 @@ const mempoolAdapter = (() => {
     return /^(bc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{25,89}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(s);
   }
 
-  // Fetch transactions for a single address (paginated, up to 1500 txs)
+  // Fetch transactions for a single address (paginated, up to 1500 txs).
+  // If a page fails after all retries, we throw a CLEAR "incomplete" error instead of
+  // returning partial data — a tax tracker must never present half the history as complete.
   async function getAddressTransactions(address) {
     const txs = [];
     let lastSeenTxid = null;
-    const maxPages = 30;  // 30 pages × 50 tx = 1500 cap
+    const maxPages = 60;  // headroom; we stop when a page returns no more results
 
     for (let p = 0; p < maxPages; p++) {
       const url = lastSeenTxid
         ? `${MEMPOOL_BASE}/address/${address}/txs/chain/${lastSeenTxid}`
         : `${MEMPOOL_BASE}/address/${address}/txs`;
-      const batch = await _get(url);
-      if (!batch || !Array.isArray(batch) || batch.length === 0) break;
+      let batch;
+      try {
+        batch = await _get(url);
+      } catch (err) {
+        // A page failed even after retries. Do NOT silently keep partial data.
+        throw new Error(`Leitura incompleta do Bitcoin: a página ${p + 1} falhou (${err.message}). Tenta re-indexar — a mempool.space pode estar lenta.`);
+      }
+      if (batch === null) break;                       // 404 → no txs at all
+      if (!Array.isArray(batch) || batch.length === 0) break;  // end of history
       txs.push(...batch);
-      if (batch.length < 25) break;  // Mempool returns 25 per page typically
+      // Mempool returns up to 25 confirmed txs per page. Continue only while a full page
+      // came back; a short page means we reached the end.
+      if (batch.length < 25) break;
       lastSeenTxid = batch[batch.length - 1].txid;
     }
     return txs;
@@ -6700,13 +6719,19 @@ const mempoolAdapter = (() => {
   async function getXpubTransactions(xpub) {
     const txs = [];
     let lastSeenTxid = null;
-    const maxPages = 30;
+    const maxPages = 60;
     for (let p = 0; p < maxPages; p++) {
       const url = lastSeenTxid
         ? `${MEMPOOL_BASE}/xpub/${xpub}/txs/chain/${lastSeenTxid}`
         : `${MEMPOOL_BASE}/xpub/${xpub}/txs`;
-      const batch = await _get(url);
-      if (!batch || !Array.isArray(batch) || batch.length === 0) break;
+      let batch;
+      try {
+        batch = await _get(url);
+      } catch (err) {
+        throw new Error(`Leitura incompleta do Bitcoin (xpub): a página ${p + 1} falhou (${err.message}). Tenta re-indexar — a mempool.space pode estar lenta.`);
+      }
+      if (batch === null) break;
+      if (!Array.isArray(batch) || batch.length === 0) break;
       txs.push(...batch);
       if (batch.length < 25) break;
       lastSeenTxid = batch[batch.length - 1].txid;
