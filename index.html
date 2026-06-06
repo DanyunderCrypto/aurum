@@ -7211,13 +7211,22 @@ window.aurumFixNativeAssetLabels = async function () {
     const correct = (typeof _nativeSymbol === 'function') ? _nativeSymbol(e.chain) : 'ETH';
     if (correct !== 'ETH') {                        // only chains whose native isn't ETH
       e.asset = correct;
+      // CRITICAL: the stored price was computed while the asset was mislabelled as ETH, so it
+      // holds ETH's price. Clear it (and any cached USD/note) so the Price Oracle recomputes
+      // the correct price for the real native asset (e.g. GHO) on its next run.
+      delete e.priceEUR;
+      delete e.priceUSD;
+      delete e.priceNote;
       fixed++;
       byChain[e.chain] = (byChain[e.chain] || 0) + 1;
     }
   }
-  console.log(`[cleanup] re-labelled ${fixed} native events from ETH to their correct native symbol.`);
+  console.log(`[cleanup] re-labelled ${fixed} native events and cleared their stale ETH price.`);
   console.table(byChain);
-  if (fixed > 0 && typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  if (fixed > 0) {
+    console.log('[cleanup] NEXT STEP: run the Price Oracle to fetch correct prices for these assets.');
+    if (typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  }
   if (typeof render === 'function') render();
   return { fixed, byChain };
 };
