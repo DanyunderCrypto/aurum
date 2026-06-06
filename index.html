@@ -18406,6 +18406,64 @@ function _buildIntegrityPanel(warnings, undatedCount, lang) {
   </div>`;
 }
 
+// Builds the fiscal-report Summary bar (Koinly-style): transaction-count "pills" + the tax
+// settings actually used for the calculation. Gives the user a one-glance overview and full
+// transparency about HOW the numbers were produced (FIFO, consolidation, the PT crypto→crypto
+// rule). Counts are derived from the year's events + disposals — no engine change needed.
+function _buildFiscalSummaryBar(events, disposals, fiscalYear, lang) {
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+  const yStart = new Date(`${fiscalYear}-01-01T00:00:00Z`).getTime() / 1000;
+  const yEnd   = new Date(`${fiscalYear}-12-31T23:59:59Z`).getTime() / 1000;
+  const inYear = (events || []).filter(e => e.timestamp >= yStart && e.timestamp <= yEnd);
+
+  let deposits = 0, withdrawals = 0, trades = 0, transfers = 0;
+  for (const e of inYear) {
+    const ty = e.type || '';
+    const tx = e.txType || '';
+    if (ty === 'self_transfer' || e._bridgeLinked || e._cexTransfer) transfers++;
+    else if (ty === 'swap' || tx === 'swap' || ty === 'buy' || ty === 'sell') trades++;
+    else if (e.direction === 'in') deposits++;
+    else if (e.direction === 'out') withdrawals++;
+  }
+  const dispCount = (disposals || []).filter(d => d.fiscalYear === fiscalYear).length;
+
+  const pill = (n, label) => `<span style="display:inline-flex;align-items:center;gap:0.3rem;background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:0.2rem 0.6rem;font-size:0.72rem;white-space:nowrap"><strong>${n}</strong> <span style="color:var(--text-muted)">${label}</span></span>`;
+
+  const pills = [
+    pill(inYear.length, t2('transactions', 'transações')),
+    pill(deposits, t2('deposits', 'entradas')),
+    pill(withdrawals, t2('withdrawals', 'saídas')),
+    pill(trades, t2('trades', 'trocas')),
+    pill(dispCount, t2('disposals', 'alienações')),
+    pill(transfers, t2('transfers', 'transferências')),
+  ].join(' ');
+
+  // Tax settings actually applied — transparency (mirrors Koinly's settings box).
+  const swapMode = (state.swapMode || 'permuta');
+  const consolidated = !!(state.settings && state.settings.consolidateOwner);
+  const defiTreat = (state.settings && state.settings.defiIncomeTreatment) || 'deferred';
+  const setting = (label, value) => `<div style="display:flex;justify-content:space-between;gap:1rem;font-size:0.74rem;padding:0.18rem 0"><span style="color:var(--text-muted)">${label}</span><span style="font-weight:600">${value}</span></div>`;
+
+  const settingsBox = `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:0.7rem 0.9rem;min-width:230px">
+    <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.4rem">${t2('Settings used', 'Definições usadas')}</div>
+    ${setting(t2('Country', 'País'), 'Portugal')}
+    ${setting(t2('Currency', 'Moeda'), 'EUR')}
+    ${setting(t2('Cost basis', 'Custo de aquisição'), 'FIFO')}
+    ${setting(t2('Holding rule', 'Regra de detenção'), t2('365 days (G1 exempt)', '365 dias (G1 isento)'))}
+    ${setting(t2('Wallets', 'Carteiras'), consolidated ? t2('Consolidated', 'Consolidadas') : t2('Separate', 'Separadas'))}
+    ${setting(t2('Crypto→crypto taxed?', 'Cripto→cripto tributa?'), swapMode === 'permuta' ? t2('No (swap)', 'Não (permuta)') : t2('Yes', 'Sim'))}
+    ${setting(t2('DeFi income', 'Rendimento DeFi'), defiTreat === 'deferred' ? t2('Deferred', 'Diferido') : t2('Category E', 'Categoria E'))}
+  </div>`;
+
+  return `<div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;margin-bottom:1.2rem">
+    <div style="flex:1;min-width:240px">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:0.5rem">${t2('Summary', 'Resumo')} · ${fiscalYear}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem">${pills}</div>
+    </div>
+    ${settingsBox}
+  </div>`;
+}
+
 function renderFiscalEngineV2(w, fiscalYear) {
   const lang = state.lang || 'pt';
   // Recolhe os eventos. Se a consolidação por dono estiver ligada, junta TODAS
@@ -18490,6 +18548,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
       <div class="panel-body">
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang)}
+
+        ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
 
         ${(consolidated && _bridgeLinks.length) ? `<div class="alert alert-info" style="font-size:0.78rem;margin-bottom:1rem">
           <span>🔗</span>
