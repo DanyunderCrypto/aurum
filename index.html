@@ -7175,6 +7175,28 @@ window.aurumBitcoin = bitcoinIndexer;
 window.aurumMempool = mempoolAdapter;
 window.aurumCoinStatsBtc = coinStatsBtcAdapter;
 
+// One-off cleanup: removes the zkSync-family native-ETH ERC-20 mirror events (system contract
+// 0x…800a) that were double-counted in PAST indexing runs, before we started dropping them at
+// ingestion. Fixes phantom open balances (e.g. the inflated ETH position on Lens/zkSync/Abstract).
+// Run from the console: await window.aurumCleanZkSyncEthMirror()
+window.aurumCleanZkSyncEthMirror = async function () {
+  const SYS = '0x000000000000000000000000000000000000800a';
+  const before = (state.events || []).length;
+  const removed = (state.events || []).filter(e =>
+    (e.assetContract || '').toLowerCase() === SYS && (e.asset || '').toUpperCase() === 'ETH');
+  state.events = (state.events || []).filter(e =>
+    !((e.assetContract || '').toLowerCase() === SYS && (e.asset || '').toUpperCase() === 'ETH'));
+  const after = state.events.length;
+  console.log(`[cleanup] removed ${before - after} duplicated zkSync-family ETH-mirror events (800a).`);
+  // Show per-chain breakdown of what was removed
+  const byChain = {};
+  removed.forEach(e => { byChain[e.chain] = (byChain[e.chain] || 0) + 1; });
+  console.table(byChain);
+  if (typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  if (typeof render === 'function') render();
+  return { removed: before - after, byChain };
+};
+
 
 
 // ─────────────────────────────────────────────────
@@ -9457,8 +9479,22 @@ window.confirmCexImport = confirmCexImport;
 // ─────────────────────────────────────────────────
 const universalIndexer = (() => {
 
-  // Convert raw Alchemy transfer to UniversalEvent
+  // zkSync Elastic Chain family (zkSync Era, Abstract, Lens, …) exposes NATIVE ETH ALSO as an
+  // ERC-20 from the system contract 0x…800a. Alchemy returns BOTH the native ('external')
+  // transfer AND this ERC-20 mirror for the same movement → double counting, which inflates
+  // balances (e.g. a phantom 4.48 ETH open position on Lens). The native 'external' transfer
+  // is the source of truth, so we DROP the 800a ERC-20 mirror to avoid counting ETH twice.
+  const ZKSYNC_ETH_SYSTEM_CONTRACT = '0x000000000000000000000000000000000000800a';
+
+  // Convert raw Alchemy transfer to UniversalEvent. Returns null for transfers that must be
+  // dropped (e.g. the zkSync 800a ETH mirror, which duplicates the native ETH transfer).
   function _normalizeTransfer(raw, chain, walletAddress) {
+    // Drop the zkSync-family native-ETH ERC-20 mirror: it duplicates the 'external' ETH transfer.
+    const rawContractAddr = (raw.rawContract?.address || '').toLowerCase();
+    const rawAsset = (raw.asset || '').toUpperCase();
+    if (rawContractAddr === ZKSYNC_ETH_SYSTEM_CONTRACT && (rawAsset === 'ETH' || rawAsset === '')) {
+      return null;
+    }
     const addrLower = walletAddress.toLowerCase();
     const fromLower = (raw.from || '').toLowerCase();
     const toLower = (raw.to || '').toLowerCase();
@@ -9617,10 +9653,13 @@ const universalIndexer = (() => {
 
         // Convert and dedupe
         const events = transfers.map(t => _normalizeTransfer(t, chain, walletAddress));
-        // Dedupe by id (incoming + outgoing queries can overlap for self-transfers)
+        // Dedupe by id (incoming + outgoing queries can overlap for self-transfers).
+        // Skip nulls — _normalizeTransfer returns null for transfers that must be dropped
+        // (e.g. the zkSync 800a native-ETH ERC-20 mirror, to avoid double-counting ETH).
         const seen = new Set();
         const uniqueEvents = [];
         for (const e of events) {
+          if (!e) continue;
           if (!seen.has(e.id)) {
             seen.add(e.id);
             uniqueEvents.push(e);
