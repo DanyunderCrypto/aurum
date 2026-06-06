@@ -3422,6 +3422,12 @@ const I18N = {
     'history.priceDesc': 'Preços históricos via <strong>DefiLlama</strong> (USD) + <strong>ECB</strong> (USD→EUR), granularidade diária. Cache permanente em IndexedDB — preços históricos são imutáveis. <strong>NFTs excluídos</strong> (Art. 10 nº 18 — não são criptoativos fiscalmente).',
     'history.filters.chain': 'Chain',
     'history.filters.type': 'Tipo',
+    'history.filters.group': 'Categoria',
+    'history.group.deposit': 'Entradas',
+    'history.group.withdrawal': 'Saídas',
+    'history.group.trade': 'Trocas',
+    'history.group.transfer': 'Transferências',
+    'history.group.fee': 'Taxas',
     'history.filters.asset': 'Asset',
     'history.filters.protocol': 'Protocol',
     'history.filters.all': 'Todos',
@@ -4020,6 +4026,12 @@ const I18N = {
     'history.priceDesc': 'Historical prices via <strong>DefiLlama</strong> (USD) + <strong>ECB</strong> (USD→EUR), daily granularity. Permanent cache in IndexedDB — historical prices are immutable. <strong>NFTs excluded</strong> (Art. 10 nº 18 — not fiscally crypto-assets).',
     'history.filters.chain': 'Chain',
     'history.filters.type': 'Type',
+    'history.filters.group': 'Category',
+    'history.group.deposit': 'Deposits',
+    'history.group.withdrawal': 'Withdrawals',
+    'history.group.trade': 'Trades',
+    'history.group.transfer': 'Transfers',
+    'history.group.fee': 'Fees',
     'history.filters.asset': 'Asset',
     'history.filters.protocol': 'Protocol',
     'history.filters.all': 'All',
@@ -17833,6 +17845,22 @@ window.startIndexerForActiveWallet = startIndexerForActiveWallet;
 window.cancelIndexer = cancelIndexer;
 window.clearWalletEvents = clearWalletEvents;
 
+// Classifies a raw event into a semantic group for the History filter. Aligned with our
+// tax logic (stablecoins count as crypto, so there is no "crypto→fiat" group — a real
+// off-ramp to legal-tender fiat is rare on-chain). Groups: transfer (own-wallet moves),
+// trade (swaps/buys/sells), fee, deposit (incoming), withdrawal (outgoing).
+function _eventGroup(e) {
+  if (!e) return 'other';
+  const ty = e.type || '';
+  const tx = e.txType || '';
+  if (ty === 'self_transfer' || e._bridgeLinked || e._cexTransfer) return 'transfer';
+  if (ty === 'fee' || tx === 'fee') return 'fee';
+  if (ty === 'swap' || tx === 'swap' || ty === 'buy' || ty === 'sell' || ty === 'trade') return 'trade';
+  if (e.direction === 'in') return 'deposit';
+  if (e.direction === 'out') return 'withdrawal';
+  return 'other';
+}
+
 function renderHistory(w) {
   state.events = state.events || [];
   state.indexerMeta = state.indexerMeta || {};
@@ -17850,9 +17878,12 @@ function renderHistory(w) {
   const totalEvents = walletEvents.length;
   const byChain = {};
   const byType = {};
+  const byGroup = {};
   walletEvents.forEach(e => {
     byChain[e.chain] = (byChain[e.chain] || 0) + 1;
     byType[e.type] = (byType[e.type] || 0) + 1;
+    const g = _eventGroup(e);
+    byGroup[g] = (byGroup[g] || 0) + 1;
   });
 
   // INTEGRIDADE FISCAL: chains onde a carteira TEM saldo (detetadas pelo C4) mas
@@ -17870,6 +17901,7 @@ function renderHistory(w) {
   // Filters from URL hash (simple state)
   const filterChain = window._histFilterChain || 'all';
   const filterType = window._histFilterType || 'all';
+  const filterGroup = window._histFilterGroup || 'all';
   const filterAsset = window._histFilterAsset || '';
   const filterProto = window._histFilterProto || 'all';
   const hideSpam = (w.hideSpam !== false); // default true
@@ -17879,6 +17911,7 @@ function renderHistory(w) {
   let filtered = walletEvents;
   if (filterChain !== 'all') filtered = filtered.filter(e => e.chain === filterChain);
   if (filterType !== 'all') filtered = filtered.filter(e => e.type === filterType);
+  if (filterGroup !== 'all') filtered = filtered.filter(e => _eventGroup(e) === filterGroup);
   if (filterAsset) filtered = filtered.filter(e => (e.asset || '').toUpperCase().includes(filterAsset.toUpperCase()));
   if (filterProto === '__unknown__') filtered = filtered.filter(e => !e.protocol);
   else if (filterProto !== 'all') filtered = filtered.filter(e => e.protocol === filterProto);
@@ -18135,6 +18168,15 @@ function renderHistory(w) {
             </select>
           </div>
           <div>
+            <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.group')}</label><br>
+            <select class="form-select" style="min-width:140px" onchange="window._histFilterGroup=this.value;window._histPage=0;render()">
+              <option value="all">${t('history.filters.all')}</option>
+              ${[['deposit','history.group.deposit'],['withdrawal','history.group.withdrawal'],['trade','history.group.trade'],['transfer','history.group.transfer'],['fee','history.group.fee']]
+                .filter(([g]) => byGroup[g])
+                .map(([g,key]) => `<option value="${g}" ${g===filterGroup?'selected':''}>${t(key)} (${byGroup[g]})</option>`).join('')}
+            </select>
+          </div>
+          <div>
             <label style="font-family:var(--mono);font-size:0.65rem;color:var(--text-muted);letter-spacing:0.1em;text-transform:uppercase">${t('history.filters.asset')}</label><br>
             <input class="form-input" style="min-width:120px" placeholder="USDC, ETH…" value="${filterAsset}" oninput="window._histFilterAsset=this.value;window._histPage=0;render()">
           </div>
@@ -18153,7 +18195,7 @@ function renderHistory(w) {
             </select>
           </div>
           ${(filterChain !== 'all' || filterType !== 'all' || filterAsset || filterProto !== 'all') ? `
-            <button class="btn btn-outline btn-sm" onclick="window._histFilterChain='all';window._histFilterType='all';window._histFilterAsset='';window._histFilterProto='all';window._histPage=0;render()">${(state.lang||'pt')==='en'?'✕ Clear':'✕ Limpar'}</button>
+            <button class="btn btn-outline btn-sm" onclick="window._histFilterChain='all';window._histFilterType='all';window._histFilterGroup='all';window._histFilterAsset='';window._histFilterProto='all';window._histPage=0;render()">${(state.lang||'pt')==='en'?'✕ Clear':'✕ Limpar'}</button>
           ` : ''}
           <div style="margin-left:auto;font-size:0.78rem;color:var(--text-muted)">
             ${filtered.length} ${filtered.length === 1 ? 'evento' : 'eventos'}${filtered.length !== totalEvents ? ` (de ${totalEvents})` : ''}
