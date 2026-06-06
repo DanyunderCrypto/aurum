@@ -18533,7 +18533,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
                 `${byCat.missingPrice.count} transações sem preço de mercado`),
       desc: t2(`No historical price was found for these on their date. Affected: ${assets}. Re-run the Price Oracle, or review them one by one.`,
                `Não foi encontrado preço histórico para estas na respetiva data. Afetados: ${assets}. Corre o Price Oracle de novo, ou revê-as uma a uma.`),
-      action: `<button class="btn btn-gold btn-sm" onclick="window.aurumReviewIssue('missing_price', ${JSON.stringify(walletId || null)})">${t2('🔍 Review these transactions', '🔍 Rever estas transações')}</button>`,
+      action: `<button class="btn btn-gold btn-sm" onclick="window.aurumReviewIssue('missing_price', ${walletId ? `'${String(walletId).replace(/'/g, "\\'")}'` : 'null'})">${t2('🔍 Review these transactions', '🔍 Rever estas transações')}</button>`,
     });
   }
 
@@ -18886,7 +18886,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           const eoyExpanded = window._eoyExpanded === true;
           const top = eoyExpanded ? eoy.rows : eoy.rows.slice(0, 30);
           const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
-          return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          return `<details ${window._eoyOpen || eoyExpanded ? 'open' : ''} ontoggle="window._eoyOpen=this.open" style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               📅 ${t2('End of Year Holdings', 'Saldos a 31 de Dezembro')} · ${fiscalYear}
               <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${eoy.rows.length} ${t2('assets', 'ativos')}${eoy.totalEUR ? ` · ≈ €${fmt(eoy.totalEUR)}` : ''}${(eoy.hiddenSpam + eoy.hiddenNoPrice) ? ` · ${eoy.hiddenSpam + eoy.hiddenNoPrice} ${t2('hidden (no price/spam)', 'ocultados (sem preço/spam)')}` : ''}</span>
@@ -18925,7 +18925,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
           const fmtQty = (n) => (Math.abs(n) >= 1 ? fmt(n, 4) : fmt(n, 8));
           const matExpanded = window._matExpanded === true;
           const top = matExpanded ? mat.rows : mat.rows.slice(0, 40);
-          return `<details style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          return `<details ${window._matOpen || matExpanded ? 'open' : ''} ontoggle="window._matOpen=this.open" style="margin-bottom:1rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
             <summary style="cursor:pointer;padding:0.7rem 0.9rem;background:var(--bg3);font-size:0.84rem;font-weight:600;display:flex;align-items:center;gap:0.5rem">
               🌱 ${t2('Asset Maturity', 'Maturidade dos Ativos')} · ${t2('365-day rule', 'regra 365 dias')}
               <span style="font-weight:400;color:var(--text-muted);font-size:0.74rem;margin-left:auto">${mat.maturingCount} ${t2('maturing', 'a amadurecer')} · ${mat.exemptCount} ${t2('exempt', 'isentos')}${mat.hidden ? ` · ${mat.hidden} ${t2('hidden (no cost/spam)', 'ocultados (sem custo/spam)')}` : ''}</span>
