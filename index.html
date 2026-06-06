@@ -3541,7 +3541,7 @@ const I18N = {
     'wmodal.solLabel': 'Endereço Solana (Kamino/Jupiter)',
     'wmodal.btcLabel': 'Bitcoin — Endereço <strong>OU</strong> xpub/ypub/zpub',
     'wmodal.btcOptional': '(opcional)',
-    'wmodal.btcNote': '<strong>Address:</strong> 1 só endereço (legacy 1..., P2SH 3..., bech32 bc1...). <strong>xpub/zpub:</strong> deriva automaticamente milhares de endereços (BIP44/49/84) — recomendado para carteiras de hardware. Indexação via Mempool.space (sem API key).',
+    'wmodal.btcNote': '<strong>xpub/zpub (recomendado para Ledger/hardware):</strong> deriva todos os endereços da carteira — mostra o saldo e histórico COMPLETOS. Um endereço único só mostra uma parte da carteira. <strong>⚠️ VPN:</strong> alguns fornecedores de dados Bitcoin bloqueiam VPNs — se a indexação falhar, tenta desligar a VPN.',
     'wmodal.alchemyLabel': 'Alchemy API Key',
     'wmodal.alchemyRequired': '(necessária para indexar — grátis)',
     'wmodal.alchemyPlaceholder': 'Cola a tua API key do Alchemy',
@@ -4139,7 +4139,7 @@ const I18N = {
     'wmodal.solLabel': 'Solana Address (Kamino/Jupiter)',
     'wmodal.btcLabel': 'Bitcoin — Address <strong>OR</strong> xpub/ypub/zpub',
     'wmodal.btcOptional': '(optional)',
-    'wmodal.btcNote': '<strong>Address:</strong> a single address (legacy 1..., P2SH 3..., bech32 bc1...). <strong>xpub/zpub:</strong> automatically derives thousands of addresses (BIP44/49/84) — recommended for hardware wallets. Indexing via Mempool.space (no API key).',
+    'wmodal.btcNote': '<strong>xpub/zpub (recommended for Ledger/hardware):</strong> derives all wallet addresses — shows the COMPLETE balance and history. A single address only shows part of the wallet. <strong>⚠️ VPN:</strong> some Bitcoin data providers block VPNs — if indexing fails, try turning your VPN off.',
     'wmodal.alchemyLabel': 'Alchemy API Key',
     'wmodal.alchemyRequired': '(required for indexing — free)',
     'wmodal.alchemyPlaceholder': 'Paste your Alchemy API key',
@@ -17643,7 +17643,18 @@ async function startIndexerForActiveWallet() {
     }
   } catch (err) {
     errorLogger.error('startIndexer: ' + err.message);
-    toast('Indexer falhou: ' + err.message, 'warn');
+    // Make Bitcoin source failures actionable: the most common cause is a VPN blocking
+    // mempool.space/blockstream (we saw this in testing — some VPN IP ranges are blocked,
+    // and xpub lookups only work via mempool.space, which is the one VPNs tend to block).
+    const m = (err.message || '').toLowerCase();
+    const looksBtcSource = m.includes('bitcoin') || m.includes('mempool') || m.includes('esplora') ||
+                           m.includes('fontes') || m.includes('timed out') || m.includes('timeout') ||
+                           m.includes('failed to fetch') || m.includes('xpub');
+    if (looksBtcSource) {
+      toast('A leitura do Bitcoin falhou. Se estás a usar VPN, tenta desligá-la — alguns fornecedores de dados Bitcoin bloqueiam VPNs. Depois re-indexa.', 'warn');
+    } else {
+      toast('Indexer falhou: ' + err.message, 'warn');
+    }
   } finally {
     window._indexerRunning = false;
     window._indexerController = null;
