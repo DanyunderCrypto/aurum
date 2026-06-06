@@ -6805,7 +6805,106 @@ const mempoolAdapter = (() => {
 })();
 
 // ─────────────────────────────────────────────────
-// BitcoinIndexer — normalizes Mempool txs → UniversalEvent
+// CoinStats BTC adapter — xpub/ypub/zpub support via proxy.
+// WHY: mempool.space removed its public /xpub/ endpoint (confirmed 2026-06-06: returns
+// "endpoint does not exist"), and blockstream.info never had one. So HD/hardware wallets
+// (Ledger/Trezor) could only be read one address at a time → users saw 1-2 of N txs.
+// CoinStats supports xpub/ypub/zpub natively, derives all addresses, and (crucially) we
+// call it THROUGH THE PROXY, so it also bypasses VPN blocks that hit mempool.space directly.
+// Flow: PATCH /wallet/transactions (sync, tells CoinStats to index) → GET to read.
+// We map each CoinStats tx → the SAME UniversalEvent shape the Esplora path produces, so the
+// rest of the pipeline (dedupe, price enrichment, persistence) is unchanged. Single-address
+// lookups still use the Esplora path (free, working) — this adapter is xpub-only.
+// ─────────────────────────────────────────────────
+const coinStatsBtcAdapter = (() => {
+  const CONNECTION_ID = 'bitcoin';
+
+  function _base() {
+    return (typeof PROXY_BASE === 'string' && PROXY_BASE) ? PROXY_BASE : '';
+  }
+
+  // Trigger CoinStats to (re)index the wallet. Best-effort: if it fails we still try to read.
+  async function _sync(xpub) {
+    const url = `${_base()}/coinstats/wallet/transactions?address=${encodeURIComponent(xpub)}&connectionId=${CONNECTION_ID}`;
+    try {
+      await safeFetch(url, { method: 'PATCH', timeout: 30000 }, 'coinstats.sync');
+    } catch (e) {
+      console.warn('[coinstats] sync failed (continuing to read anyway):', e.message);
+    }
+  }
+
+  // Fetch the confirmed balance (BTC). Used to sanity-check that derivation worked.
+  async function getBalance(xpub) {
+    const url = `${_base()}/coinstats/wallet/balance?address=${encodeURIComponent(xpub)}&connectionId=${CONNECTION_ID}`;
+    const res = await safeFetch(url, { timeout: 30000 }, 'coinstats.balance');
+    if (!res.ok) throw new Error(`CoinStats balance HTTP ${res.status}`);
+    const data = await res.json();
+    // Response: [{ coinId:'bitcoin', amount, symbol:'BTC', ... }]
+    const btc = Array.isArray(data) ? data.find(d => (d.symbol || '').toUpperCase() === 'BTC') : null;
+    return btc ? Number(btc.amount) || 0 : 0;
+  }
+
+  // Map a single CoinStats tx → UniversalEvent (same shape as the Esplora _normalizeTx output).
+  function _toEvent(tx, xpub) {
+    // type: 'Sent' | 'Received'. coinData.count is signed (negative = sent).
+    const rawCount = Number(tx?.coinData?.count);
+    const isReceive = (tx.type === 'Received') || (rawCount > 0);
+    const direction = isReceive ? 'in' : 'out';
+    const amountBTC = Math.abs(isFinite(rawCount) ? rawCount : 0);
+
+    const iso = tx.date || '';
+    const ms = iso ? new Date(iso).getTime() : NaN;
+    const timestamp = isFinite(ms) ? Math.floor(ms / 1000) : 0;
+    const date = timestamp ? new Date(timestamp * 1000).toISOString().slice(0, 10) : '';
+
+    // CoinStats does not expose the raw txid; use its stable internal item id as the unique key.
+    const item = tx?.transactions?.[0]?.items?.[0] || {};
+    const csId = item.id || `${iso}:${rawCount}`;
+
+    return {
+      id: `btc:cs:${csId}`,                  // unique per CoinStats tx (stable across re-index)
+      chain: 'bitcoin',
+      txHash: '',                            // not provided by CoinStats
+      blockNumber: 0,
+      timestamp,
+      date,
+      walletAddress: '',                     // set by caller
+      type: direction === 'in' ? 'receive' : 'send',
+      direction,
+      asset: 'BTC',
+      assetContract: '',
+      amount: amountBTC,
+      decimals: 8,
+      counterparty: { address: '', labeled: '', isContract: false },
+      category: 'btc_native',
+      fee: 0,                                // CoinStats summarizes net; fee not separately given
+      confirmed: true,
+      source: 'coinstats',
+      _normalized: true,                     // signal to indexer: already a UniversalEvent
+    };
+  }
+
+  // Returns an array of UniversalEvents for an xpub (all derived addresses). Throws on failure.
+  async function getXpubEvents(xpub, opts = {}) {
+    await _sync(xpub);
+    opts.onProgress?.({ phase: 'fetching_txs', input: xpub });
+    const url = `${_base()}/coinstats/wallet/transactions?address=${encodeURIComponent(xpub)}&connectionId=${CONNECTION_ID}&limit=1000`;
+    const res = await safeFetch(url, { timeout: 45000 }, 'coinstats.txs');
+    if (!res.ok) throw new Error(`CoinStats transactions HTTP ${res.status}`);
+    const data = await res.json();
+    const arr = Array.isArray(data?.result) ? data.result
+              : Array.isArray(data) ? data
+              : [];
+    return arr.map(tx => _toEvent(tx, xpub)).filter(e => e.amount > 0 && e.timestamp > 0);
+  }
+
+  return { getXpubEvents, getBalance };
+})();
+
+
+// ─────────────────────────────────────────────────
+// BitcoinIndexer — normalizes Esplora txs → UniversalEvent (single addresses);
+// xpub via coinStatsBtcAdapter (returns pre-normalized events).
 // ─────────────────────────────────────────────────
 const bitcoinIndexer = (() => {
 
@@ -6918,18 +7017,15 @@ const bitcoinIndexer = (() => {
     try {
       let txs = [];
       let ownedAddrs = [];
+      let preNormalizedEvents = null;  // set when a source returns UniversalEvents directly
 
       if (mempoolAdapter.isXpub(walletInput)) {
         summary.type = 'xpub';
+        // xpub path: use CoinStats (mempool.space removed its public /xpub/ endpoint, and
+        // blockstream never had one). CoinStats derives all addresses and works via the proxy
+        // (also bypassing VPN blocks). It returns already-normalized UniversalEvents.
         opts.onProgress?.({ phase: 'fetching_xpub', input: walletInput });
-        ownedAddrs = await mempoolAdapter.getXpubAddresses(walletInput);
-        // If we can't get derived addresses, fall back to using xpub directly
-        // for txs fetch (Mempool will derive internally)
-        if (ownedAddrs.length === 0) {
-          // Still works — Mempool derives them server-side for /txs endpoint
-        }
-        opts.onProgress?.({ phase: 'fetching_txs', input: walletInput });
-        txs = await mempoolAdapter.getXpubTransactions(walletInput);
+        preNormalizedEvents = await coinStatsBtcAdapter.getXpubEvents(walletInput, opts);
       } else if (mempoolAdapter.isBtcAddress(walletInput)) {
         summary.type = 'address';
         ownedAddrs = [walletInput];
@@ -6961,12 +7057,20 @@ const bitcoinIndexer = (() => {
         ownedAddrs = Object.keys(addrCounts);
       }
 
-      // Normalize each tx to UniversalEvent
-      const events = [];
-      for (const tx of txs) {
-        const evt = _normalizeTx(tx, ownedAddrs);
-        evt.walletAddress = walletInput.toLowerCase();
-        events.push(evt);
+      // Normalize each tx to UniversalEvent.
+      let events = [];
+      if (preNormalizedEvents) {
+        // CoinStats path: already UniversalEvents, just stamp the wallet address.
+        for (const evt of preNormalizedEvents) {
+          evt.walletAddress = walletInput.toLowerCase();
+          events.push(evt);
+        }
+      } else {
+        for (const tx of txs) {
+          const evt = _normalizeTx(tx, ownedAddrs);
+          evt.walletAddress = walletInput.toLowerCase();
+          events.push(evt);
+        }
       }
 
       // Dedupe by id
@@ -7030,6 +7134,7 @@ const bitcoinIndexer = (() => {
 
 window.aurumBitcoin = bitcoinIndexer;
 window.aurumMempool = mempoolAdapter;
+window.aurumCoinStatsBtc = coinStatsBtcAdapter;
 
 
 
