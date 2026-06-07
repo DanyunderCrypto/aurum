@@ -7192,7 +7192,88 @@ window.aurumReviewIssue = function (issueType, walletId) {
   if (typeof render === 'function') render();
 };
 
-// One-off cleanup for ALREADY-INDEXED data: removes MIRRORED transfers — the same economic
+// ───────────────────────────────────────────────────────────────────────────
+// RECONCILIATION ENGINE (Layer 2) — anchors calculated balances to the REAL on-chain
+// balance, the way Koinly/Summ do. Fixes negative/under-counted native balances caused by
+// data sources that miss internal transfers (Alchemy provides 'internal' only on ETH Mainnet
+// + Polygon; on L2s like Arbitrum/Base/Optimism/Soneium/Linea, ETH received from contracts is
+// invisible → calculated balance goes negative). For each chain where we know the real native
+// balance (read via eth_getBalance during portfolio refresh), we compare it to the balance
+// summed from events; if real > calculated, we inject a RECONCILIATION lot (a synthetic deposit
+// of the missing amount, €0 cost — the compliant Koinly approach) so the balance matches reality
+// and FIFO works. We never invent outflows. Re-runnable: clears prior _reconciliation events first.
+// Run: await window.aurumReconcileBalances()
+window.aurumReconcileBalances = async function (opts = {}) {
+  const w = (typeof activeWallet === 'function') ? activeWallet() : null;
+  const wid = w?.id || state.activeWId;
+  if (!wid) { console.log('[reconcile] no active wallet.'); return { created: 0, flagged: [] }; }
+  const real = window['_nativeOnchain_' + wid] || {};
+  if (!Object.keys(real).length) {
+    console.log('[reconcile] no on-chain native balances cached yet. Refresh the portfolio first (open Dashboard), then re-run.');
+    return { created: 0, flagged: [] };
+  }
+  const MIN_ABS = 1e-5;     // ignore dust deltas
+  const MIN_REL = 0.001;    // and deltas under 0.1% of the real balance
+
+  // 1) Remove any prior reconciliation lots so re-running doesn't stack them.
+  const before = (state.events || []).length;
+  state.events = (state.events || []).filter(e => !e._reconciliation);
+  const removed = before - state.events.length;
+
+  // 2) Compute calculated native balance per chain from events.
+  const calc = {}; // chain → qty (native asset only)
+  for (const e of state.events) {
+    if (e.assetContract) continue;                 // native = no contract
+    if (!e.chain || typeof e.amount !== 'number') continue;
+    if (e.asset !== _nativeSymbol(e.chain)) continue; // only the chain's native coin
+    calc[e.chain] = (calc[e.chain] || 0) + (e.direction === 'in' ? e.amount : e.direction === 'out' ? -e.amount : 0);
+  }
+
+  // 3) For each chain with a known real balance, reconcile.
+  const created = [];
+  const flagged = [];
+  const earliestTs = (state.events.length ? Math.min(...state.events.map(e => e.timestamp || Infinity)) : Math.floor(Date.now() / 1000));
+  for (const chain of Object.keys(real)) {
+    const realQty = real[chain];
+    const calcQty = calc[chain] || 0;
+    const delta = realQty - calcQty;
+    const threshold = Math.max(MIN_ABS, realQty * MIN_REL);
+    if (delta > threshold) {
+      // Missing inflows → inject a reconciliation deposit (€0 cost).
+      const sym = _nativeSymbol(chain);
+      const ev = {
+        id: `reconcile:${wid}:${chain}:${sym}`,
+        walletId: wid,
+        walletAddress: (w?.address || '').toLowerCase(),
+        asset: sym, chain, assetContract: null,
+        direction: 'in', amount: delta,
+        timestamp: (earliestTs === Infinity ? Math.floor(Date.now() / 1000) : earliestTs) - 60,
+        date: _safeDateStr ? _safeDateStr((earliestTs === Infinity ? Date.now() / 1000 : earliestTs) - 60) : undefined,
+        type: 'reconciliation', category: 'reconciliation',
+        priceEUR: 0, priceNote: 'reconciliation_zero_cost',
+        _reconciliation: true,
+        note: `Reconciliation: on-chain balance (${realQty.toFixed(6)}) exceeded tracked balance (${calcQty.toFixed(6)}). Missing inflows (likely internal transfers not provided by the data source on this chain). Added at €0 cost.`,
+      };
+      state.events.push(ev);
+      created.push({ chain, asset: sym, delta: +delta.toFixed(8), real: +realQty.toFixed(8), calc: +calcQty.toFixed(8) });
+    } else if (delta < -threshold) {
+      // Calculated exceeds real → missing outflows or over-counted spam. Do NOT invent outflows.
+      flagged.push({ chain, asset: _nativeSymbol(chain), excess: +(-delta).toFixed(8), real: +realQty.toFixed(8), calc: +calcQty.toFixed(8) });
+    }
+  }
+
+  state.events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  if ((created.length || removed) && typeof saveState === 'function') { await saveState(); }
+  window['_reconcileFlags_' + wid] = flagged;
+
+  console.log(`[reconcile] removed ${removed} old reconciliation lot(s); created ${created.length} new.`);
+  if (created.length) { console.log('[reconcile] reconciled (missing inflows added at €0):'); console.table(created); }
+  if (flagged.length) { console.log('[reconcile] flagged (calculated > real — needs review, NOT auto-fixed):'); console.table(flagged); }
+  if (typeof render === 'function') render();
+  return { created: created.length, removed, createdDetail: created, flagged };
+};
+
+window.aurumReconcileBalances = window.aurumReconcileBalances; // expose
 // movement emitted under MULTIPLE DIFFERENT non-empty token contracts within ONE transaction
 // (migrated-contract tokens like Monerium EURe old+new on Polygon). Keeps one event per mirrored
 // group. NEVER touches native-coin transfers (ETH, POL… empty contract) or single-contract
@@ -12565,6 +12646,15 @@ async function fetchRealBalances(w, { force = false } = {}) {
     const _nonSpamHoldings = holdings.filter(h => h.chain && h.chain !== 'solana' && !_holdingIsSpam(h));
     const _activeChains = [...new Set(_nonSpamHoldings.map(h => h.chain))];
     window['_activeChains_' + w.id] = _activeChains;
+    // Store the REAL on-chain native balances (ETH/POL/etc per chain), read via eth_getBalance.
+    // This is the anchor for the reconciliation engine: it compares these real balances against
+    // the balance computed from transaction events, to detect & fix gaps (e.g. ETH that arrived
+    // via internal transfers the indexer can't see on L2s). Keyed by chain → qty.
+    const _nativeReal = {};
+    for (const h of holdings) {
+      if (h.native && h.chain && typeof h.qty === 'number' && h.qty > 0) _nativeReal[h.chain] = h.qty;
+    }
+    window['_nativeOnchain_' + w.id] = _nativeReal;
     window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions, aaveReceipts, activeChains: _activeChains };
     return result;
   }
