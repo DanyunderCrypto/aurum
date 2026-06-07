@@ -7192,29 +7192,40 @@ window.aurumReviewIssue = function (issueType, walletId) {
   if (typeof render === 'function') render();
 };
 
-// One-off cleanup for ALREADY-INDEXED data: removes mirrored transfers — the same economic
-// movement stored under multiple token contracts within one transaction (migrated-contract
-// tokens like Monerium EURe old+new on Polygon, or any wrapper re-emitting an identical
-// transfer). Keeps one event per (txHash + asset + direction + amount), drops exact mirrors.
-// Fixes phantom leftover balances (e.g. the 30 EURe). Run: await window.aurumDedupeMirrors()
+// One-off cleanup for ALREADY-INDEXED data: removes MIRRORED transfers — the same economic
+// movement emitted under MULTIPLE DIFFERENT non-empty token contracts within ONE transaction
+// (migrated-contract tokens like Monerium EURe old+new on Polygon). Keeps one event per mirrored
+// group. NEVER touches native-coin transfers (ETH, POL… empty contract) or single-contract
+// groups — those legitimately repeat the same amount in one tx. Run: await window.aurumDedupeMirrors()
 window.aurumDedupeMirrors = async function () {
-  const seen = new Set();
-  const kept = [];
-  const dropped = [];
-  // Preserve original order so the FIRST occurrence (usually the canonical contract) is kept.
-  for (const e of (state.events || [])) {
+  const events = state.events || [];
+  const groups = new Map(); // tx|asset|dir|amount|chain → [indices]
+  events.forEach((e, idx) => {
     const amtKey = (typeof e.amount === 'number') ? e.amount.toPrecision(12) : String(e.amount);
-    const key = `${e.txHash}|${(e.asset || '').toUpperCase()}|${e.direction}|${amtKey}|${e.chain}`;
-    if (seen.has(key)) { dropped.push(e); continue; }
-    seen.add(key);
-    kept.push(e);
+    const k = `${e.txHash}|${(e.asset || '').toUpperCase()}|${e.direction}|${amtKey}|${e.chain}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(idx);
+  });
+  const dropIdx = new Set();
+  for (const idxs of groups.values()) {
+    if (idxs.length < 2) continue;
+    const contracts = idxs.map(i => (events[i].assetContract || '').toLowerCase());
+    const anyNative = contracts.some(c => !c);          // ETH/POL/etc — never merge
+    const distinctNonEmpty = new Set(contracts.filter(c => c));
+    if (anyNative || distinctNonEmpty.size < 2) continue; // only true migrated-token mirrors
+    for (let j = 1; j < idxs.length; j++) dropIdx.add(idxs[j]);
   }
-  state.events = kept;
-  console.log(`[cleanup] removed ${dropped.length} mirrored transfer(s) (same tx/asset/dir/amount).`);
+  if (dropIdx.size === 0) {
+    console.log('[cleanup] no mirrored migrated-token transfers found. Nothing to remove.');
+    return { removed: 0, byAsset: {} };
+  }
+  const dropped = [];
+  state.events = events.filter((e, i) => { if (dropIdx.has(i)) { dropped.push(e); return false; } return true; });
+  console.log(`[cleanup] removed ${dropped.length} mirrored migrated-token transfer(s) (different contracts, same movement).`);
   const byAsset = {};
   dropped.forEach(e => { const k = `${e.asset}|${e.chain}`; byAsset[k] = (byAsset[k] || 0) + 1; });
   console.table(byAsset);
-  if (dropped.length > 0 && typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  if (typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
   if (typeof render === 'function') render();
   return { removed: dropped.length, byAsset };
 };
@@ -9773,30 +9784,42 @@ const universalIndexer = (() => {
           }
         }
 
-        // Dedupe MIRRORED transfers: the SAME economic movement represented by MULTIPLE token
-        // contracts within the SAME transaction. This happens with (a) tokens that migrated
-        // contract (e.g. Monerium EURe old 0x18ec… + new 0xe0ae… on Polygon, both emitted for one
-        // transfer) and (b) any wrapper/mirror that re-emits an identical transfer. Indexers count
-        // each contract, so a deposit is counted 2× while its later withdrawal is counted 1× →
-        // a phantom leftover balance (the 30 EURe case). We collapse to ONE event per
-        // (txHash + asset + direction + amount), keeping the first and dropping exact mirrors.
-        // The key is deliberately strict (same tx, same symbol, same direction, same amount) so
-        // two genuinely distinct transfers are never merged.
-        const mirrorSeen = new Set();
-        const deduped = [];
-        let _mirrorsDropped = 0;
-        for (const e of uniqueEvents) {
+        // Dedupe MIRRORED transfers: the SAME economic movement emitted under MULTIPLE DIFFERENT
+        // TOKEN CONTRACTS within one transaction. This is specific to tokens that migrated contract
+        // (e.g. Monerium EURe old 0x18ec… + new 0xe0ae… on Polygon — both contracts emit the one
+        // transfer). The signal is: same tx + same symbol + same direction + same amount BUT two
+        // DIFFERENT non-empty contract addresses.
+        // CRITICAL: native-coin transfers (ETH, POL, …) have an EMPTY contract and legitimately
+        // repeat the same amount within one tx (internal transfers, complex swaps). Those must
+        // NEVER be merged. So we only collapse a group when it contains ≥2 DISTINCT non-empty
+        // contracts; we keep one event per distinct contract is wrong too — we keep exactly ONE
+        // for the whole mirrored group. Native and single-contract groups pass through untouched.
+        const _mirrorGroups = new Map(); // key tx|asset|dir|amount → array of event indices
+        uniqueEvents.forEach((e, idx) => {
           const amtKey = (typeof e.amount === 'number') ? e.amount.toPrecision(12) : String(e.amount);
-          const mirrorKey = `${e.txHash}|${(e.asset||'').toUpperCase()}|${e.direction}|${amtKey}`;
-          if (mirrorSeen.has(mirrorKey)) { _mirrorsDropped++; continue; }
-          mirrorSeen.add(mirrorKey);
-          deduped.push(e);
+          const k = `${e.txHash}|${(e.asset||'').toUpperCase()}|${e.direction}|${amtKey}`;
+          if (!_mirrorGroups.has(k)) _mirrorGroups.set(k, []);
+          _mirrorGroups.get(k).push(idx);
+        });
+        const _dropIdx = new Set();
+        for (const idxs of _mirrorGroups.values()) {
+          if (idxs.length < 2) continue;  // nothing to merge
+          const contracts = idxs.map(i => (uniqueEvents[i].assetContract || '').toLowerCase());
+          const distinctNonEmpty = new Set(contracts.filter(c => c));
+          // Only treat as mirror if EVERY event in the group has a non-empty contract AND there
+          // are ≥2 distinct contracts (migrated-token signature). If any is native (empty), or all
+          // share one contract, leave the group alone — those are real, distinct movements.
+          const anyNative = contracts.some(c => !c);
+          if (anyNative || distinctNonEmpty.size < 2) continue;
+          // Keep the first, drop the rest (they are the same movement mirrored across contracts).
+          for (let j = 1; j < idxs.length; j++) _dropIdx.add(idxs[j]);
         }
-        if (_mirrorsDropped > 0) {
-          console.log(`[indexer] ${chain}: dropped ${_mirrorsDropped} mirrored transfer(s) (same tx/asset/dir/amount, different contracts — e.g. migrated-contract tokens).`);
+        if (_dropIdx.size > 0) {
+          const deduped = uniqueEvents.filter((_, i) => !_dropIdx.has(i));
+          console.log(`[indexer] ${chain}: dropped ${_dropIdx.size} mirrored migrated-token transfer(s) (same tx/asset/dir/amount, different contracts).`);
+          uniqueEvents.length = 0;
+          uniqueEvents.push(...deduped);
         }
-        uniqueEvents.length = 0;
-        uniqueEvents.push(...deduped);
 
         // Sprint 5: ENRICH each event with protocol info from ADDRESS_BOOK
         // This must happen BEFORE _classify so it can refine type using protocol context
