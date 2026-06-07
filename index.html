@@ -8078,6 +8078,9 @@ const fifoEngine = (() => {
     'AERO:base':  new Set(['0x940181a94a35a4569e4529a3cdfb74e38fd98631']),
     'USDC:base':  new Set(['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913','0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca']), // native + USDbC
     'USDC:eth':   new Set(['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']),
+    // zkSync Era USDC: native (Circle) + bridged USDC.e. Any other contract claiming "USDC" on
+    // zkSync is an impostor (e.g. a fake 0x7455eb… minting 100k from the zero address).
+    'USDC:zksync': new Set(['0x1d17cbcf0d6d143135ae902365d2e5e2a16538d4','0x3355df6d4c9c3035724fd0e3914de96a5a83aaf4']),
     'USDT:eth':   new Set(['0xdac17f958d2ee523a2206206994597c13d831ec7']),
     'WETH:base':  new Set(['0x4200000000000000000000000000000000000006']),
     'WETH:eth':   new Set(['0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2']),
@@ -8404,12 +8407,19 @@ const fifoEngine = (() => {
       // total value = priced value, so priceEUR = pricedValue / qty.
       const totalUnpricedQty = unpriced.reduce((s, e) => s + e.amount, 0);
       for (const e of unpriced) {
+        // Skip dust legs: an infinitesimal quantity (e.g. 1e-9) makes value/qty explode into an
+        // absurd per-unit price (e.g. a junk "CF" token deriving €931/unit from a 1e-9 swap leg).
+        // Such a tiny leg carries no real value and must not seed a price or a cost basis.
+        if (e.amount < 1e-6) continue;
         // Each unpriced leg gets value proportional to its qty share (handles multi-leg)
         const legValueEUR = unpriced.length === 1
           ? pricedValueEUR
           : pricedValueEUR * (e.amount / totalUnpricedQty);
         const perUnit = legValueEUR / e.amount;
-        if (perUnit > 0 && isFinite(perUnit)) {
+        // Sanity ceiling: a single token unit worth more than €1,000,000 is almost certainly a
+        // derivation artefact (dust / bad pairing), not a real price. Reject it rather than
+        // stamping a phantom value that would distort holdings and gains.
+        if (perUnit > 0 && isFinite(perUnit) && perUnit < 1_000_000) {
           e.priceEUR = perUnit;
           e.priceNote = 'derived_onchain';
           e._priceDerived = true;
