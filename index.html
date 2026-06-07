@@ -7192,6 +7192,33 @@ window.aurumReviewIssue = function (issueType, walletId) {
   if (typeof render === 'function') render();
 };
 
+// One-off cleanup for ALREADY-INDEXED data: removes mirrored transfers — the same economic
+// movement stored under multiple token contracts within one transaction (migrated-contract
+// tokens like Monerium EURe old+new on Polygon, or any wrapper re-emitting an identical
+// transfer). Keeps one event per (txHash + asset + direction + amount), drops exact mirrors.
+// Fixes phantom leftover balances (e.g. the 30 EURe). Run: await window.aurumDedupeMirrors()
+window.aurumDedupeMirrors = async function () {
+  const seen = new Set();
+  const kept = [];
+  const dropped = [];
+  // Preserve original order so the FIRST occurrence (usually the canonical contract) is kept.
+  for (const e of (state.events || [])) {
+    const amtKey = (typeof e.amount === 'number') ? e.amount.toPrecision(12) : String(e.amount);
+    const key = `${e.txHash}|${(e.asset || '').toUpperCase()}|${e.direction}|${amtKey}|${e.chain}`;
+    if (seen.has(key)) { dropped.push(e); continue; }
+    seen.add(key);
+    kept.push(e);
+  }
+  state.events = kept;
+  console.log(`[cleanup] removed ${dropped.length} mirrored transfer(s) (same tx/asset/dir/amount).`);
+  const byAsset = {};
+  dropped.forEach(e => { const k = `${e.asset}|${e.chain}`; byAsset[k] = (byAsset[k] || 0) + 1; });
+  console.table(byAsset);
+  if (dropped.length > 0 && typeof saveState === 'function') { await saveState(); console.log('[cleanup] state saved.'); }
+  if (typeof render === 'function') render();
+  return { removed: dropped.length, byAsset };
+};
+
 // One-off cleanup: removes the zkSync-family native-ETH ERC-20 mirror events (system contract
 // 0x…800a) that were double-counted in PAST indexing runs, before we started dropping them at
 // ingestion. Fixes phantom open balances (e.g. the inflated ETH position on Lens/zkSync/Abstract).
@@ -7323,13 +7350,20 @@ const COIN_ID_MAP = {
 // bulk of "missing price" cases instantly and reliably (USDC, USDT, DAI, and the many
 // newer variants like USDT0, USD0, USDe, etc.). Depeg events are rare and immaterial for
 // daily-granularity tax basis.
+// USD-pegged stablecoins valued ≈ $1 by symbol (fast-path). IMPORTANT: only well-known,
+// unambiguous stablecoins belong here. Obscure short-symbol "USDx" names (USDR, USDV, USDN…)
+// are frequently impersonated by scam/airdrop tokens, so assuming $1 by NAME alone wrongly
+// values junk (e.g. a fake "USDR"/"USOR" on Base the user never held). Those must instead earn
+// a price from a real market (DexScreener/DefiLlama liquidity gate) or be left unpriced — which
+// correctly filters them out. A legit holding of one of these still gets priced via its market.
 const USD_STABLECOINS = new Set([
   'USDC','USDT','DAI','BUSD','TUSD','USDP','GUSD','FRAX','LUSD','SUSD','MIM','USDD',
   'USDE','SUSDE','USD0','USD0++','USDT0','USD₮0','GHO','PYUSD','CRVUSD','DOLA',
-  'USDAT','USDA','USDX','USDB','EUSD','FDUSD','USDM','USDS','SDAI','USDL','RLUSD',
-  'APXUSD','OUSD','DUSD','YUSD','BOLD','USDF','DEUSD','SDEUSD',
-  'USDN','MUSD','HUSD','USDR','USDV','USDZ','AUSD','BUIDL','USYC',
+  'EUSD','FDUSD','USDM','USDS','SDAI','RLUSD',
+  'APXUSD','OUSD','BOLD','USDF','DEUSD','SDEUSD','AUSD','BUIDL','USYC',
 ]);
+// Removed from the $1-by-name fast-path (too easily impersonated; must earn a market price):
+// USDAT, USDA, USDX, USDB, USDL, DUSD, YUSD, USDN, MUSD, HUSD, USDR, USDV, USDZ.
 // EUR-pegged stablecoins ≈ €1 (no FX conversion needed)
 const EUR_STABLECOINS = new Set(['EURE','EURC','EURS','AGEUR','EURT','CEUR']);
 
@@ -9738,6 +9772,31 @@ const universalIndexer = (() => {
             uniqueEvents.push(e);
           }
         }
+
+        // Dedupe MIRRORED transfers: the SAME economic movement represented by MULTIPLE token
+        // contracts within the SAME transaction. This happens with (a) tokens that migrated
+        // contract (e.g. Monerium EURe old 0x18ec… + new 0xe0ae… on Polygon, both emitted for one
+        // transfer) and (b) any wrapper/mirror that re-emits an identical transfer. Indexers count
+        // each contract, so a deposit is counted 2× while its later withdrawal is counted 1× →
+        // a phantom leftover balance (the 30 EURe case). We collapse to ONE event per
+        // (txHash + asset + direction + amount), keeping the first and dropping exact mirrors.
+        // The key is deliberately strict (same tx, same symbol, same direction, same amount) so
+        // two genuinely distinct transfers are never merged.
+        const mirrorSeen = new Set();
+        const deduped = [];
+        let _mirrorsDropped = 0;
+        for (const e of uniqueEvents) {
+          const amtKey = (typeof e.amount === 'number') ? e.amount.toPrecision(12) : String(e.amount);
+          const mirrorKey = `${e.txHash}|${(e.asset||'').toUpperCase()}|${e.direction}|${amtKey}`;
+          if (mirrorSeen.has(mirrorKey)) { _mirrorsDropped++; continue; }
+          mirrorSeen.add(mirrorKey);
+          deduped.push(e);
+        }
+        if (_mirrorsDropped > 0) {
+          console.log(`[indexer] ${chain}: dropped ${_mirrorsDropped} mirrored transfer(s) (same tx/asset/dir/amount, different contracts — e.g. migrated-contract tokens).`);
+        }
+        uniqueEvents.length = 0;
+        uniqueEvents.push(...deduped);
 
         // Sprint 5: ENRICH each event with protocol info from ADDRESS_BOOK
         // This must happen BEFORE _classify so it can refine type using protocol context
