@@ -18672,9 +18672,26 @@ function _buildEndOfYearHoldings(events, fiscalYear) {
     if (e.direction === 'in') row.qty += e.amount;
     else if (e.direction === 'out') row.qty -= e.amount;
     // Track the most recent per-unit EUR price seen for THIS exact contract (never another's).
+    // CRITICAL: trust ONLY market-verified prices, exactly like the portfolio valuation does.
+    //  - derived_onchain prices come from on-chain swap ratios (thin-liquidity DEX pools) and are
+    //    unreliable for scam/low-cap tokens (they produced AYE, TEJU, POOL, ISS phantom values).
+    //  - stablecoin_usd/_eur prices set by the $1 fast-path are only valid if the symbol is STILL
+    //    a recognised stablecoin (guards against fake "USOR"/"USDR" once removed from the list).
+    // The fiscal cost-basis engine still uses derived_onchain separately — that is not affected here.
     if (typeof e.priceEUR === 'number' && e.priceEUR > 0) {
-      const prev = lastPrice.get(key);
-      if (!prev || e.timestamp > prev.ts) lastPrice.set(key, { priceEUR: e.priceEUR, ts: e.timestamp });
+      let priceTrustworthy = true;
+      if (e.priceNote === 'derived_onchain') {
+        priceTrustworthy = false;
+      } else if (e.priceNote === 'stablecoin_usd' || e.priceNote === 'stablecoin_eur') {
+        const stillStable = (typeof isUsdStablecoin === 'function' && isUsdStablecoin(e.asset))
+          || (typeof isEurStablecoin === 'function' && isEurStablecoin(e.asset))
+          || eng?.isUsdStablecoin?.(e.asset) || eng?.isEurStablecoin?.(e.asset);
+        if (!stillStable) priceTrustworthy = false;
+      }
+      if (priceTrustworthy) {
+        const prev = lastPrice.get(key);
+        if (!prev || e.timestamp > prev.ts) lastPrice.set(key, { priceEUR: e.priceEUR, ts: e.timestamp });
+      }
     }
   }
 
