@@ -7262,6 +7262,48 @@ window.aurumReconcileBalances = async function (opts = {}) {
     }
   }
 
+  // 4) Token (ERC-20) reconciliation. The on-chain token balances were already spam-filtered when
+  // read, and are keyed by chain|contract — so we reconcile each real token holding against the
+  // balance summed from its OWN contract's events. Same rules: real > calc → €0 deposit for the
+  // gap; calc > real → flag, never invent outflows. Grouping by contract (not symbol) is essential
+  // so a fake "USDC" can't be reconciled against the real USDC's events.
+  const tokenReal = window['_tokenOnchain_' + wid] || {};
+  if (opts.tokens !== false && Object.keys(tokenReal).length) {
+    // Sum calculated balance per chain|contract from events (tokens only — those with a contract).
+    const tcalc = {};
+    for (const e of state.events) {
+      if (!e.assetContract || !e.chain) continue;
+      if (typeof e.amount !== 'number') continue;
+      const k = `${e.chain}|${(e.assetContract || '').toLowerCase()}`;
+      tcalc[k] = (tcalc[k] || 0) + (e.direction === 'in' ? e.amount : e.direction === 'out' ? -e.amount : 0);
+    }
+    for (const key of Object.keys(tokenReal)) {
+      const { asset, qty: realQty } = tokenReal[key];
+      const calcQty = tcalc[key] || 0;
+      const delta = realQty - calcQty;
+      const threshold = Math.max(MIN_ABS, realQty * MIN_REL);
+      const [chain, contract] = key.split('|');
+      if (delta > threshold) {
+        state.events.push({
+          id: `reconcile:${wid}:${chain}:${contract}`,
+          walletId: wid,
+          walletAddress: (w?.address || '').toLowerCase(),
+          asset, chain, assetContract: contract,
+          direction: 'in', amount: delta,
+          timestamp: (earliestTs === Infinity ? Math.floor(Date.now() / 1000) : earliestTs) - 60,
+          date: new Date(((earliestTs === Infinity ? Math.floor(Date.now() / 1000) : earliestTs) - 60) * 1000).toISOString().slice(0, 10),
+          type: 'reconciliation', category: 'reconciliation',
+          priceEUR: 0, priceNote: 'reconciliation_zero_cost',
+          _reconciliation: true,
+          note: `Reconciliation: on-chain ${asset} balance (${realQty.toFixed(6)}) exceeded tracked (${calcQty.toFixed(6)}). Missing inflows added at €0 cost.`,
+        });
+        created.push({ chain, asset, delta: +delta.toFixed(8), real: +realQty.toFixed(8), calc: +calcQty.toFixed(8) });
+      } else if (delta < -threshold) {
+        flagged.push({ chain, asset, excess: +(-delta).toFixed(8), real: +realQty.toFixed(8), calc: +calcQty.toFixed(8) });
+      }
+    }
+  }
+
   state.events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   if ((created.length || removed) && typeof saveState === 'function') { await saveState(); }
   window['_reconcileFlags_' + wid] = flagged;
@@ -10328,6 +10370,14 @@ async function resolveMissingDatesUI() {
       ? `✓ Done: ${res.resolved} resolved, ${res.failed} failed (${res.blocksQueried} blocks queried).`
       : `✓ Concluído: ${res.resolved} resolvidas, ${res.failed} falharam (${res.blocksQueried} blocos consultados).`);
     if (barEl) barEl.style.width = '100%';
+    // Resolving dates can change which events count, so re-anchor balances to on-chain reality
+    // if we already have fresh on-chain balances cached (don't force a fetch — keep it snappy).
+    try {
+      const _wid = w.id || state.activeWId;
+      if (window['_nativeOnchain_' + _wid] && typeof window.aurumReconcileBalances === 'function') {
+        await window.aurumReconcileBalances({ auto: true });
+      }
+    } catch (_) { /* non-fatal */ }
     // Re-render para o motor fiscal recalcular com as novas datas
     if (typeof render === 'function') render();
   } catch (err) {
@@ -12661,6 +12711,16 @@ async function fetchRealBalances(w, { force = false } = {}) {
       if (h.native && h.chain && typeof h.qty === 'number' && h.qty > 0) _nativeReal[h.chain] = h.qty;
     }
     window['_nativeOnchain_' + w.id] = _nativeReal;
+    // Also store the real ERC-20 token balances (already spam-filtered in _readOnchainChain),
+    // keyed by chain|contract → { asset, qty }, for token-level reconciliation. Only tokens with
+    // a contract (native is handled above) and a real positive balance.
+    const _tokenReal = {};
+    for (const h of holdings) {
+      if (!h.native && h.contract && h.chain && typeof h.qty === 'number' && h.qty > 0) {
+        _tokenReal[`${h.chain}|${(h.contract || '').toLowerCase()}`] = { asset: h.asset, qty: h.qty };
+      }
+    }
+    window['_tokenOnchain_' + w.id] = _tokenReal;
     window[cacheKey] = { at: now, data: holdings, vaults, lpPositions, prices: _portfolioPrices, solDefiPositions, aaveReceipts, activeChains: _activeChains };
     return result;
   }
@@ -17765,7 +17825,10 @@ function bulkSetSpam(spam) {
   // Bust FIFO cache (spam affects fiscal classification)
   Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_')) delete window[k]; });
   toast(`✓ ${touched} events ${spam ? 'marcados como spam' : 'desmarcados'}`, 'success');
-  // Keep selection — user might want to do more actions
+  // Clear the selection now that the action is done — leaving 10 rows selected after acting on
+  // them is confusing (it looks like nothing happened, and a follow-up action could hit the
+  // wrong rows). The user re-selects if they want another action.
+  window._selectedEventIds = new Set();
   render();
 }
 window.bulkSetSpam = bulkSetSpam;
