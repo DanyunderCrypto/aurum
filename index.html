@@ -10307,6 +10307,9 @@ async function resolveMissingDatesUI() {
     ? `Resolving ${evs.length} dates…`
     : `A resolver ${evs.length} datas…`);
 
+  // Mark a long-running user operation in progress so the periodic auto-refresh (which calls
+  // render() and would wipe this progress bar mid-run) pauses until we're done.
+  window._busyOperation = 'resolveDates';
   try {
     const res = await resolveMissingDates(evs, key, (done, total) => {
       const pct = total > 0 ? Math.round((done / total) * 100) : 100;
@@ -10331,6 +10334,8 @@ async function resolveMissingDatesUI() {
     if (lblEl) lblEl.textContent = (lang === 'en'
       ? `Error: ${err.message}`
       : `Erro: ${err.message}`);
+  } finally {
+    window._busyOperation = null;
   }
 }
 window.resolveMissingDatesUI = resolveMissingDatesUI;
@@ -10494,7 +10499,7 @@ function boot() {
     updateWalletBtn(w);
     refreshAll();
     clearInterval(refreshTimer);
-    refreshTimer = setInterval(refreshAll, 60000);
+    refreshTimer = setInterval(refreshAll, 300000); // 5 min — prices don't move enough in 60s to justify the rate-limit cost
     requestNotifPerm();
   }
 }
@@ -18713,9 +18718,9 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
     issues.push({
       icon: '🕐',
       title: t2(`${undatedCount} transactions without a date`, `${undatedCount} transações sem data`),
-      desc: t2('Excluded from the calculation — they cannot be placed in time for FIFO / the 365-day rule. Recoverable from the block number.',
-               'Excluídas do cálculo — não podem ser situadas no tempo para o FIFO / regra dos 365 dias. Recuperáveis a partir do número do bloco.'),
-      action: `<button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()">${t2('🕐 Resolve dates now', '🕐 Resolver datas agora')}</button>
+      desc: t2('Excluded from the calculation — they cannot be placed in time for FIFO / the 365-day rule. The date can be recovered automatically from each transaction\'s block number.',
+               'Estão excluídas do cálculo porque não é possível situá-las no tempo (necessário para o FIFO e a regra dos 365 dias). A data pode ser recuperada automaticamente a partir do bloco de cada transação.'),
+      action: `<button class="btn btn-gold btn-sm" onclick="resolveMissingDatesUI()">${t2('🕐 Recover dates automatically', '🕐 Recuperar datas automaticamente')}</button>
         <div id="resolveDatesProgress" style="display:none;margin-top:0.6rem">
           <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.3rem" id="resolveDatesLabel"></div>
           <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
@@ -20970,6 +20975,10 @@ function reapplyPricesToHistory() {
 async function refreshAll() {
   const w = activeWallet();
   if (!w) return;
+  // Don't let the periodic auto-refresh interrupt a long-running user operation: a render()
+  // mid-run wipes progress bars and can abort in-flight work (resolving dates, indexing, etc.).
+  // We skip this refresh tick; the next one (or a manual refresh) will pick up the fresh data.
+  if (window._busyOperation || window._indexerRunning) return;
   // Refresh manual: limpar os registos de "preço já tentado" para voltar a tentar
   // preços que falharam (Chainlink/DexScreener/LP). Sem isto, um preço que falhou
   // numa sessão nunca mais era tentado. (Estes Sets existem para evitar o loop de
