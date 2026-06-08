@@ -19522,12 +19522,18 @@ function renderFiscal(w) {
   const estimatedTaxableMV = estimatedDisposalGain > 0 ? estimatedDisposalGain : 0;
   const estimatedTax = estimatedTaxableMV * 0.28;
 
-  // Years available (where there's data)
+  // Years available (where there's data). Must include the indexed on-chain events — not just
+  // cashback lots/card spends — otherwise years with only on-chain activity (the vast majority)
+  // never appear in the selector. Respects owner-consolidation like the rest of the fiscal report.
+  const _fiscalEvents = (state.settings && state.settings.consolidateOwner)
+    ? (typeof _eventsForOwnerOf === 'function' ? _eventsForOwnerOf(w) : (state.events || []))
+    : (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : (state.events || []));
   const allDates = [
     ...allLots.map(l => l.acqDate),
     ...allSpends.map(s => s.date),
+    ..._fiscalEvents.map(e => e.date || (e.timestamp ? new Date(e.timestamp * 1000).toISOString().slice(0, 10) : null)),
   ].filter(Boolean);
-  const years = [...new Set(allDates.map(d => +d.slice(0, 4)).filter(y => y >= 2020 && y <= 2100))].sort();
+  const years = [...new Set(allDates.map(d => +(''+d).slice(0, 4)).filter(y => y >= 2020 && y <= 2100))].sort();
   if (years.length === 0) years.push(new Date().getFullYear());
 
   return `
