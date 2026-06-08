@@ -7307,7 +7307,7 @@ window.aurumReconcileBalances = async function (opts = {}) {
   state.events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   if ((created.length || removed) && typeof saveState === 'function') { await saveState(); }
   window['_reconcileFlags_' + wid] = flagged;
-  window['_reconcileSummary_' + wid] = { reconciled: created.length, flagged: flagged.length, at: Date.now(), detail: created };
+  window['_reconcileSummary_' + wid] = { reconciled: created.length, flagged: flagged.length, at: Date.now(), detail: created, flaggedDetail: flagged };
 
   console.log(`[reconcile] removed ${removed} old reconciliation lot(s); created ${created.length} new.`);
   if (created.length) { console.log('[reconcile] reconciled (missing inflows added at €0):'); console.table(created); }
@@ -18828,9 +18828,31 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
       parts.push(t2(`${_recSum.flagged} balance(s) where the tracked amount exceeds the on-chain amount — left untouched for you to review (we never invent disposals).`,
                     `${_recSum.flagged} saldo(s) onde o valor seguido excede o on-chain — deixado(s) intacto(s) para reveres (nunca inventamos alienações).`));
     }
+    // Make the flagged balances actionable (industry best practice — surface for review, never
+    // auto-delete). List each one with the excess and a link to the explorer so the user can
+    // investigate and, if needed, fix it manually (mark spam / edit price).
+    let flaggedList = '';
+    const fd = Array.isArray(_recSum.flaggedDetail) ? _recSum.flaggedDetail : [];
+    if (fd.length > 0) {
+      const rows = fd.slice(0, 40).map(f => {
+        const sym = (f.asset || '').replace(/</g, '&lt;');
+        const ch = (f.chain || '').toUpperCase();
+        return `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.25rem 0;border-bottom:1px solid var(--border)">
+          <span><strong>${sym}</strong> <span style="color:var(--text-muted)">· ${ch}</span></span>
+          <span style="color:var(--text-muted);font-family:var(--mono);font-size:0.7rem">${t2('tracked', 'seguido')} ${f.calc} · ${t2('on-chain', 'on-chain')} ${f.real}</span>
+        </div>`;
+      }).join('');
+      flaggedList = `<details style="margin-top:0.5rem">
+        <summary style="cursor:pointer;font-size:0.72rem;color:var(--blue,#3B82F6)">${t2(`Review the ${fd.length} flagged balance(s)`, `Rever os ${fd.length} saldo(s) sinalizado(s)`)}</summary>
+        <div style="margin-top:0.4rem;font-size:0.72rem">
+          <div style="color:var(--text-muted);margin-bottom:0.4rem">${t2('These are usually tiny-value tokens emitting duplicate transfer events in one transaction, or fees not tracked. They are left as-is. To correct one, open it in History and mark as spam or edit its value.', 'Geralmente são tokens de valor ínfimo que emitem eventos de transferência duplicados numa transação, ou taxas não seguidas. Ficam como estão. Para corrigir, abre no Histórico e marca como spam ou edita o valor.')}</div>
+          ${rows}
+        </div>
+      </details>`;
+    }
     reconNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(59,130,246,0.07);border-color:rgba(59,130,246,0.35)">
       <span style="font-size:1rem">⚖️</span>
-      <div><strong>${t2('Balance reconciliation', 'Reconciliação de saldos')}</strong> — ${parts.join(' ')}</div>
+      <div style="flex:1"><strong>${t2('Balance reconciliation', 'Reconciliação de saldos')}</strong> — ${parts.join(' ')}${flaggedList}</div>
     </div>`;
   }
 
