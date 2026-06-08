@@ -13255,37 +13255,54 @@ function renderTaxLossHarvest(w) {
   const yr = fifoState.summary.byYear[currentYear] || { anexoG: { gain: 0 }, taxEstimateEUR: 0 };
   const totalLossEUR = losses.reduce((s, l) => s + l.unrealizedEUR, 0);
 
+  // Stash the loss positions so the interactive toggle handler can recompute without re-running FIFO.
+  window._tlhPositions = losses.map((p, i) => ({
+    idx: i, asset: p.asset, chain: p.chain,
+    lossEUR: p.unrealizedEUR, qty: p.totalQty, basis: p.totalBasis, marketValue: p.marketValueEUR,
+  }));
+  window._tlhCurrentGainG = yr.anexoG.gain;
+  window._tlhCurrentTax = yr.taxEstimateEUR;
+  if (!window._tlhSelected) window._tlhSelected = new Set();
+  // Keep only still-valid selections
+  window._tlhSelected = new Set([...window._tlhSelected].filter(i => i < losses.length));
+
+  const lang = state.lang || 'pt';
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+
   return `
     <div class="panel" style="margin-top:1.5rem">
       <div class="panel-head">
         <span class="panel-title">${t('dash.taxOptim')}</span>
-        <span style="font-size:0.7rem;color:var(--text-muted)">${losses.length} posições com loss não realizado</span>
+        <span style="font-size:0.7rem;color:var(--text-muted)">${losses.length} ${t2('positions with unrealized loss', 'posições com loss não realizado')}</span>
       </div>
       <div class="panel-body">
         <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
           <span>💡</span>
           <div>
-            Tens <strong>€${fmt(Math.abs(totalLossEUR))}</strong> em losses não realizados.
-            Realizá-los antes de 31 Dez compensa ganhos do Anexo G no mesmo ano.
-            ${yr.anexoG.gain > 0 ? `<br><strong>Imposto actual estimado: €${fmt(yr.taxEstimateEUR)}.</strong> ${t('dash.realizeLosses')} <strong>€${fmt(Math.max(0, yr.anexoG.gain + totalLossEUR) * 0.28)}</strong>.` : '<br>Sem ganhos G a compensar este ano — o loss pode ser reportado para os 5 anos seguintes.'}
+            ${t2('Select the losses you\'d realize (sell to EUR/USD) to see the live impact on your tax below. Realizing losses before 31 Dec offsets your Annex G gains this year.', 'Seleciona as perdas que realizarias (vender para EUR/USD) e vê o impacto no teu imposto, em tempo real, em baixo. Realizar perdas antes de 31 Dez compensa os teus ganhos do Anexo G este ano.')}
           </div>
         </div>
+
+        <!-- Before/After interactive panel -->
+        <div id="tlhBeforeAfter" style="margin-bottom:1.2rem">${_renderTlhBeforeAfter()}</div>
 
         <div style="overflow-x:auto">
           <table style="width:100%;font-size:0.78rem;border-collapse:collapse">
             <thead>
               <tr style="border-bottom:1px solid var(--border);text-align:left">
+                <th style="padding:0.5rem;width:32px"></th>
                 <th style="padding:0.5rem">Asset</th>
-                <th style="padding:0.5rem;text-align:right">Qty aberta</th>
+                <th style="padding:0.5rem;text-align:right">${t2('Open qty', 'Qty aberta')}</th>
                 <th style="padding:0.5rem;text-align:right">Basis</th>
-                <th style="padding:0.5rem;text-align:right">Valor actual</th>
+                <th style="padding:0.5rem;text-align:right">${t2('Current value', 'Valor actual')}</th>
                 <th style="padding:0.5rem;text-align:right">Loss</th>
                 <th style="padding:0.5rem;text-align:right">%</th>
               </tr>
             </thead>
             <tbody>
-              ${losses.slice(0, 10).map(p => `
-                <tr style="border-bottom:1px solid var(--border-soft)">
+              ${losses.slice(0, 20).map((p, i) => `
+                <tr style="border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="_tlhToggle(${i})">
+                  <td style="padding:0.5rem;text-align:center"><input type="checkbox" ${window._tlhSelected.has(i) ? 'checked' : ''} onclick="event.stopPropagation();_tlhToggle(${i})"></td>
                   <td style="padding:0.5rem"><strong>${p.asset}</strong> <span style="opacity:0.6;font-size:0.7rem">${p.chain}</span></td>
                   <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">${fmt(p.totalQty, 6)}</td>
                   <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(p.totalBasis)}</td>
@@ -13296,16 +13313,69 @@ function renderTaxLossHarvest(w) {
               `).join('')}
             </tbody>
           </table>
-          ${losses.length > 10 ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.6rem;text-align:center">+ ${losses.length - 10} posições com loss menor</div>` : ''}
+          ${losses.length > 20 ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.6rem;text-align:center">+ ${losses.length - 20} ${t2('positions with smaller loss', 'posições com loss menor')}</div>` : ''}
         </div>
 
         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.8rem;line-height:1.5">
-          <strong>Nota fiscal PT:</strong> losses realizados em Anexo G podem ser deduzidos a ganhos do mesmo ano. Saldo negativo no ano transita para os 5 anos seguintes (Art. 55 nº 1 d CIRS). Permuta cripto↔cripto NÃO realiza loss — tens de vender para EUR/USD.
+          <strong>${t2('PT tax note:', 'Nota fiscal PT:')}</strong> ${t2('losses realized under Annex G can be deducted from same-year gains. A negative annual balance carries forward 5 years (Art. 55 §1 d CIRS). A crypto↔crypto swap does NOT realize a loss — you must sell to EUR/USD.', 'losses realizados em Anexo G podem ser deduzidos a ganhos do mesmo ano. Saldo negativo no ano transita para os 5 anos seguintes (Art. 55 nº 1 d CIRS). Permuta cripto↔cripto NÃO realiza loss — tens de vender para EUR/USD.')}
         </div>
       </div>
     </div>
   `;
 }
+
+// Renders the live Before/After tax panel for Tax Loss Harvesting. Reads the stashed positions
+// and the user's checkbox selection (window._tlhSelected), recomputes the Annex G gain and tax
+// after realizing the selected losses, and shows the saving. No FIFO re-run — pure arithmetic on
+// the already-computed numbers, so it's instant on every toggle.
+function _renderTlhBeforeAfter() {
+  const lang = state.lang || 'pt';
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+  const positions = window._tlhPositions || [];
+  const selected = window._tlhSelected || new Set();
+  const gainBefore = window._tlhCurrentGainG || 0;
+  const taxBefore = window._tlhCurrentTax || 0;
+
+  const selectedLoss = positions.filter(p => selected.has(p.idx)).reduce((s, p) => s + p.lossEUR, 0); // negative
+  const gainAfter = gainBefore + selectedLoss; // losses reduce the gain
+  const taxAfter = Math.max(0, gainAfter) * 0.28;
+  const saving = taxBefore - taxAfter;
+  const nSel = positions.filter(p => selected.has(p.idx)).length;
+
+  const box = (label, value, color) => `
+    <div style="flex:1;min-width:130px;padding:0.8rem 1rem;background:var(--bg1);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:0.35rem">${label}</div>
+      <div style="font-family:var(--mono);font-size:1.45rem;font-weight:600;${color}">${value}</div>
+    </div>`;
+
+  return `
+    <div style="display:flex;gap:0.8rem;flex-wrap:wrap;align-items:stretch">
+      ${box(t2('Annex G gain (before)', 'Ganho Anexo G (antes)'), '€' + fmt(gainBefore), gainBefore > 0 ? 'color:var(--amber,#d97706)' : 'color:var(--green)')}
+      <div style="display:flex;align-items:center;font-size:1.3rem;color:var(--text-muted)">→</div>
+      ${box(t2('Gain (after harvest)', 'Ganho (após colheita)'), '€' + fmt(gainAfter), gainAfter > 0 ? 'color:var(--amber,#d97706)' : 'color:var(--green)')}
+      ${box(t2('Tax now', 'Imposto agora'), '€' + fmt(taxBefore), 'color:var(--red)')}
+      ${box(t2('Tax after', 'Imposto depois'), '€' + fmt(taxAfter), taxAfter < taxBefore ? 'color:var(--green)' : 'color:var(--red)')}
+      ${box(t2('You save', 'Poupas'), '€' + fmt(Math.max(0, saving)), 'color:var(--green)')}
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem">
+      ${nSel === 0
+        ? t2('Select losses above to simulate.', 'Seleciona perdas acima para simular.')
+        : t2(`Realizing ${nSel} loss position(s) = €${fmt(Math.abs(selectedLoss))} in losses.${saving > 0 ? ` Tax saving: €${fmt(saving)}.` : ' No gains to offset this year — losses carry forward 5 years.'}`,
+             `Realizar ${nSel} posição(ões) = €${fmt(Math.abs(selectedLoss))} em perdas.${saving > 0 ? ` Poupança fiscal: €${fmt(saving)}.` : ' Sem ganhos a compensar este ano — as perdas transitam 5 anos.'}`)}
+    </div>`;
+}
+
+// Toggle a Tax Loss Harvesting position and re-render just the Before/After panel (instant).
+function _tlhToggle(idx) {
+  if (!window._tlhSelected) window._tlhSelected = new Set();
+  if (window._tlhSelected.has(idx)) window._tlhSelected.delete(idx);
+  else window._tlhSelected.add(idx);
+  const el = document.getElementById('tlhBeforeAfter');
+  if (el) el.innerHTML = _renderTlhBeforeAfter();
+  // Sync the checkboxes (the row click and the checkbox click both call this)
+  document.querySelectorAll('#tlhBeforeAfter').forEach(() => {});
+}
+window._tlhToggle = _tlhToggle;
 
 // ── Portfolio charts: SVG-based, no external deps ──
 // ── DeFi positions panel: loops/lending shown as NET value (collateral − debt) ──
