@@ -3010,6 +3010,11 @@ body.stealth-mode .stealth-badge {
       </div>
       <div class="form-group"><label class="form-label" data-i18n="cex.accountLabel">Nome da conta</label><input class="form-input" id="cex_label" data-i18n-placeholder="cex.accountPlaceholder" placeholder="ex: Binance principal" value="main"></div>
     </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label class="form-label" data-i18n="cex.depositAddrLabel">Endereço(s) de depósito on-chain (opcional)</label>
+      <input class="form-input" id="cex_deposit_addr" data-i18n-placeholder="cex.depositAddrPlaceholder" placeholder="0x... (separa vários por vírgula)">
+      <div style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem" data-i18n="cex.depositAddrHint">Os endereços para onde envias cripto quando depositas nesta exchange. Permite ligar os teus envios on-chain a esta conta — assim a transferência não conta como venda, e a venda real (a fiat) é a que está no CSV.</div>
+    </div>
     <div class="alert alert-info" id="cexHint" style="margin-bottom:1rem;font-size:0.8rem">
       <span>ℹ</span><div data-i18n-html="cexHint.binance">Exporta o teu <strong>Transaction History</strong> da Binance em CSV e arrasta-o aqui. O formato é auto-detetado.</div>
     </div>
@@ -3623,6 +3628,9 @@ const I18N = {
     'cex.exchangeOther': 'Outra',
     'cex.accountLabel': 'Nome da conta',
     'cex.accountPlaceholder': 'ex: Binance principal',
+    'cex.depositAddrLabel': 'Endereço(s) de depósito on-chain (opcional)',
+    'cex.depositAddrPlaceholder': '0x... (separa vários por vírgula)',
+    'cex.depositAddrHint': 'Os endereços para onde envias cripto quando depositas nesta exchange. Permite ligar os teus envios on-chain a esta conta — assim a transferência não conta como venda, e a venda real (a fiat) é a que está no CSV.',
     'cex.dropFile': 'Clica ou arrasta o CSV da exchange aqui',
     'cex.localNote': 'O ficheiro fica no teu browser — nunca é guardado em servidores',
     'cex.confirm': '✓ Importar',
@@ -4227,6 +4235,9 @@ const I18N = {
     'cex.exchangeOther': 'Other',
     'cex.accountLabel': 'Account name',
     'cex.accountPlaceholder': 'e.g. Binance main',
+    'cex.depositAddrLabel': 'On-chain deposit address(es) (optional)',
+    'cex.depositAddrPlaceholder': '0x... (separate multiple with commas)',
+    'cex.depositAddrHint': 'The addresses you send crypto to when depositing into this exchange. Lets us link your on-chain sends to this account — so the transfer isn\'t taxed, and the real (fiat) sale is the one in the CSV.',
     'cex.dropFile': 'Click or drag the exchange CSV here',
     'cex.localNote': 'The file stays in your browser — never saved to any server',
     'cex.confirm': '✓ Import',
@@ -6490,6 +6501,26 @@ const ADDRESS_BOOK = {
   '0x21a31ee1afc51d94c2efccaa2092ad1028285549': { protocol: 'Binance', type: 'cex', name: 'Hot Wallet 15', chain: 'eth' },
   '0xdfd5293d8e347dfe59e90efd55b2956a1343963d': { protocol: 'Binance', type: 'cex', name: 'Hot Wallet 16', chain: 'eth' },
   '0x56eddb7aa87536c09ccc2793473599fd21a8b17f': { protocol: 'Binance', type: 'cex', name: 'Hot Wallet 17', chain: 'eth' },
+  '0x9696f59e4d72e237be84ffd425dcad154bf96976': { protocol: 'Binance', type: 'cex', name: 'Hot Wallet 18', chain: 'eth' },
+  '0x4976a4a02f38326660d17bf34b431dc6e2eb2327': { protocol: 'Binance', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+
+  // ═══════════════════════════════════════════════
+  // CEX HOT WALLETS — MEXC, OKX, Bybit, Gate, KuCoin, Bitget, Crypto.com, Kraken
+  // ═══════════════════════════════════════════════
+  '0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88': { protocol: 'MEXC', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x0211f3cedbef3143223d3acf0e589747933e8527': { protocol: 'MEXC', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
+  '0x6cc5f688a315f3dc28a7781717a9a798a59fda7b': { protocol: 'OKX', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x5041ed759dd4afc3a72b8192c143f72f4724081a': { protocol: 'OKX', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
+  '0xf89d7b9c864f589bbf53a82105107622b35eaa40': { protocol: 'Bybit', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x0d0707963952f2fba59dd06f2b425ace40b492fe': { protocol: 'Gate', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x1c4b70a3968436b9a0a9cf5205c787eb81bb558c': { protocol: 'Gate', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
+  '0x2b5634c42055806a59e9107ed44d43c426e58258': { protocol: 'KuCoin', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x689c56aef474df92d44a1b70850f808488f9769c': { protocol: 'KuCoin', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
+  '0x0639556f03714a74a5feeaf5736a4a64ff70d206': { protocol: 'Bitget', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x6262998ced04146fa42253a5c0af90ca02dfd2a3': { protocol: 'Crypto.com', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0x46340b20830761efd32832a74d7169b29feb9758': { protocol: 'Crypto.com', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
+  '0x2910543af39aba0cd09dbb2d50200b3e800a63d2': { protocol: 'Kraken', type: 'cex', name: 'Hot Wallet', chain: 'eth' },
+  '0xa83b11093c858c86321fbc4c20fe82cdbd58e09e': { protocol: 'Kraken', type: 'cex', name: 'Hot Wallet 2', chain: 'eth' },
 
   // ═══════════════════════════════════════════════
   // CEX HOT WALLETS — Coinbase
@@ -9383,6 +9414,13 @@ async function importCexCsv(exchange, label, csvText, opts) {
     w = { id: genId(), name: label || (exchange.charAt(0).toUpperCase()+exchange.slice(1)), addr, kind:'cex', exchange, sol:'', alchemyKey:'' };
     state.wallets.push(w);
   }
+  // Register the user's on-chain deposit addresses for this CEX (merge, dedupe). These let the
+  // basis bridge match on-chain sends to this exchange with the CSV — so the transfer isn't taxed
+  // and the fiat sale inside the CEX (from the CSV) is the real disposal.
+  if (opts.depositAddrs && opts.depositAddrs.length) {
+    const set = new Set([...(w.depositAddrs || []), ...opts.depositAddrs.map(a => String(a).toLowerCase())]);
+    w.depositAddrs = [...set];
+  }
   // mapear → eventos (com walletAddress = addr sintético)
   const events = aurumCexImport.txsToEvents(parsed.transactions, addr, { chain: 'cex' });
   events.forEach(e => { e.id = `cex:${exchange}:${e.txHash}:${e.asset}:${e.direction}`; });
@@ -9478,6 +9516,36 @@ const aurumBasisBridge = (() => {
 })();
 window.aurumBasisBridge = aurumBasisBridge;
 
+// Detects on-chain sends whose destination is a KNOWN exchange hot wallet (via ADDRESS_BOOK).
+// Returns a per-exchange summary so the integrity panel can tell the user "you sent to Binance/
+// MEXC — import that CEX's CSV (and register the deposit address) so the fiat sale is captured
+// and the transfer isn't mistaken for a disposal". This is the Summ-style "Unmatched Transfers"
+// surfacing: we never auto-classify, just inform.
+function aurumDetectCexSends(events) {
+  const book = window.aurumAddressBook || {};
+  const byExchange = {};       // exchange → { count, assets:Set, hasCsv }
+  const importedExchanges = new Set(
+    (state.wallets || []).filter(w => w.kind === 'cex').map(w => (w.exchange || '').toLowerCase())
+  );
+  for (const e of (events || [])) {
+    if (e.direction !== 'out') continue;
+    // The counterparty address can live in a few fields depending on the indexer path.
+    const to = (e.to || e.counterparty || e.toAddress || '').toLowerCase();
+    if (!to) continue;
+    const entry = book[to];
+    if (entry && entry.type === 'cex') {
+      const ex = entry.protocol;
+      if (!byExchange[ex]) byExchange[ex] = { count: 0, assets: new Set(), hasCsv: importedExchanges.has(ex.toLowerCase()) };
+      byExchange[ex].count++;
+      if (e.asset) byExchange[ex].assets.add(e.asset);
+    }
+  }
+  return Object.entries(byExchange).map(([exchange, d]) => ({
+    exchange, count: d.count, assets: [...d.assets], hasCsv: d.hasCsv,
+  })).sort((a, b) => b.count - a.count);
+}
+window.aurumDetectCexSends = aurumDetectCexSends;
+
 // Devolve TODOS os endereços das carteiras do utilizador (para o basis-bridge
 // saber que pertencem ao mesmo dono).
 function _allOwnerAddresses() {
@@ -9488,6 +9556,13 @@ function _allOwnerAddresses() {
     if (w.sol) addrs.push(String(w.sol).toLowerCase());
     if (w.bitcoinXpub) addrs.push(String(w.bitcoinXpub).toLowerCase());
     if (w.bitcoinAddress) addrs.push(String(w.bitcoinAddress).toLowerCase());
+    // CEX deposit addresses: the on-chain address(es) the user sends to when depositing into
+    // this exchange. Registering them lets the basis bridge match an on-chain `send` to the CEX
+    // with the CSV imported from that CEX — so the cost basis travels and the fiat sale inside
+    // the CEX is the taxable disposal (not the transfer out).
+    if (Array.isArray(w.depositAddrs)) {
+      w.depositAddrs.forEach(a => { if (a) addrs.push(String(a).toLowerCase()); });
+    }
   });
   return addrs.filter(Boolean);
 }
@@ -9677,12 +9752,17 @@ async function confirmCexImport() {
   if (!_cexPending || !_cexPending.parsed || !_cexPending.parsed.ok) { toast('Nada para importar', 'warn'); return; }
   const exchange = document.getElementById('cex_exchange')?.value || 'binance';
   const label = document.getElementById('cex_label')?.value?.trim() || 'main';
+  const depositAddrsRaw = document.getElementById('cex_deposit_addr')?.value?.trim() || '';
+  const depositAddrs = depositAddrsRaw
+    ? depositAddrsRaw.split(',').map(s => s.trim().toLowerCase()).filter(a => /^0x[0-9a-f]{40}$/.test(a) || a.length > 20)
+    : [];
   const btn = document.getElementById('cexConfirmBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'A importar…'; }
   try {
     const opts = {};
     if (_cexPending.parsed.adapter && _cexPending.parsed.adapter.id === 'manual_ledger') opts.manualAdapter = _cexPending.parsed.adapter;
     opts.filename = _cexPending.filename;
+    if (depositAddrs.length) opts.depositAddrs = depositAddrs;
     const res = await importCexCsv(exchange, label, _cexPending.csvText, opts);
     if (!res.ok) { toast(res.reason || 'Falha no import', 'warn', 6000); return; }
     state.activeWId = res.wallet.id;
@@ -18816,6 +18896,28 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
 
   // Reconciliation transparency note: if the engine adjusted native balances to match the real
   // on-chain balance, the user must know — a fiscal tool never changes balances silently.
+  // CEX sends note (Summ-style): on-chain sends to known exchange hot wallets. Tell the user to
+  // import that CEX's CSV + register the deposit address, so the transfer links up and the real
+  // fiat sale (inside the CEX) is what's taxed — not the transfer.
+  const _cexSends = walletId ? window['_cexSends_' + walletId] : null;
+  let cexNote = '';
+  if (Array.isArray(_cexSends) && _cexSends.length) {
+    const rows = _cexSends.map(s => {
+      const status = s.hasCsv
+        ? `<span style="color:var(--green)">${t2('CSV imported ✓', 'CSV importado ✓')}</span>`
+        : `<span style="color:var(--amber,#d97706)">${t2('no CSV yet', 'sem CSV ainda')}</span>`;
+      return `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.25rem 0;border-bottom:1px solid var(--border)">
+        <span><strong>${s.exchange}</strong> <span style="color:var(--text-muted)">· ${s.count} ${t2('sends', 'envios')} · ${s.assets.slice(0,4).join(', ')}${s.assets.length>4?'…':''}</span></span>
+        ${status}
+      </div>`;
+    }).join('');
+    cexNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.4)">
+      <span style="font-size:1rem">🏦</span>
+      <div style="flex:1"><strong>${t2('Sends to exchanges detected', 'Envios para exchanges detetados')}</strong> — ${t2('you sent crypto on-chain to these exchanges. Import each one\'s CSV and register its deposit address (when importing) so the transfer links up — the real taxable sale is the fiat sale inside the exchange, not the transfer out.', 'enviaste cripto on-chain para estas exchanges. Importa o CSV de cada uma e regista o endereço de depósito (ao importar) para a transferência ligar — a venda tributável real é a venda a fiat dentro da exchange, não a transferência.')}
+      <div style="margin-top:0.5rem">${rows}</div></div>
+    </div>`;
+  }
+
   const _recSum = walletId ? window['_reconcileSummary_' + walletId] : null;
   let reconNote = '';
   if (_recSum && (_recSum.reconciled > 0 || _recSum.flagged > 0)) {
@@ -18858,7 +18960,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
 
   if (issues.length === 0) {
     // Clean state — green confirmation, like Koinly's green check.
-    return reconNote + `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
+    return cexNote + reconNote + `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
       <span style="font-size:1.1rem">✓</span>
       <div><strong style="color:var(--green)">${t2('Data looks complete', 'Dados parecem completos')}</strong> — ${t2('no integrity issues detected for this report. Always confirm with a certified accountant (TOC).', 'sem problemas de integridade detetados para este relatório. Confirma sempre com um TOC certificado.')}</div>
     </div>`;
@@ -18874,7 +18976,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
       </div>
     </div>`).join('');
 
-  return reconNote + `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
+  return cexNote + reconNote + `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
     <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
       <span style="font-size:1.1rem">⚠️</span>
       <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
@@ -19159,6 +19261,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // Disposals filtered to year
   const dispsInYear = disposals.filter(d => d.fiscalYear === fiscalYear);
   const rewardsInYear = rewards.filter(r => r.fiscalYear === fiscalYear);
+  // Detect on-chain sends to known exchange hot wallets (Summ-style "unmatched transfers").
+  try { window['_cexSends_' + w.id] = (typeof aurumDetectCexSends === 'function') ? aurumDetectCexSends(events) : []; } catch (_) { window['_cexSends_' + w.id] = []; }
   const rt = window._fiscalReportType || 'complete';
   const showGains = rt === 'complete' || rt === 'gains';
   const showIncome = rt === 'complete' || rt === 'income';
