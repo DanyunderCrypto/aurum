@@ -19190,6 +19190,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
             <select onchange="window._fiscalReportType=this.value; if(typeof render==='function') render();" style="background:var(--bg1);color:var(--text);border:1px solid var(--border2);border-radius:6px;padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer">
               ${opts.map(([v, label]) => `<option value="${v}" ${rt === v ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
+            ${rt !== 'complete' ? `<button class="btn btn-outline btn-sm" onclick="exportReportByType('${rt}')" title="${t2('Print or save this report as PDF', 'Imprimir ou guardar este relatório em PDF')}">🖨 ${t2('Print this report', 'Imprimir este relatório')}</button>` : ''}
           </div>`;
         })()}
 
@@ -24094,6 +24095,102 @@ window.exportFiscalReport = exportFiscalReport;
 // the user and their accountant (TOC). Shows the full chain:
 // events in → classified → priced → disposals → warnings (boundaries).
 // ════════════════════════════════════════════════════════════════
+// Export a SINGLE report type as a printable HTML page (PDF via browser). Reuses the same
+// FIFO engine + builders as the on-screen report, so what you print matches what you see.
+// type: 'gains' | 'income' | 'eoy' | 'maturity'
+function exportReportByType(type) {
+  const w = activeWallet();
+  if (!w) { toast('Sem wallet activa', 'warn'); return; }
+  if (!window.aurumFifoEngine) { toast('Engine indisponível', 'warn'); return; }
+  const lang = state.lang || 'pt';
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+  const fiscalYear = state.fiscalYear || new Date().getFullYear();
+  const consolidated = state.settings && state.settings.consolidateOwner;
+  const events = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  const eng = window.aurumFifoEngine;
+  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+  const disposals = (r.disposals || []).filter(d => d.fiscalYear === fiscalYear);
+  const rewards = (r.rewards || []).filter(x => x.fiscalYear === fiscalYear);
+  const lots = r.lots || [];
+  const fmtN = (n, d = 2) => (typeof fmt === 'function' ? fmt(n, d) : Number(n).toFixed(d));
+  const now = new Date().toISOString().slice(0, 10);
+
+  const titles = {
+    gains: t2('Capital Gains Report (Annex G/G1)', 'Relatório de Mais-Valias (Anexo G/G1)'),
+    income: t2('Income Report (Annex E)', 'Relatório de Rendimentos (Anexo E)'),
+    eoy: t2('End-of-Year Holdings', 'Saldos a 31 de Dezembro'),
+    maturity: t2('Asset Maturity (365-day rule)', 'Maturidade dos Ativos (regra 365 dias)'),
+  };
+  let body = '';
+
+  if (type === 'gains') {
+    const real = disposals.filter(d => Math.abs(d.proceedsEUR) >= 0.01 || Math.abs(d.basisEUR) >= 0.01);
+    const sumG = real.filter(d => d.regime === 'G').reduce((s, d) => s + d.gainEUR, 0);
+    const sumG1 = real.filter(d => d.regime === 'G1').reduce((s, d) => s + d.gainEUR, 0);
+    body = `<div class="summary-cards">
+        <div class="card"><div class="card-label">${t2('Annex G (&lt;365d)', 'Anexo G (&lt;365d)')}</div><div class="card-value ${sumG >= 0 ? 'amber' : 'red'}">€${fmtN(sumG)}</div></div>
+        <div class="card"><div class="card-label">${t2('Annex G1 (≥365d, exempt)', 'Anexo G1 (≥365d, isento)')}</div><div class="card-value green">€${fmtN(sumG1)}</div></div>
+        <div class="card"><div class="card-label">${t2('Estimated tax (28% on G)', 'Imposto estimado (28% sobre G)')}</div><div class="card-value red">€${fmtN(Math.max(0, sumG) * 0.28)}</div></div>
+      </div>
+      <table><thead><tr><th>${t2('Date', 'Data')}</th><th>${t2('Asset', 'Ativo')}</th><th>Qty</th><th>${t2('Proceeds', 'Realização')} €</th><th>${t2('Basis', 'Custo')} €</th><th>${t2('Gain/Loss', 'Ganho/Perda')} €</th><th>${t2('Regime', 'Regime')}</th></tr></thead><tbody>
+      ${real.map(d => `<tr><td>${d.disposalDate}</td><td>${d.asset}</td><td class="num">${fmtN(d.qtyDisposed, 6)}</td><td class="num">€${fmtN(d.proceedsEUR)}</td><td class="num">€${fmtN(d.basisEUR)}</td><td class="num ${d.gainEUR >= 0 ? 'green' : 'red'}">€${fmtN(d.gainEUR)}</td><td>${d.regime}</td></tr>`).join('')}
+      </tbody></table>`;
+  } else if (type === 'income') {
+    const totalE = rewards.reduce((s, x) => s + (x.fairValueEUR || 0), 0);
+    body = `<div class="summary-cards"><div class="card"><div class="card-label">${t2('Total income (Annex E)', 'Rendimentos totais (Anexo E)')}</div><div class="card-value gold">€${fmtN(totalE)}</div></div>
+        <div class="card"><div class="card-label">${t2('Events', 'Eventos')}</div><div class="card-value">${rewards.length}</div></div></div>
+      <table><thead><tr><th>${t2('Date', 'Data')}</th><th>${t2('Asset', 'Ativo')}</th><th>Qty</th><th>${t2('Value', 'Valor')} €</th><th>${t2('Type', 'Tipo')}</th></tr></thead><tbody>
+      ${rewards.map(x => `<tr><td>${x.date || '—'}</td><td>${x.asset}</td><td class="num">${fmtN(x.qty, 6)}</td><td class="num">€${fmtN(x.fairValueEUR || 0)}</td><td>${x.kind || '—'}</td></tr>`).join('')}
+      </tbody></table>`;
+  } else if (type === 'eoy') {
+    const eoy = _buildEndOfYearHoldings(events, fiscalYear);
+    body = `<div class="note">${t2('Balances held at 31 Dec — what Annex J (foreign custody) asks you to declare. Quantities are exact; EUR values are estimates from the last known price.', 'Saldos detidos a 31 de Dezembro — o que o Anexo J (custódia estrangeira) pede para declarar. As quantidades são exatas; os valores em EUR são estimativas do último preço conhecido.')}</div>
+      <table><thead><tr><th>${t2('Asset', 'Ativo')}</th><th>${t2('Chain', 'Rede')}</th><th>${t2('Quantity', 'Quantidade')}</th><th>${t2('Est. value', 'Valor est.')} €</th></tr></thead><tbody>
+      ${eoy.rows.map(r => `<tr><td>${r.asset}</td><td>${r.chain || '—'}</td><td class="num">${fmtN(r.qty, 8)}</td><td class="num">${r.valueEUR != null ? '€' + fmtN(r.valueEUR) : '—'}</td></tr>`).join('')}
+      </tbody></table>`;
+  } else if (type === 'maturity') {
+    const mat = _buildAssetMaturity(lots);
+    body = `<div class="note">${t2('In Portugal, a holding sold after 365 days is exempt (Annex G1, 0%); sold before, taxed at 28% (Annex G). This shows how long until each lot becomes tax-free.', 'Em Portugal, uma posição vendida após 365 dias é isenta (Anexo G1, 0%); vendida antes, tributada a 28% (Anexo G). Isto mostra quanto falta para cada lote ficar isento.')}</div>
+      <table><thead><tr><th>${t2('Asset', 'Ativo')}</th><th>${t2('Quantity', 'Quantidade')}</th><th>${t2('Acquired', 'Adquirido')}</th><th>${t2('Status', 'Estado')}</th></tr></thead><tbody>
+      ${mat.rows.map(r => `<tr><td>${r.asset}</td><td class="num">${fmtN(r.qty, 6)}</td><td>${r.acqDate || '—'}</td><td>${r.exempt ? t2('Exempt (G1)', 'Isento (G1)') : t2(`${r.daysUntilExempt}d to exemption`, `${r.daysUntilExempt}d p/ isenção`)}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  const reportHtml = `<!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8">
+<title>Taxesly · ${titles[type]} ${fiscalYear} · ${w.name}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 920px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.3rem; color: #3B82F6; font-weight: 600; }
+  .meta { color: #999; font-size: 0.82rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #3B82F6; }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.6rem; font-size: 0.85rem; }
+  th { background: #eff4ff; color: #1e40af; padding: 0.6rem 0.8rem; text-align: left; font-weight: 600; border-bottom: 2px solid #3B82F6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 0.5rem 0.8rem; border-bottom: 1px solid #eee; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SF Mono", Consolas, monospace; }
+  .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .card { padding: 1rem; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
+  .card-label { font-size: 0.68rem; text-transform: uppercase; color: #888; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+  .card-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .green { color: #16a34a; } .amber { color: #d97706; } .red { color: #dc2626; } .gold { color: #B8956A; }
+  .note { background: #eff4ff; border-left: 3px solid #3B82F6; padding: 0.9rem 1.1rem; margin: 1rem 0; font-size: 0.84rem; }
+  .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #ddd; font-size: 0.72rem; color: #999; text-align: center; }
+  @media print { body { max-width: none; margin: 0; padding: 1cm; } .no-print { display: none; } }
+  .print-btn { background: #3B82F6; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.9rem; }
+</style></head><body>
+<button class="print-btn no-print" onclick="window.print()" style="float:right">🖨 ${t2('Print / PDF', 'Imprimir / PDF')}</button>
+<h1>TAXESLY · ${titles[type]}</h1>
+<div class="meta">${t2('Wallet', 'Carteira')}: <strong>${w.name}</strong> · ${t2('Fiscal year', 'Ano fiscal')}: <strong>${fiscalYear}</strong> · ${t2('Generated', 'Gerado em')} ${now}${consolidated ? ` · ${t2('consolidated by owner', 'consolidado por dono')}` : ''}</div>
+${body}
+<div class="footer">${t2('Generated by Taxesly · Always confirm with a certified accountant (TOC) before filing.', 'Gerado pelo Taxesly · Confirma sempre com um TOC certificado antes de submeter.')}</div>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { toast(t2('Pop-up blocked — allow pop-ups to export.', 'Pop-up bloqueado — permite pop-ups para exportar.'), 'warn'); return; }
+  win.document.write(reportHtml);
+  win.document.close();
+}
+window.exportReportByType = exportReportByType;
+
 function exportAuditReport() {
   const w = activeWallet();
   if (!w) { toast(t('toast.error'), 'warn'); return; }
