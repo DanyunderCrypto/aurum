@@ -7265,6 +7265,7 @@ window.aurumReconcileBalances = async function (opts = {}) {
   state.events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   if ((created.length || removed) && typeof saveState === 'function') { await saveState(); }
   window['_reconcileFlags_' + wid] = flagged;
+  window['_reconcileSummary_' + wid] = { reconciled: created.length, flagged: flagged.length, at: Date.now(), detail: created };
 
   console.log(`[reconcile] removed ${removed} old reconciliation lot(s); created ${created.length} new.`);
   if (created.length) { console.log('[reconcile] reconciled (missing inflows added at €0):'); console.table(created); }
@@ -18086,6 +18087,21 @@ async function startIndexerForActiveWallet() {
   } finally {
     window._indexerRunning = false;
     window._indexerController = null;
+    // Auto-reconcile native balances against the real on-chain balances now that indexing is
+    // done. We refresh the portfolio first (to read fresh eth_getBalance values), then reconcile.
+    // This is the piece that makes reconciliation a product feature rather than a console trick:
+    // the user never sees a negative ETH balance because we anchor to reality automatically.
+    try {
+      if (typeof fetchRealBalances === 'function') {
+        await fetchRealBalances(activeWallet(), { force: true }).catch(() => {});
+      }
+      if (typeof window.aurumReconcileBalances === 'function') {
+        const r = await window.aurumReconcileBalances({ auto: true });
+        if (r && (r.created || r.flagged?.length)) {
+          errorLogger?.info?.(`Auto-reconcile: ${r.created} balance(s) reconciled, ${r.flagged?.length || 0} flagged for review.`);
+        }
+      }
+    } catch (e) { /* non-fatal — reconciliation is a safety net, never blocks indexing */ }
     render();
   }
 }
@@ -18730,9 +18746,29 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
     });
   }
 
+  // Reconciliation transparency note: if the engine adjusted native balances to match the real
+  // on-chain balance, the user must know — a fiscal tool never changes balances silently.
+  const _recSum = walletId ? window['_reconcileSummary_' + walletId] : null;
+  let reconNote = '';
+  if (_recSum && (_recSum.reconciled > 0 || _recSum.flagged > 0)) {
+    const parts = [];
+    if (_recSum.reconciled > 0) {
+      parts.push(t2(`${_recSum.reconciled} balance(s) reconciled with the on-chain amount (missing inflows added at €0 cost — typically ETH received via internal transfers the data source doesn't report on L2s).`,
+                    `${_recSum.reconciled} saldo(s) reconciliado(s) com o valor on-chain (entradas em falta adicionadas a custo €0 — tipicamente ETH recebido via transferências internas que a fonte não reporta nas L2s).`));
+    }
+    if (_recSum.flagged > 0) {
+      parts.push(t2(`${_recSum.flagged} balance(s) where the tracked amount exceeds the on-chain amount — left untouched for you to review (we never invent disposals).`,
+                    `${_recSum.flagged} saldo(s) onde o valor seguido excede o on-chain — deixado(s) intacto(s) para reveres (nunca inventamos alienações).`));
+    }
+    reconNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(59,130,246,0.07);border-color:rgba(59,130,246,0.35)">
+      <span style="font-size:1rem">⚖️</span>
+      <div><strong>${t2('Balance reconciliation', 'Reconciliação de saldos')}</strong> — ${parts.join(' ')}</div>
+    </div>`;
+  }
+
   if (issues.length === 0) {
     // Clean state — green confirmation, like Koinly's green check.
-    return `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
+    return reconNote + `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
       <span style="font-size:1.1rem">✓</span>
       <div><strong style="color:var(--green)">${t2('Data looks complete', 'Dados parecem completos')}</strong> — ${t2('no integrity issues detected for this report. Always confirm with a certified accountant (TOC).', 'sem problemas de integridade detetados para este relatório. Confirma sempre com um TOC certificado.')}</div>
     </div>`;
@@ -18748,7 +18784,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
       </div>
     </div>`).join('');
 
-  return `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
+  return reconNote + `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
     <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
       <span style="font-size:1.1rem">⚠️</span>
       <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
