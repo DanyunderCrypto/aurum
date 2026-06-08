@@ -19086,6 +19086,7 @@ function _buildAssetMaturity(lots) {
 
 function renderFiscalEngineV2(w, fiscalYear) {
   const lang = state.lang || 'pt';
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
   // Recolhe os eventos. Se a consolidação por dono estiver ligada, junta TODAS
   // as carteiras do mesmo dono (para o basis-bridge ligar transferências entre
   // elas). Caso contrário, só esta carteira (modo antigo).
