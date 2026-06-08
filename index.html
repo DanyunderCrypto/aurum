@@ -7248,7 +7248,7 @@ window.aurumReconcileBalances = async function (opts = {}) {
         asset: sym, chain, assetContract: null,
         direction: 'in', amount: delta,
         timestamp: (earliestTs === Infinity ? Math.floor(Date.now() / 1000) : earliestTs) - 60,
-        date: _safeDateStr ? _safeDateStr((earliestTs === Infinity ? Date.now() / 1000 : earliestTs) - 60) : undefined,
+        date: new Date(((earliestTs === Infinity ? Math.floor(Date.now() / 1000) : earliestTs) - 60) * 1000).toISOString().slice(0, 10),
         type: 'reconciliation', category: 'reconciliation',
         priceEUR: 0, priceNote: 'reconciliation_zero_cost',
         _reconciliation: true,
