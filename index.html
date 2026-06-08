@@ -19158,6 +19158,11 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // Disposals filtered to year
   const dispsInYear = disposals.filter(d => d.fiscalYear === fiscalYear);
   const rewardsInYear = rewards.filter(r => r.fiscalYear === fiscalYear);
+  const rt = window._fiscalReportType || 'complete';
+  const showGains = rt === 'complete' || rt === 'gains';
+  const showIncome = rt === 'complete' || rt === 'income';
+  const showEoy = rt === 'complete' || rt === 'eoy';
+  const showMaturity = rt === 'complete' || rt === 'maturity';
 
   return `
     <div class="panel" style="margin-bottom:1.3rem;border-color:var(--gold)">
@@ -19166,6 +19171,26 @@ function renderFiscalEngineV2(w, fiscalYear) {
         <span style="font-size:0.7rem;color:var(--text-muted)">FIFO · ${disposals.length} alienações · ${lots.length} lots · ${rewards.length} rewards</span>
       </div>
       <div class="panel-body">
+
+        ${(() => {
+          // Report-type selector (Koinly-style "Pick a report type"). Filters which sections
+          // show: complete (all) or a focused view. Default 'complete'. The full FIFO calc always
+          // runs; this only controls presentation.
+          const rt = window._fiscalReportType || 'complete';
+          const opts = [
+            ['complete', t2('Complete report', 'Relatório completo')],
+            ['gains',    t2('Capital gains (G/G1)', 'Mais-valias (G/G1)')],
+            ['income',   t2('Income (Annex E)', 'Rendimentos (Anexo E)')],
+            ['eoy',      t2('End-of-year holdings', 'Saldos a 31 de Dezembro')],
+            ['maturity', t2('Asset maturity (365d)', 'Maturidade dos ativos (365d)')],
+          ];
+          return `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.1rem;flex-wrap:wrap">
+            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">${t2('Report type', 'Tipo de relatório')}</label>
+            <select onchange="window._fiscalReportType=this.value; if(typeof render==='function') render();" style="background:var(--bg1);color:var(--text);border:1px solid var(--border2);border-radius:6px;padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer">
+              ${opts.map(([v, label]) => `<option value="${v}" ${rt === v ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </div>`;
+        })()}
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
@@ -19180,6 +19205,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         </div>` : ''}
         ${consolidated ? `<div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.8rem">⬡ Relatório <strong>consolidado</strong>: junta todas as carteiras do mesmo dono (regra FIFO por dono). Podes desligar nas Definições.</div>` : ''}
         <!-- KPIs fiscais ano ${fiscalYear} -->
+        ${(showGains || showIncome) ? `
         <div class="stats-grid" style="margin-bottom:1.3rem">
           <div class="stat">
             <div class="stat-label">Anexo G · &lt;365d</div>
@@ -19201,7 +19227,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
             <div class="stat-value ${yr.taxEstimateEUR > 0 ? 'sv-red' : 'sv-green'}">€${fmt(yr.taxEstimateEUR)}</div>
             <div class="stat-sub">28% sobre G positivo</div>
           </div>
-        </div>
+        </div>` : ''}
 
         ${approaching.length > 0 ? `
           <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">
@@ -19216,6 +19242,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
         ${(() => {
           // End of Year Holdings — balances held at 31 Dec (what Annex J declares).
+          if (!showEoy) return '';
           const eoy = _buildEndOfYearHoldings(events, fiscalYear);
           if (!eoy.rows.length) return '';
           const t2 = (en, pt) => (lang === 'en' ? en : pt);
@@ -19255,6 +19282,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
         ${(() => {
           // Asset Maturity — 365-day holding-period status of each open lot (PT G1 exemption).
+          if (!showMaturity) return '';
           const mat = _buildAssetMaturity(lots);
           if (!mat.rows.length) return '';
           const t2 = (en, pt) => (lang === 'en' ? en : pt);
@@ -19340,7 +19368,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         })() : ''}
 
         <!-- Disposals table -->
-        ${dispsInYear.length > 0 ? (() => {
+        ${(showGains && dispsInYear.length > 0) ? (() => {
           // Erro comum noutros softwares: encher o relatório com linhas de valor-zero
           // (ativos comprados e vendidos por ~€0 — pó/spam). Filtramos da TABELA para
           // o contabilista ter linhas limpas, mas contamos quantas foram omitidas (transparência).
@@ -19400,7 +19428,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         `}
 
         <!-- Rewards table -->
-        ${rewardsInYear.length > 0 ? `
+        ${(showIncome && rewardsInYear.length > 0) ? `
           <div style="margin-top:1rem">
             <h4 style="font-family:var(--display);font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--text)">Rendimentos (Anexo E) em ${fiscalYear} (${rewardsInYear.length})</h4>
             <div style="overflow-x:auto">
