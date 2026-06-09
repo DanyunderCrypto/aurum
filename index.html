@@ -4756,7 +4756,7 @@ async function fetchMoralisApy(w) {
           apy: det.apy,
           isDebt: det.is_debt,
           tokens: toks.filter(t => t.token_type === 'supplied' || t.token_type === 'borrowed' || t.token_type === 'defi-token')
-                      .map(t => ({ symbol: t.symbol, amount: t.balance_formatted, usd: t.usd_value, address: t.token_address || t.address || '', isDebt: t.token_type === 'borrowed' })),
+                      .map(t => ({ symbol: t.symbol, amount: t.balance_formatted, usd: t.usd_value, address: t.token_address || t.address || '', logo: t.logo || t.thumbnail || '', isDebt: t.token_type === 'borrowed' })),
           logo: p.protocol_logo || '',
           unclaimedUSD: Number(p.position?.total_unclaimed_usd_value) || 0,
         });
@@ -13116,7 +13116,7 @@ async function fetchSolanaDefiMobula(solAddr) {
           name: pos.name || pname,
           type: pos.type,                 // stake | liquidity | deposit | leverage
           valueUSD,
-          tokens: (pos.tokens || []).map(t => ({ symbol: t.symbol, amount: t.amountFormatted, valueUSD: t.valueUSD, address: t.address || t.mint || t.tokenAddress || '', isDebt: t.isDebt === true || t.type === 'borrowed' || t.side === 'borrow' })),
+          tokens: (pos.tokens || []).map(t => ({ symbol: t.symbol, amount: t.amountFormatted, valueUSD: t.valueUSD, address: t.address || t.mint || t.tokenAddress || '', logo: t.logo || t.image || t.logoURI || '', isDebt: t.isDebt === true || t.type === 'borrowed' || t.side === 'borrow' })),
           metadata: pos.metadata || null, // health factor, APY, inRange, leverage, etc.
           _source: 'mobula',
         });
@@ -14210,7 +14210,7 @@ function renderDefiPositions(w) {
             if (m.borrowApy) parts.push(`<span style="color:var(--red)">borrow ${(m.borrowApy*100).toFixed(2)}%</span>`);
             return parts.length ? `${m.colSym}→${m.loanSym}: ${parts.join(' · ')}` : '';
           }).filter(Boolean);
-          return base + (lines.length ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${lines.join('<br>')} <span style="opacity:0.6">· via Morpho</span></div>` : '');
+          return base + (lines.length ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${lines.join('<br>')}</div>` : '');
         }
         // AAVE (e outros): APY vindo do Moralis (se disponível no cache).
         const mc = window._moralisApyCache?.[w.id]?.byProto;
@@ -14224,7 +14224,7 @@ function renderDefiPositions(w) {
         if (supplyApys.length) apyLine += `<span style="color:var(--green)">supply ${supplyApys.map(x=>x.apy.toFixed(2)+'%').join(' / ')}</span>`;
         if (borrowApys.length) apyLine += `${apyLine?' · ':''}<span style="color:var(--red)">borrow ${borrowApys.map(x=>x.apy.toFixed(2)+'%').join(' / ')}</span>`;
         if (md.netApy != null) apyLine += `${apyLine?' · ':''}net APY ${md.netApy.toFixed(2)}%`;
-        return base + (apyLine ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${apyLine} <span style="opacity:0.6">· via Moralis</span></div>` : '');
+        return base + (apyLine ? `<div style="font-size:0.74rem;color:var(--text-muted);font-family:var(--mono);margin-top:0.3rem">📊 ${apyLine}</div>` : '');
       })(),
     });
   }
@@ -14508,8 +14508,8 @@ function renderDefiPositions(w) {
       ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${[
           _apy ? `APY <span style="color:var(--green)">${(_apy*100).toFixed(2)}%</span>` : '',
           ..._solExtra,
-        ].filter(Boolean).join(' · ')} <span style="opacity:0.6">· via Mobula</span></div>`
-      : `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono);opacity:0.6">via Mobula</div>`;
+        ].filter(Boolean).join(' · ')}</div>`
+      : '';
 
     let _solCard = null;
     if (p.category === 'lp' && _solToks.length === 2) {
@@ -14520,8 +14520,8 @@ function renderDefiPositions(w) {
         rangeBadge: md.inRange !== undefined ? { inRange: !!md.inRange, label: md.inRange ? 'In range' : 'Out of range' } : null,
         apy: (!md.inRange && _apy) ? _apy : null,
         pair: {
-          token0: { symbol: _solToks[0].symbol, amount: _solToks[0].amount, addr: _solToks[0].address || _solToks[0].mint || '', valueUSD: _solToks[0].valueUSD },
-          token1: { symbol: _solToks[1].symbol, amount: _solToks[1].amount, addr: _solToks[1].address || _solToks[1].mint || '', valueUSD: _solToks[1].valueUSD },
+          token0: { symbol: _solToks[0].symbol, amount: _solToks[0].amount, addr: _solToks[0].address || _solToks[0].mint || '', logoUrl: _solToks[0].logo || '', valueUSD: _solToks[0].valueUSD },
+          token1: { symbol: _solToks[1].symbol, amount: _solToks[1].amount, addr: _solToks[1].address || _solToks[1].mint || '', logoUrl: _solToks[1].logo || '', valueUSD: _solToks[1].valueUSD },
         },
         metricsLine: _solMetrics,
       };
@@ -14542,7 +14542,7 @@ function renderDefiPositions(w) {
       _solCard = {
         variant: 'single', protocol: p.protocol, chainName: 'Solana', subLabel: _solSub,
         chainKey: 'solana', accent: cm.color, valueEUR, apy: _apy,
-        single: { symbol: _solToks[0].symbol, addr: _solToks[0].address || _solToks[0].mint || '', amount: _solToks[0].amount, valueUSD: _solToks[0].valueUSD, kindLabel: cm.label },
+        single: { symbol: _solToks[0].symbol, addr: _solToks[0].address || _solToks[0].mint || '', logoUrl: _solToks[0].logo || '', amount: _solToks[0].amount, valueUSD: _solToks[0].valueUSD, kindLabel: cm.label },
         metricsLine: _solMetrics,
       };
     }
@@ -14630,8 +14630,8 @@ function renderDefiPositions(w) {
     const _mChainName = (CHAINS[mp.chain]?.name) || mp.chain;
     const _mSub = `${(mp.protocol||'').toUpperCase()} · ${(_mChainName||'').toUpperCase()}${mp.label ? ' · ' + mp.label : ''}`;
     const _mMetrics = (mp.apy || mp.unclaimedUSD > 0)
-      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${mp.apy ? `APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>` : ''}${mp.unclaimedUSD>0?`${mp.apy?' · ':''}por reclamar €${fmt(mp.unclaimedUSD*_mEur)}`:''} <span style="opacity:0.6">· via Moralis</span></div>`
-      : `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono);opacity:0.6">via Moralis</div>`;
+      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${mp.apy ? `APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>` : ''}${mp.unclaimedUSD>0?`${mp.apy?' · ':''}por reclamar €${fmt(mp.unclaimedUSD*_mEur)}`:''}</div>`
+      : '';
     let _mCard = null;
     if (!isLend && _mTokens.length === 2) {
       // Pool com par → card pair.
@@ -14645,8 +14645,8 @@ function renderDefiPositions(w) {
         valueEUR,
         apy: mp.apy != null ? mp.apy : null,
         pair: {
-          token0: { symbol: _mTokens[0].symbol, amount: _mTokens[0].amount, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', valueUSD: _mTokens[0].usd || 0 },
-          token1: { symbol: _mTokens[1].symbol, amount: _mTokens[1].amount, addr: _mTokens[1].address || _mTokens[1].tokenAddress || '', valueUSD: _mTokens[1].usd || 0 },
+          token0: { symbol: _mTokens[0].symbol, amount: _mTokens[0].amount, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', logoUrl: _mTokens[0].logo || '', valueUSD: _mTokens[0].usd || 0 },
+          token1: { symbol: _mTokens[1].symbol, amount: _mTokens[1].amount, addr: _mTokens[1].address || _mTokens[1].tokenAddress || '', logoUrl: _mTokens[1].logo || '', valueUSD: _mTokens[1].usd || 0 },
         },
         metricsLine: _mMetrics,
       };
@@ -14661,7 +14661,7 @@ function renderDefiPositions(w) {
         accent: '#9B6FFF',
         valueEUR,
         apy: mp.apy != null ? mp.apy : null,
-        single: { symbol: _mTokens[0].symbol, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', amount: _mTokens[0].amount, valueUSD: _mTokens[0].usd || 0, kindLabel: 'Posição' },
+        single: { symbol: _mTokens[0].symbol, addr: _mTokens[0].address || _mTokens[0].tokenAddress || '', logoUrl: _mTokens[0].logo || '', amount: _mTokens[0].amount, valueUSD: _mTokens[0].usd || 0, kindLabel: 'Posição' },
         metricsLine: _mMetrics,
       };
     } else if (isLend) {
@@ -14695,7 +14695,7 @@ function renderDefiPositions(w) {
       status: mp.apy ? `<span style="color:var(--green)">APY ${mp.apy.toFixed(2)}%</span>` : (mp.label || ''),
       health: mp.apy ? { type: 'range', inRange: true, label: `APY ${mp.apy.toFixed(2)}%`, color: 'var(--green)' } : null,
       cardData: _mCard,
-      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` (€${fmt(t.usd*_mEur)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: €${fmt(mp.unclaimedUSD*_mEur)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
+      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` (€${fmt(t.usd*_mEur)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: €${fmt(mp.unclaimedUSD*_mEur)}`:''}${mp.label?`<br><span style="opacity:0.6">${mp.label}</span>`:''}</div>`,
     });
   }
 
@@ -15819,8 +15819,8 @@ function renderDefiCard(c) {
   // ── Header esquerdo: logos + título ──
   let headLeft = '';
   if (c.variant === 'pair' && c.pair) {
-    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 26) : '';
-    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 26) : '';
+    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 26, c.pair.token0.logoUrl || null) : '';
+    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 26, c.pair.token1.logoUrl || null) : '';
     headLeft = `
       <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         <div style="display:flex;align-items:center">${l0}<div style="margin-left:-8px;display:flex">${l1}</div></div>
@@ -15829,7 +15829,7 @@ function renderDefiCard(c) {
         ${c.pair.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
       </div>`;
   } else if (c.variant === 'single' && c.single) {
-    const sl = hasLogo ? tokenLogo(c.single.symbol, chainKey, c.single.addr || '', 28) : '';
+    const sl = hasLogo ? tokenLogo(c.single.symbol, chainKey, c.single.addr || '', 28, c.single.logoUrl || null) : '';
     headLeft = `
       <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         ${sl}
@@ -15890,8 +15890,8 @@ function renderDefiCard(c) {
   // ── Corpo: blocos por variante ──
   let body = '';
   if (c.variant === 'pair' && c.pair) {
-    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 20) : '';
-    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 20) : '';
+    const l0 = hasLogo ? tokenLogo(c.pair.token0.symbol, chainKey, c.pair.token0.addr || '', 20, c.pair.token0.logoUrl || null) : '';
+    const l1 = hasLogo ? tokenLogo(c.pair.token1.symbol, chainKey, c.pair.token1.addr || '', 20, c.pair.token1.logoUrl || null) : '';
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
