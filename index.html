@@ -9733,17 +9733,81 @@ const _BLOCKSCOUT_HOSTS = {
   astar: 'https://astar.blockscout.com',
 };
 
-// Normalizes a raw contract/tag name from an explorer into a clean protocol label.
-// e.g. "LI.FI: LiFi Diamond" → "LI.FI" · "Haiku: Intent Swapper Router" → "Haiku"
-// Keeps it short and recognizable (the part before ':' is usually the protocol).
+// Maps a contract's TECHNICAL name (what explorers return, e.g. "WrappedTokenGatewayV3") to the
+// human PROTOCOL name the user recognizes ("AAVE"). Explorers give the contract's role, not the
+// brand — this dictionary bridges that gap. Each entry is [matcher, protocol]; matcher is a
+// regex tested (case-insensitive) against the raw name. Order matters (first match wins), so put
+// more specific patterns first. Built from the user's real unmatched-transfer list + common DeFi.
+const _PROTOCOL_PATTERNS = [
+  // Aggregators / bridges / routers
+  [/li\.?fi|lifi\s*diamond/i, 'LI.FI'],
+  [/magpierouter/i, 'Magpie'],
+  [/squid(multicall|router)?/i, 'Squid'],
+  [/mayanforwarder|mayan/i, 'Mayan'],
+  [/stargate/i, 'Stargate'],
+  [/(^|\b)settler\b|basesettler|optimismsettler/i, '0x Settler'],
+  [/permit2/i, 'Uniswap Permit2'],
+  [/universalrouter/i, 'Uniswap'],
+  [/uniswapv\d?pool|uniswapv\d?/i, 'Uniswap'],
+  [/^v3swaprouter|swaprouter02?/i, 'Uniswap'],
+  [/multiplibridger/i, 'Multipli'],
+  [/microgateway|micropayment/i, 'Micro'],
+  [/relay.*deposit|relaydepository/i, 'Relay'],
+  [/0x.*exchange|exchangeproxy|0xproject/i, '0x Protocol'],
+  [/1inch|aggregationrouter/i, '1inch'],
+  [/openocean/i, 'OpenOcean'],
+  [/kyber/i, 'KyberSwap'],
+  [/paraswap|augustus/i, 'ParaSwap'],
+  [/odos/i, 'Odos'],
+  [/rfqrouter|rfq/i, 'RFQ'],
+  // Lending / yield
+  [/wrappedtokengatewayv?\d?/i, 'AAVE'],   // AAVE's native-token gateway
+  [/initializableimmutableadminupgradeabilityproxy/i, 'AAVE'],   // AAVE proxy pattern
+  [/(^|\b)atoken|variabledebt|stabledebt/i, 'AAVE'],
+  [/generaladapter|metamorpho|morpho/i, 'Morpho'],
+  [/compound|cerc20|cether|vbep20delegator/i, 'Compound/Venus'],  // VBep20 = Venus (Compound fork)
+  [/comet/i, 'Compound'],
+  [/ampleearn/i, 'AmpleEarn'],
+  [/depositor|vestingearndrop|earndrop/i, 'Airdrop/Vesting'],
+  // DEX pools / gauges (Velodrome/Aerodrome use "CL" = concentrated liquidity)
+  [/clpool|clgauge|^pool$|^gauge$/i, 'DEX Pool'],
+  // Safe / account abstraction
+  [/gnosissafe|safeproxy|^safe$/i, 'Safe'],
+  [/^kernel$|zerodev/i, 'ZeroDev (smart account)'],
+  [/entrypoint|simpleaccount|^account$/i, 'Smart Account'],
+  // NFT / minting / social
+  [/droperc1155|droperc721|droperc/i, 'Thirdweb Drop'],
+  [/superminter|secondaryswap|calllerandcommenter|onchaingm/i, 'Sound/Zora'],
+  [/megabadge|badge/i, 'Badge (NFT)'],
+  [/dmail/i, 'Dmail'],
+  // Misc infra
+  [/stakinghelper|staking/i, 'Staking'],
+  [/bridgehelper|bridge/i, 'Bridge'],
+];
+
+// Strips generic proxy/contract-type wrapper names that carry no protocol meaning. If the name is
+// ONLY one of these, there's no protocol to show (the implementation name should have been used).
+const _GENERIC_CONTRACT_NAMES = /^(erc1967proxy|transparentupgradeableproxy|beaconproxy|proxy|implementation|contract|spender|router|pool|vault|gateway|kernel|account|factory)$/i;
+
+// Normalizes a raw contract/tag name into a clean PROTOCOL label.
+// Order: (1) protocol dictionary (technical name → brand), (2) drop generic proxy names,
+// (3) the part before ':' (e.g. "LI.FI: LiFi Diamond" → "LI.FI"), (4) strip role suffixes.
 function _protocolFromName(name) {
   if (!name) return null;
-  let s = String(name).trim();
-  if (s.includes(':')) s = s.split(':')[0].trim();      // "LI.FI: LiFi Diamond" → "LI.FI"
-  // Strip common contract-type suffixes so we keep the protocol, not the contract role.
-  s = s.replace(/\b(Router|Diamond|Proxy|Pool|Vault|Factory|Implementation|V\d+)\b/gi, '').trim();
-  s = s.replace(/\s{2,}/g, ' ').replace(/[·\-]+$/, '').trim();
-  return s || String(name).trim();
+  const raw = String(name).trim();
+  // (1) Known protocol patterns — the strongest signal.
+  for (const [re, proto] of _PROTOCOL_PATTERNS) {
+    if (re.test(raw)) return proto;
+  }
+  // (2) Generic wrapper with no brand → no useful protocol name.
+  if (_GENERIC_CONTRACT_NAMES.test(raw)) return null;
+  // (3) Brand before a colon.
+  let s = raw;
+  if (s.includes(':')) s = s.split(':')[0].trim();
+  // (4) Strip contract-type suffixes so we keep the protocol, not the contract role.
+  s = s.replace(/\b(Router|Diamond|Proxy|Pool|Vault|Factory|Implementation|Gateway|Delegator|V\d+)\b/gi, '').trim();
+  s = s.replace(/\s{2,}/g, ' ').replace(/[·\-_]+$/, '').trim();
+  return s || raw;
 }
 
 // Fetch a contract's name + creator from Etherscan V2 (getsourcecode gives ContractName;
@@ -9864,15 +9928,17 @@ async function aurumAutoClassifyDests(events, opts = {}) {
     if (isContract === false) {
       eoa++; manual++;                      // genuine EOA → leave for manual (likely CEX deposit)
     } else if (isContract === true) {
+      const proto = _protocolFromName(name);   // may be null if name is a generic proxy wrapper
       if (creator && ownerAddrs.has(creator)) {
-        state.classifiedDests[addr] = { kind: 'own', label: name ? `Your contract · ${_protocolFromName(name)}` : 'Contract you created', protocol: _protocolFromName(name), creator, auto: true, via: 'creator', at: Date.now() };
+        state.classifiedDests[addr] = { kind: 'own', label: proto ? `Your contract · ${proto}` : 'Contract you created', protocol: proto || null, creator, auto: true, via: 'creator', at: Date.now() };
         autoOwn++;
-      } else if (name) {
-        const proto = _protocolFromName(name);
+      } else if (proto) {
         state.classifiedDests[addr] = { kind: 'contract', label: proto, protocol: proto, auto: true, via: 'label', at: Date.now() };
         autoProtocol++;
       } else {
-        state.classifiedDests[addr] = { kind: 'contract', label: 'Smart contract', auto: true, via: 'getcode', at: Date.now() };
+        // It's a contract, but no recognizable protocol name (generic proxy / unverified) → still
+        // hidden from manual triage (it's a contract, not a CEX deposit), just shown generically.
+        state.classifiedDests[addr] = { kind: 'contract', label: 'Smart contract', auto: true, via: name ? 'label-generic' : 'getcode', at: Date.now() };
         autoContract++;
       }
     } else {
