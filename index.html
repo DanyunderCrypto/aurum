@@ -15332,8 +15332,9 @@ function recordPortfolioValue(wid, eur) {
   } catch(_){}
 }
 
-// Sparkline dourado (curva de evolução do património). Devolve SVG ou '' se não
-// houver pontos suficientes ainda (a curva precisa de pelo menos 2 dias).
+// Sparkline (curva de evolução do património), estilo Rabby/DeBank: curva suave (Catmull-Rom
+// → Bézier), gradiente de área que esvanece, e glow subtil na linha. Mesma fonte de dados
+// (state.valueHistory); só o desenho é mais rico. Devolve '' até haver 2 pontos.
 function portfolioSparkline(wid, width = 260, height = 56) {
   const hist = (state.valueHistory && state.valueHistory[wid]) || [];
   if (hist.length < 2) {
@@ -15342,21 +15343,46 @@ function portfolioSparkline(wid, width = 260, height = 56) {
   const vals = hist.map(p => p.v);
   const min = Math.min(...vals), max = Math.max(...vals);
   const range = (max - min) || 1;
-  const pts = hist.map((p, i) => {
-    const x = (i / (hist.length - 1)) * width;
-    const y = height - ((p.v - min) / range) * (height - 6) - 3;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = pts.join(' ');
-  const area = `${line} ${width},${height} 0,${height}`;
+  const pad = 4;
+  const pts = hist.map((p, i) => ({
+    x: (i / (hist.length - 1)) * width,
+    y: height - ((p.v - min) / range) * (height - pad * 2) - pad,
+  }));
+  // Catmull-Rom → cubic Bézier para uma curva suave que passa por todos os pontos.
+  const smooth = (P) => {
+    if (P.length < 2) return '';
+    let d = `M ${P[0].x.toFixed(2)},${P[0].y.toFixed(2)}`;
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[i - 1] || P[i];
+      const p1 = P[i];
+      const p2 = P[i + 1];
+      const p3 = P[i + 2] || p2;
+      const t = 0.18; // tensão da curva (suave mas sem oscilar)
+      const c1x = p1.x + (p2.x - p0.x) * t, c1y = p1.y + (p2.y - p0.y) * t;
+      const c2x = p2.x - (p3.x - p1.x) * t, c2y = p2.y - (p3.y - p1.y) * t;
+      d += ` C ${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+    }
+    return d;
+  };
+  const linePath = smooth(pts);
+  const areaPath = `${linePath} L ${width},${height} L 0,${height} Z`;
   const up = vals[vals.length - 1] >= vals[0];
-  const col = '#3B82F6'; // dourado (identidade visual atual, muda na fase de redesign)
+  const col = up ? 'var(--green, #34D399)' : 'var(--red, #F87171)';
+  const gid = 'grad_' + Math.abs(_hashStr(String(wid))).toString(36);
   return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" style="display:block">
-      <polyline points="${area}" fill="rgba(59,130,246,0.08)" stroke="none"/>
-      <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" style="display:block;overflow:visible">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${col}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${col}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#${gid})" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 1px 3px ${col})"/>
     </svg>`;
 }
+// Hash estável de string (para IDs de gradiente únicos por carteira).
+function _hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 
 function renderDashboard(w) {
   // Build unified protocol list
