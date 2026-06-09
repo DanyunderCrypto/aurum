@@ -5477,6 +5477,10 @@ let state = {
   // chain, asset, qty, valueEUR, source('lp_fees'|'emissions'|'vault_yield'|'lending_interest'),
   // protocol, txHash}. Tax treatment is governed by settings.defiIncomeTreatment below.
   defiIncome: [],
+  // User-classified on-chain destinations (Summ-style unmatched-transfer resolution).
+  // addr(lowercase) → { kind:'cex'|'own'|'other', exchange, at }. Feeds _allOwnerAddresses
+  // (cex/own count as the user's own → basis bridge links them) and hides triaged rows.
+  classifiedDests: {},
   settings: {
     // 'deferred' (default, validated by 2 TOCs): DeFi income taxed only on conversion to fiat,
     // as G/G1 capital gains (like staking). 'cat_e': taxed as Category E passive income at
@@ -5494,6 +5498,7 @@ let state = {
 // Backfill for states loaded from older versions (before these fields existed).
 function _ensureStateShape() {
   if (!Array.isArray(state.defiIncome)) state.defiIncome = [];
+  if (!state.classifiedDests || typeof state.classifiedDests !== 'object') state.classifiedDests = {};
   if (!state.settings || typeof state.settings !== 'object') state.settings = {};
   if (!state.settings.defiIncomeTreatment) state.settings.defiIncomeTreatment = 'deferred';
   if (typeof state.settings.consolidateOwner !== 'boolean') state.settings.consolidateOwner = true;
@@ -9421,6 +9426,19 @@ async function importCexCsv(exchange, label, csvText, opts) {
     const set = new Set([...(w.depositAddrs || []), ...opts.depositAddrs.map(a => String(a).toLowerCase())]);
     w.depositAddrs = [...set];
   }
+  // Backfill: if the user already classified on-chain destinations as "my <exchange> deposit"
+  // via the Unmatched Transfers panel (before importing the CSV), bring those addresses onto
+  // this freshly-created wallet now so the basis bridge links them immediately.
+  {
+    const cd = state.classifiedDests || {};
+    const pre = Object.entries(cd)
+      .filter(([, info]) => info && info.kind === 'cex' && info.exchange === String(exchange).toLowerCase())
+      .map(([a]) => a);
+    if (pre.length) {
+      const set = new Set([...(w.depositAddrs || []), ...pre]);
+      w.depositAddrs = [...set];
+    }
+  }
   // mapear → eventos (com walletAddress = addr sintético)
   const events = aurumCexImport.txsToEvents(parsed.transactions, addr, { chain: 'cex' });
   events.forEach(e => { e.id = `cex:${exchange}:${e.txHash}:${e.asset}:${e.direction}`; });
@@ -9516,6 +9534,183 @@ const aurumBasisBridge = (() => {
 })();
 window.aurumBasisBridge = aurumBasisBridge;
 
+// Extracts the destination address of an OUT event. The destination lives in
+// e.counterparty.address (an OBJECT {address, labeled, isContract}) — NOT a string field.
+// Some legacy/CEX paths may carry a plain string; handle both defensively.
+function _destAddr(e) {
+  const cp = e && e.counterparty;
+  let a = '';
+  if (cp && typeof cp === 'object') a = cp.address || '';
+  else if (typeof cp === 'string') a = cp;
+  else a = e.to || e.toAddress || '';
+  return String(a || '').toLowerCase();
+}
+
+// Known infrastructure addresses (routers, relayers, burn) — destinations that are NOT
+// candidates for "is this my CEX deposit / own wallet?" classification. Filtered out of the
+// Unmatched Transfers list so the user only triages addresses that could actually be theirs.
+// Sourced from the user's real top-destination diagnostic (notes 2026-06-08).
+const KNOWN_ROUTERS = {
+  '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': 'LI.FI (bridge aggregator)',
+  '0x1195cf65f83b3a5768f3c496d3a05ad6412c64b7': 'Relayer / gas service',
+  '0x0000000000000000000000000000000000000000': 'Burn (zero address)',
+  '0x000000000000000000000000000000000000dead': 'Burn (dead address)',
+};
+window.aurumKnownRouters = KNOWN_ROUTERS;
+
+// Summ-style "Unmatched Transfers": surfaces the largest UNKNOWN on-chain send destinations
+// (no ADDRESS_BOOK label, no known router, not a burn) so the user can classify each one:
+//   - "my CEX deposit address" → registered in that CEX wallet's depositAddrs (basis bridge links it)
+//   - "my own wallet"          → recorded so we know transfers there aren't disposals
+//   - "ignore / other"         → hidden from the list
+// We NEVER auto-classify — depositing CEX addresses are personal & non-public, so only the user
+// knows. This is the missing link for users whose CEX deposits go to private addresses that
+// automatic detection (ADDRESS_BOOK hot-wallet match) can't catch.
+function aurumUnmatchedTransfers(events, opts = {}) {
+  const book = window.aurumAddressBook || {};
+  const routers = window.aurumKnownRouters || {};
+  const classified = (state.classifiedDests || {});   // addr → { kind, exchange }
+  const byDest = {};   // addr → { count, assets:Set, chains:Set, lastTs }
+  for (const e of (events || [])) {
+    if (e.direction !== 'out') continue;
+    if (fifoEngine.isSpamToken && fifoEngine.isSpamToken(e)) continue;   // ignore spam sends
+    const to = _destAddr(e);
+    if (!to || to.length < 20) continue;
+    if (routers[to]) continue;                  // known infra — not a triage candidate
+    if (book[to]) continue;                     // already labelled (CEX hot wallet, protocol, …)
+    if (classified[to]) continue;               // user already triaged this one
+    if (!byDest[to]) byDest[to] = { count: 0, assets: new Set(), chains: new Set(), lastTs: 0 };
+    byDest[to].count++;
+    if (e.asset) byDest[to].assets.add(e.asset);
+    if (e.chain) byDest[to].chains.add(e.chain);
+    if (e.timestamp && e.timestamp > byDest[to].lastTs) byDest[to].lastTs = e.timestamp;
+  }
+  const limit = opts.limit || 25;
+  return Object.entries(byDest)
+    .map(([address, d]) => ({ address, count: d.count, assets: [...d.assets], chains: [...d.chains], lastTs: d.lastTs }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+window.aurumUnmatchedTransfers = aurumUnmatchedTransfers;
+
+// Records the user's classification of an unknown destination address.
+//   kind: 'cex'  → also pass exchange (lowercase); registers the addr as a deposit address on
+//                  that CEX's wallet so the basis bridge links the on-chain send to the CSV.
+//         'own'  → user's own (external) wallet — transfers there are not disposals.
+//         'other'→ skip / hide from the list (payment, friend, etc.).
+// Persists to state.classifiedDests and (for CEX) the wallet's depositAddrs, then re-renders.
+function aurumClassifyDest(address, kind, exchange) {
+  address = String(address || '').toLowerCase();
+  if (!address) return;
+  if (!state.classifiedDests) state.classifiedDests = {};
+  state.classifiedDests[address] = { kind, exchange: exchange ? String(exchange).toLowerCase() : null, at: Date.now() };
+
+  if (kind === 'cex' && exchange) {
+    // Find (or note absence of) the CEX wallet for this exchange and register the deposit addr.
+    const ex = String(exchange).toLowerCase();
+    const w = (state.wallets || []).find(x => x.kind === 'cex' && (x.exchange || '').toLowerCase() === ex);
+    if (w) {
+      const set = new Set([...(w.depositAddrs || []), address]);
+      w.depositAddrs = [...set];
+    }
+    // If no CEX wallet imported yet, the classification is still saved; once the user imports
+    // that CEX's CSV, the deposit addr is already on record (we backfill on import below).
+  }
+  try { saveState(); } catch (_) {}
+  // Invalidate fiscal caches so the basis bridge re-pairs with the new owner address.
+  try {
+    Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_')) delete window[k]; });
+  } catch (_) {}
+  if (typeof render === 'function') render();
+}
+window.aurumClassifyDest = aurumClassifyDest;
+
+// Reverts a destination classification (user changed their mind).
+function aurumUnclassifyDest(address) {
+  address = String(address || '').toLowerCase();
+  if (state.classifiedDests && state.classifiedDests[address]) {
+    const prev = state.classifiedDests[address];
+    delete state.classifiedDests[address];
+    // If it was a CEX deposit addr, pull it back out of the wallet too.
+    if (prev.kind === 'cex' && prev.exchange) {
+      const w = (state.wallets || []).find(x => x.kind === 'cex' && (x.exchange || '').toLowerCase() === prev.exchange);
+      if (w && Array.isArray(w.depositAddrs)) w.depositAddrs = w.depositAddrs.filter(a => a !== address);
+    }
+    try { saveState(); } catch (_) {}
+    try { Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_')) delete window[k]; }); } catch (_) {}
+    if (typeof render === 'function') render();
+  }
+}
+window.aurumUnclassifyDest = aurumUnclassifyDest;
+
+// Opens the classification modal for an unknown destination address. Three choices:
+//   - CEX deposit (pick the exchange)  → registers a deposit address on that CEX wallet
+//   - My own wallet                    → marks transfers there as self-transfers (not disposals)
+//   - Other / ignore                   → hides it from the Unmatched Transfers list
+function aurumOpenClassifyDest(address, count) {
+  address = String(address || '').toLowerCase();
+  if (!address) return;
+  const lang = (state && state.lang) || 'pt';
+  const t2 = (en, pt) => (lang === 'en' ? en : pt);
+  const esc = s => String(s || '').replace(/'/g, "\\'");
+  const short = address.slice(0, 10) + '…' + address.slice(-8);
+  const exchanges = [
+    ['binance', 'Binance'], ['kraken', 'Kraken'], ['okx', 'OKX'], ['bybit', 'Bybit'],
+    ['kucoin', 'KuCoin'], ['gate', 'Gate.io'], ['bingx', 'BingX'], ['mexc', 'MEXC'],
+    ['coinbase', 'Coinbase'], ['bitget', 'Bitget'], ['crypto.com', 'Crypto.com'],
+    ['mercadobitcoin', 'Mercado Bitcoin'], ['other', t2('Other', 'Outra')],
+  ];
+  const exOpts = exchanges.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  const html = `
+    <div class="modal-overlay" id="classifyDestOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
+      <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:500px;width:100%" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem">
+          <div style="font-weight:600;font-size:1rem">${t2('Classify destination', 'Classificar destino')}</div>
+          <button onclick="aurumCloseClassifyDest()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer">×</button>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem">
+          <span style="font-family:var(--mono)">${short}</span>${count ? ` · ${count} ${t2('sends', 'envios')}` : ''}<br>
+          ${t2('What is this address? This tells the engine whether sends here are transfers (not taxed) or something else.', 'O que é este endereço? Isto diz ao motor se os envios para aqui são transferências (não tributadas) ou outra coisa.')}
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:6px;padding:0.8rem;margin-bottom:0.7rem">
+          <div style="font-weight:600;font-size:0.84rem;margin-bottom:0.5rem">🏦 ${t2('My deposit address at an exchange', 'O meu endereço de depósito numa exchange')}</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.5rem">${t2('Links your on-chain sends to that exchange CSV — the transfer is not taxed, the fiat sale inside the exchange is.', 'Liga os teus envios on-chain ao CSV dessa exchange — a transferência não é tributada, a venda a fiat dentro da exchange é.')}</div>
+          <div style="display:flex;gap:0.5rem">
+            <select id="classifyDestExchange" class="form-select" style="flex:1">${exOpts}</select>
+            <button class="btn btn-gold btn-sm" onclick="aurumClassifyDest('${esc(address)}','cex',document.getElementById('classifyDestExchange').value);aurumCloseClassifyDest()">${t2('Save', 'Guardar')}</button>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:6px;padding:0.8rem;margin-bottom:0.7rem;display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:0.84rem">👛 ${t2('Another wallet of mine', 'Outra carteira minha')}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted)">${t2('Transfers here are self-transfers — cost basis travels, not a sale.', 'Os envios para aqui são transferências próprias — o custo viaja, não é venda.')}</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="aurumClassifyDest('${esc(address)}','own');aurumCloseClassifyDest()">${t2('Mark', 'Marcar')}</button>
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:6px;padding:0.8rem;display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:0.84rem">🚫 ${t2('Other / ignore', 'Outro / ignorar')}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted)">${t2('Hide it from this list. (If it was a payment for goods/services, note it may be a taxable disposal in PT — confirm with your accountant.)', 'Esconde-o desta lista. (Se foi um pagamento de bens/serviços, atenção: pode ser uma alienação tributável em PT — confirma com o teu contabilista.)')}</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="aurumClassifyDest('${esc(address)}','other');aurumCloseClassifyDest()">${t2('Ignore', 'Ignorar')}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('classifyDestOverlay').addEventListener('click', (ev) => {
+    if (ev.target.id === 'classifyDestOverlay') aurumCloseClassifyDest();
+  });
+}
+window.aurumOpenClassifyDest = aurumOpenClassifyDest;
+
+function aurumCloseClassifyDest() {
+  document.getElementById('classifyDestOverlay')?.remove();
+}
+window.aurumCloseClassifyDest = aurumCloseClassifyDest;
+
 // Detects on-chain sends whose destination is a KNOWN exchange hot wallet (via ADDRESS_BOOK).
 // Returns a per-exchange summary so the integrity panel can tell the user "you sent to Binance/
 // MEXC — import that CEX's CSV (and register the deposit address) so the fiat sale is captured
@@ -9529,8 +9724,8 @@ function aurumDetectCexSends(events) {
   );
   for (const e of (events || [])) {
     if (e.direction !== 'out') continue;
-    // The counterparty address can live in a few fields depending on the indexer path.
-    const to = (e.to || e.counterparty || e.toAddress || '').toLowerCase();
+    // The destination lives in e.counterparty.address (an OBJECT {address, labeled}), not e.to.
+    const to = _destAddr(e);
     if (!to) continue;
     const entry = book[to];
     if (entry && entry.type === 'cex') {
@@ -9564,6 +9759,14 @@ function _allOwnerAddresses() {
       w.depositAddrs.forEach(a => { if (a) addrs.push(String(a).toLowerCase()); });
     }
   });
+  // User-classified destinations: addresses the user marked as their own wallet, or as a CEX
+  // deposit address. Both belong to the same owner → the basis bridge treats sends there as
+  // self-transfers (cost basis travels), not disposals. (Summ-style manual unmatched-transfer
+  // resolution: the user knows their private deposit addresses; automatic detection can't.)
+  const cd = state.classifiedDests || {};
+  for (const [addr, info] of Object.entries(cd)) {
+    if (info && (info.kind === 'own' || info.kind === 'cex')) addrs.push(String(addr).toLowerCase());
+  }
   return addrs.filter(Boolean);
 }
 
@@ -19028,9 +19231,41 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
     </div>`;
   }
 
+  // Unmatched Transfers (Summ-style): the largest UNKNOWN send destinations the user can classify.
+  // These are the addresses automatic detection can't resolve — most importantly, the user's own
+  // private CEX deposit addresses. Classifying one as a CEX deposit links the on-chain send to the
+  // imported CSV (basis travels, transfer isn't taxed); as "own wallet" marks it a self-transfer.
+  const _unmatched = walletId ? window['_unmatched_' + walletId] : null;
+  let unmatchedNote = '';
+  if (Array.isArray(_unmatched) && _unmatched.length) {
+    const esc = s => String(s || '').replace(/'/g, "\\'");
+    const rows = _unmatched.slice(0, 15).map(u => {
+      const short = u.address.slice(0, 8) + '…' + u.address.slice(-6);
+      const chains = u.chains.slice(0, 4).map(c => c.toUpperCase()).join(', ') + (u.chains.length > 4 ? '…' : '');
+      const assets = u.assets.slice(0, 4).join(', ') + (u.assets.length > 4 ? '…' : '');
+      return `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center">
+        <div style="flex:1;min-width:0">
+          <span style="font-family:var(--mono);font-size:0.72rem">${short}</span>
+          <span style="color:var(--text-muted);font-size:0.7rem"> · ${u.count} ${t2('sends', 'envios')} · ${chains}${assets ? ' · ' + assets : ''}</span>
+        </div>
+        <button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:0.7rem;padding:0.2rem 0.5rem" onclick="window.aurumOpenClassifyDest('${esc(u.address)}', ${u.count})">${t2('Classify', 'Classificar')}</button>
+      </div>`;
+    }).join('');
+    const more = _unmatched.length > 15 ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem">${t2(`+${_unmatched.length - 15} more not shown`, `+${_unmatched.length - 15} mais não mostrados`)}</div>` : '';
+    unmatchedNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(245,180,60,0.07);border-color:rgba(245,180,60,0.4)">
+      <span style="font-size:1rem">🔀</span>
+      <div style="flex:1"><strong>${t2('Unmatched transfers', 'Transferências sem par')}</strong> — ${t2('these are the biggest send destinations we do not recognize. If any is your own deposit address at an exchange, or another wallet of yours, classify it so the transfer is linked (and not mistaken for a sale). Sends to swap/bridge routers are already filtered out.', 'estes são os maiores destinos de envio que não reconhecemos. Se algum for o teu endereço de depósito numa exchange, ou outra carteira tua, classifica-o para a transferência ser ligada (e não confundida com uma venda). Envios para routers de swap/bridge já estão filtrados.')}
+      <details style="margin-top:0.5rem" ${window._unmatchedOpen ? 'open' : ''} ontoggle="window._unmatchedOpen=this.open">
+        <summary style="cursor:pointer;font-size:0.74rem;color:var(--amber,#d97706)">${t2(`Review ${_unmatched.length} unknown destination(s)`, `Rever ${_unmatched.length} destino(s) desconhecido(s)`)}</summary>
+        <div style="margin-top:0.4rem">${rows}${more}</div>
+      </details>
+      </div>
+    </div>`;
+  }
+
   if (issues.length === 0) {
     // Clean state — green confirmation, like Koinly's green check.
-    return cexNote + reconNote + `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
+    return cexNote + reconNote + unmatchedNote + `<div class="alert integrity-ok" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:center;border-color:var(--green);background:rgba(76,222,138,0.08)">
       <span style="font-size:1.1rem">✓</span>
       <div><strong style="color:var(--green)">${t2('Data looks complete', 'Dados parecem completos')}</strong> — ${t2('no integrity issues detected for this report. Always confirm with a certified accountant (TOC).', 'sem problemas de integridade detetados para este relatório. Confirma sempre com um TOC certificado.')}</div>
     </div>`;
@@ -19046,7 +19281,7 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
       </div>
     </div>`).join('');
 
-  return cexNote + reconNote + `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
+  return cexNote + reconNote + unmatchedNote + `<div class="alert integrity-warn" style="margin-bottom:1.1rem;font-size:0.82rem;align-items:flex-start;flex-direction:column;background:rgba(245,180,60,0.08);border-color:rgba(245,180,60,0.45)">
     <div style="display:flex;gap:0.5rem;align-items:center;width:100%">
       <span style="font-size:1.1rem">⚠️</span>
       <strong style="font-size:0.9rem">${t2('Review needed', 'Verificação necessária')}</strong>
@@ -19333,6 +19568,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
   const rewardsInYear = rewards.filter(r => r.fiscalYear === fiscalYear);
   // Detect on-chain sends to known exchange hot wallets (Summ-style "unmatched transfers").
   try { window['_cexSends_' + w.id] = (typeof aurumDetectCexSends === 'function') ? aurumDetectCexSends(events) : []; } catch (_) { window['_cexSends_' + w.id] = []; }
+  try { window['_unmatched_' + w.id] = (typeof aurumUnmatchedTransfers === 'function') ? aurumUnmatchedTransfers(events) : []; } catch (_) { window['_unmatched_' + w.id] = []; }
   const rt = window._fiscalReportType || 'complete';
   const showGains = rt === 'complete' || rt === 'gains';
   const showIncome = rt === 'complete' || rt === 'income';
