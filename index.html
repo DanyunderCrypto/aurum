@@ -9695,100 +9695,190 @@ function _anyEtherscanKey() {
   return w ? String(w.apiKey).trim() : null;
 }
 
+// ── eth_getCode: the UNIVERSAL contract-vs-wallet test ──
+// Works on ANY chain with an RPC (covers Soneium/Ink/Lens the Etherscan API doesn't). Returns
+// 'contract' if the address has bytecode, 'eoa' if not, or null on error. This is the most
+// fundamental signal (the chain itself answers), so it's our base layer for hiding infra.
+async function _ethGetCode(chain, address) {
+  try {
+    const url = (typeof _rpcUrl === 'function') ? _rpcUrl(chain, resolveAlchemyKey({})) : null;
+    if (!url) return null;
+    const res = await safeFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getCode', params: [address, 'latest'] }),
+      timeout: 15000,
+    }, `getcode.${chain}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+    const code = data.result || '0x';
+    return (code && code !== '0x' && code.length > 2) ? 'contract' : 'eoa';
+  } catch (_) { return null; }
+}
+
+// Blockscout instance hosts for chains the Etherscan V2 API doesn't cover. Blockscout v2 REST is
+// public (no key) and returns is_contract + creator + a name/protocol tag. Routed through the
+// proxy if available (avoids CORS); falls back to direct, then to eth_getCode if both fail.
+const _BLOCKSCOUT_HOSTS = {
+  soneium: 'https://soneium.blockscout.com',
+  ink: 'https://explorer.inkonchain.com',
+  lens: 'https://explorer.lens.xyz',
+  abstract: 'https://abscan.org',          // abstract has its own; blockscout-compatible
+  zora: 'https://explorer.zora.energy',
+  mode: 'https://explorer.mode.network',
+  berachain: 'https://berascan.com',
+  superseed: 'https://explorer.superseed.xyz',
+  bob: 'https://explorer.gobob.xyz',
+  astar: 'https://astar.blockscout.com',
+};
+
+// Normalizes a raw contract/tag name from an explorer into a clean protocol label.
+// e.g. "LI.FI: LiFi Diamond" → "LI.FI" · "Haiku: Intent Swapper Router" → "Haiku"
+// Keeps it short and recognizable (the part before ':' is usually the protocol).
+function _protocolFromName(name) {
+  if (!name) return null;
+  let s = String(name).trim();
+  if (s.includes(':')) s = s.split(':')[0].trim();      // "LI.FI: LiFi Diamond" → "LI.FI"
+  // Strip common contract-type suffixes so we keep the protocol, not the contract role.
+  s = s.replace(/\b(Router|Diamond|Proxy|Pool|Vault|Factory|Implementation|V\d+)\b/gi, '').trim();
+  s = s.replace(/\s{2,}/g, ' ').replace(/[·\-]+$/, '').trim();
+  return s || String(name).trim();
+}
+
+// Fetch a contract's name + creator from Etherscan V2 (getsourcecode gives ContractName;
+// getcontractcreation gives the creator). Returns {name, creator} or null.
+async function _etherscanContractInfo(chain, address, key) {
+  const cid = _etherscanChainId(chain);
+  if (!cid || !key) return null;
+  try {
+    const url = `${_ETHERSCAN_V2}?chainid=${cid}&module=contract&action=getsourcecode&address=${address}&apikey=${encodeURIComponent(key)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json && json.status === '1' && Array.isArray(json.result) && json.result[0]) {
+      const r = json.result[0];
+      // getsourcecode returns ContractName (verified) — may be empty for unverified contracts.
+      return { name: r.ContractName || '', creator: '' };
+    }
+  } catch (_) {}
+  return null;
+}
+
+// Fetch address info from a Blockscout instance (chains Etherscan doesn't cover).
+// Returns {isContract, name, creator} or null. Tries proxy first (CORS-safe), then direct.
+async function _blockscoutInfo(chain, address) {
+  const host = _BLOCKSCOUT_HOSTS[chain];
+  if (!host) return null;
+  const path = `/api/v2/addresses/${address}`;
+  const urls = [];
+  // Proxy route (if the worker exposes /blockscout/<host>/...): preferred, avoids CORS.
+  if (typeof _proxyActive === 'function' && _proxyActive()) {
+    urls.push(`${PROXY_BASE}/blockscout/${encodeURIComponent(host)}${path}`);
+  }
+  urls.push(host + path);  // direct (works if the instance sends Access-Control-Allow-Origin:*)
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const j = await res.json();
+      if (!j) continue;
+      const name = (j.name || (j.public_tags && j.public_tags[0] && j.public_tags[0].display_name) || '');
+      return {
+        isContract: !!j.is_contract,
+        name,
+        creator: (j.creator_address_hash || '').toLowerCase(),
+      };
+    } catch (_) { /* try next url */ }
+  }
+  return null;
+}
+
 async function aurumAutoClassifyDests(events, opts = {}) {
   const onProgress = opts.onProgress || (() => {});
   const ownerAddrs = new Set((_allOwnerAddresses() || []).map(a => a.toLowerCase()));
   if (!state.classifiedDests) state.classifiedDests = {};
   const routers = window.aurumKnownRouters || {};
+  const key = _anyEtherscanKey();
 
-  // Build the candidate list: unknown destinations, each with the chain it appeared on.
+  // Candidate list: unknown destinations + the chain each appeared on (first chain seen).
   const unmatched = aurumUnmatchedTransfers(events, { limit: 500 });
-  // We need a chain per address to query the right explorer. Use the first chain seen.
   const candidates = unmatched
     .map(u => ({ address: u.address, chain: (u.chains && u.chains[0]) || 'eth' }))
-    .filter(c => c.address && c.address.length >= 20);
+    .filter(c => c.address && c.address.length >= 20 && !state.classifiedDests[c.address]);
 
-  let autoOwn = 0, autoContract = 0, autoRouter = 0, autoUncovered = 0, manual = 0;
+  let autoOwn = 0, autoProtocol = 0, autoContract = 0, autoRouter = 0, eoa = 0, manual = 0;
 
-  // First pass (free, no API): known routers → 'contract'.
+  // Pass 0 (free, instant): our own known-router list → labelled contract.
+  const toResolve = [];
   for (const c of candidates) {
     if (routers[c.address]) {
-      state.classifiedDests[c.address] = { kind: 'contract', label: routers[c.address], auto: true, at: Date.now() };
+      state.classifiedDests[c.address] = { kind: 'contract', label: routers[c.address], protocol: _protocolFromName(routers[c.address]), auto: true, via: 'known', at: Date.now() };
       autoRouter++;
+    } else {
+      toResolve.push(c);
     }
   }
 
-  // Second pass (free, no API): destinations on chains the Etherscan V2 API does NOT cover
-  // (Soneium, Ink, Lens, Abstract, etc.). We can't verify them, but a destination receiving
-  // dozens of native-ETH sends on a brand-new L2 is virtually always infra (router/bridge),
-  // not a personal CEX deposit address. Mark as 'contract' with a note so it leaves the manual
-  // list. (If the user disagrees, they can still reclassify — nothing is taxed differently:
-  // 'contract' just means "not my CEX deposit / not my wallet".)
-  for (const c of candidates) {
-    if (state.classifiedDests[c.address]) continue;
-    if (!_ETHERSCAN_V2_CHAINS.has(c.chain)) {
-      state.classifiedDests[c.address] = { kind: 'contract', label: `Unverifiable (${c.chain} not on Etherscan API)`, auto: true, uncovered: true, at: Date.now() };
-      autoUncovered++;
-    }
-  }
+  // Per-address cascade. Each address: (1) eth_getCode → contract vs EOA (universal, every chain);
+  // (2) if contract, fetch a protocol label + creator from Etherscan (where covered) or Blockscout
+  // (chains Etherscan misses, e.g. Soneium/Ink/Lens). EOAs get no label (none exists) and stay for
+  // manual triage — they're the real CEX-deposit candidates.
+  let done = 0;
+  const total = toResolve.length;
+  for (const c of toResolve) {
+    const addr = c.address, chain = c.chain;
+    let isContract = null, name = '', creator = '';
 
-  const key = _anyEtherscanKey();
-  const remaining = candidates.filter(c => !state.classifiedDests[c.address]);
+    // (1) Universal contract test.
+    const code = await _ethGetCode(chain, addr);
+    if (code === 'contract') isContract = true;
+    else if (code === 'eoa') isContract = false;
 
-  if (key && remaining.length) {
-    // Group by chain (Etherscan V2 needs one chainid per call; up to 5 addresses per call).
-    const byChain = {};
-    for (const c of remaining) { (byChain[c.chain] = byChain[c.chain] || []).push(c.address); }
-    const chainKeys = Object.keys(byChain).filter(ch => _etherscanChainId(ch));
-    let done = 0;
-    const totalBatches = chainKeys.reduce((s, ch) => s + Math.ceil(byChain[ch].length / 5), 0);
-
-    for (const ch of chainKeys) {
-      const cid = _etherscanChainId(ch);
-      const addrs = byChain[ch];
-      for (let i = 0; i < addrs.length; i += 5) {
-        const batch = addrs.slice(i, i + 5);
-        try {
-          const url = `${_ETHERSCAN_V2}?chainid=${cid}&module=contract&action=getcontractcreation&contractaddresses=${batch.join(',')}&apikey=${encodeURIComponent(key)}`;
-          const res = await fetch(url);
-          const json = await res.json();
-          if (json && json.status === '1' && Array.isArray(json.result)) {
-            // Each result = a CONTRACT. Anything in the batch NOT returned = an EOA (manual).
-            const returned = new Set();
-            for (const r of json.result) {
-              const addr = String(r.contractAddress || '').toLowerCase();
-              if (!addr) continue;
-              returned.add(addr);
-              const creator = String(r.contractCreator || '').toLowerCase();
-              if (ownerAddrs.has(creator)) {
-                // Contract the user deployed → their own (agent smart-account, etc.)
-                state.classifiedDests[addr] = { kind: 'own', label: 'Contract you created', auto: true, at: Date.now() };
-                autoOwn++;
-              } else {
-                // Some other contract (protocol/router/aggregator) → not a CEX deposit.
-                state.classifiedDests[addr] = { kind: 'contract', label: 'Smart contract', auto: true, at: Date.now() };
-                autoContract++;
-              }
-            }
-            // Addresses not returned by getcontractcreation are EOAs → leave for manual triage.
-            for (const a of batch) { if (!returned.has(a)) manual++; }
-          } else {
-            // status '0' usually means "no contracts found" → the whole batch are EOAs (manual).
-            manual += batch.length;
-          }
-        } catch (_) {
-          // Network error on this batch — leave those for manual (don't poison the cache).
+    // (2) Label + creator, only worth it for contracts (EOAs have neither).
+    if (isContract !== false) {
+      if (_ETHERSCAN_V2_CHAINS.has(chain) && key) {
+        const info = await _etherscanContractInfo(chain, addr, key);
+        if (info) { if (info.name) name = info.name; if (info.creator) creator = info.creator; isContract = true; }
+        // Etherscan getcontractcreation also confirms creator (separate call only if we still need it).
+        if (isContract && !creator) {
+          try {
+            const cid = _etherscanChainId(chain);
+            const r2 = await (await fetch(`${_ETHERSCAN_V2}?chainid=${cid}&module=contract&action=getcontractcreation&contractaddresses=${addr}&apikey=${encodeURIComponent(key)}`)).json();
+            if (r2 && r2.status === '1' && r2.result && r2.result[0]) { creator = String(r2.result[0].contractCreator || '').toLowerCase(); isContract = true; }
+          } catch (_) {}
         }
-        done++;
-        onProgress({ done, total: totalBatches });
-        await new Promise(r => setTimeout(r, 250)); // throttle: ~4 req/s, safe for free tier
+      } else if (_BLOCKSCOUT_HOSTS[chain]) {
+        const bi = await _blockscoutInfo(chain, addr);
+        if (bi) { isContract = bi.isContract; if (bi.name) name = bi.name; if (bi.creator) creator = bi.creator; }
       }
     }
-  } else {
-    manual += remaining.length;
+
+    // Classify based on what we learned.
+    if (isContract === false) {
+      eoa++; manual++;                      // genuine EOA → leave for manual (likely CEX deposit)
+    } else if (isContract === true) {
+      if (creator && ownerAddrs.has(creator)) {
+        state.classifiedDests[addr] = { kind: 'own', label: name ? `Your contract · ${_protocolFromName(name)}` : 'Contract you created', protocol: _protocolFromName(name), creator, auto: true, via: 'creator', at: Date.now() };
+        autoOwn++;
+      } else if (name) {
+        const proto = _protocolFromName(name);
+        state.classifiedDests[addr] = { kind: 'contract', label: proto, protocol: proto, auto: true, via: 'label', at: Date.now() };
+        autoProtocol++;
+      } else {
+        state.classifiedDests[addr] = { kind: 'contract', label: 'Smart contract', auto: true, via: 'getcode', at: Date.now() };
+        autoContract++;
+      }
+    } else {
+      // Couldn't determine (no RPC, no label source reachable) → leave for manual, don't guess.
+      manual++;
+    }
+
+    done++;
+    if (done % 3 === 0 || done === total) onProgress({ done, total });
+    await new Promise(r => setTimeout(r, 120)); // throttle (RPC + occasional label call)
   }
 
-  const summary = { autoOwn, autoContract, autoRouter, autoUncovered, manual, hadKey: !!key, at: Date.now() };
+  const summary = { autoOwn, autoProtocol, autoContract, autoRouter, eoa, manual, hadKey: !!key, at: Date.now() };
   state._autoClassifySummary = summary;
   try { saveState(); } catch (_) {}
   // Invalidate caches so the panel re-renders with the now-classified addresses removed.
@@ -9820,9 +9910,9 @@ async function aurumAutoClassifyDestsUI(walletId) {
     });
     const parts = [];
     if (r.autoOwn) parts.push(t2(`${r.autoOwn} your own contract(s)`, `${r.autoOwn} contrato(s) teu(s)`));
-    if (r.autoContract + r.autoRouter) parts.push(t2(`${r.autoContract + r.autoRouter} smart contract(s)/router(s)`, `${r.autoContract + r.autoRouter} contrato(s)/router(s)`));
-    if (r.autoUncovered) parts.push(t2(`${r.autoUncovered} on chains the API can't verify (likely infra)`, `${r.autoUncovered} em chains que a API não verifica (provável infra)`));
-    if (r.manual) parts.push(t2(`${r.manual} left to classify manually`, `${r.manual} para classificar à mão`));
+    if (r.autoProtocol + r.autoRouter) parts.push(t2(`${r.autoProtocol + r.autoRouter} identified protocol(s)`, `${r.autoProtocol + r.autoRouter} protocolo(s) identificado(s)`));
+    if (r.autoContract) parts.push(t2(`${r.autoContract} unnamed contract(s)`, `${r.autoContract} contrato(s) sem nome`));
+    if (r.manual) parts.push(t2(`${r.manual} wallet(s) left to classify`, `${r.manual} carteira(s) por classificar`));
     const msg = parts.length ? parts.join(' · ') : t2('Nothing new to classify', 'Nada novo para classificar');
     const keyNote = r.hadKey ? '' : t2(' (add an Etherscan API key in Settings for full auto-detection)', ' (adiciona uma chave Etherscan nas Definições para auto-deteção completa)');
     if (typeof toast === 'function') toast(msg + keyNote, r.hadKey ? 'success' : 'warn');
@@ -19433,11 +19523,11 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   // Persistent summary of the last auto-classification (so the user sees what it did, beyond the toast).
   let autoSummary = '';
   const _acs = state._autoClassifySummary;
-  if (_acs && (_acs.autoOwn || _acs.autoContract || _acs.autoRouter || _acs.autoUncovered)) {
+  if (_acs && (_acs.autoOwn || _acs.autoProtocol || _acs.autoContract || _acs.autoRouter)) {
     const bits = [];
     if (_acs.autoOwn) bits.push(t2(`${_acs.autoOwn} your own contract(s)`, `${_acs.autoOwn} contrato(s) teu(s)`));
-    if (_acs.autoContract + _acs.autoRouter) bits.push(t2(`${_acs.autoContract + _acs.autoRouter} smart contract(s)/router(s)`, `${_acs.autoContract + _acs.autoRouter} contrato(s)/router(s)`));
-    if (_acs.autoUncovered) bits.push(t2(`${_acs.autoUncovered} on unverifiable chains`, `${_acs.autoUncovered} em chains não verificáveis`));
+    if (_acs.autoProtocol + _acs.autoRouter) bits.push(t2(`${_acs.autoProtocol + _acs.autoRouter} identified protocol(s)`, `${_acs.autoProtocol + _acs.autoRouter} protocolo(s) identificado(s)`));
+    if (_acs.autoContract) bits.push(t2(`${_acs.autoContract} unnamed contract(s)`, `${_acs.autoContract} contrato(s) sem nome`));
     autoSummary = `<div style="font-size:0.72rem;color:var(--green);margin-top:0.4rem">✓ ${t2('Auto-detected and removed from the list', 'Auto-detetados e removidos da lista')}: ${bits.join(' · ')}. <a href="javascript:void(0)" onclick="window._showClassified=${window._showClassified ? 'false' : 'true'};render()" style="color:var(--blue,#3B82F6);text-decoration:none">${window._showClassified ? t2('hide', 'esconder') : t2('view', 'ver')}</a></div>`;
   }
   // Build the "classified" list (what auto-detect + manual triage resolved), shown on demand.
@@ -19446,11 +19536,15 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
     const cd = state.classifiedDests || {};
     const entries = Object.entries(cd);
     if (entries.length) {
+      const badge = (txt, color) => `<span style="display:inline-block;padding:0.05rem 0.4rem;border-radius:4px;font-size:0.62rem;font-weight:600;background:${color}1a;color:${color};border:1px solid ${color}55">${txt}</span>`;
       const kindLabel = (info) => {
-        if (info.kind === 'own') return t2('Your wallet/contract', 'Carteira/contrato teu');
-        if (info.kind === 'cex') return `CEX: ${info.exchange || '?'}`;
-        if (info.kind === 'contract') return info.uncovered ? t2('Contract (unverifiable chain)', 'Contrato (chain não verificável)') : t2('Smart contract', 'Contrato');
-        return t2('Ignored', 'Ignorado');
+        if (info.kind === 'own') return badge((info.protocol ? `🤖 ${info.protocol}` : t2('Your contract', 'Contrato teu')), 'var(--gold)');
+        if (info.kind === 'cex') return badge(`🏦 ${info.exchange || '?'}`, '#3B82F6');
+        if (info.kind === 'contract') {
+          if (info.protocol) return badge(info.protocol, '#3B82F6');
+          return `<span style="color:var(--text-muted)">${t2('Smart contract', 'Contrato')}</span>`;
+        }
+        return `<span style="color:var(--text-muted)">${t2('Ignored', 'Ignorado')}</span>`;
       };
       const crows = entries.slice(0, window._classifiedExpanded ? entries.length : 20).map(([addr, info]) => `
         <div style="display:flex;justify-content:space-between;gap:0.6rem;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center">
