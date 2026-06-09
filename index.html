@@ -5313,18 +5313,10 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
     avalanche:'avalanchec', bnb:'smartchain', bsc:'smartchain', gnosis:'xdai', celo:'celo',
     fantom:'fantom', cronos:'cronos', aurora:'aurora', moonbeam:'moonbeam', metis:'metis',
   };
-  // DefiLlama token icons (by chainId:contract) — wide chain coverage, good for DeFi/long-tail.
-  const LLAMA_CID = {
-    eth:1, base:8453, arbitrum:42161, optimism:10, polygon:137, bnb:56, bsc:56, avalanche:43114,
-    gnosis:100, scroll:534352, linea:59144, mantle:5000, blast:81457, zksync:324, celo:42220,
-    sonic:146, metis:1088, mode:34443, sei:1329, berachain:80094, unichain:130, soneium:1868,
-    ink:57073, worldchain:480, apechain:33139, ronin:2020, frax:252, moonbeam:1284, opbnb:204,
-  };
   if (contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
     const lc = contract.toLowerCase();
     if (dsChain) urls.push(`https://dd.dexscreener.com/ds-data/tokens/${dsChain}/${lc}.png`);
     if (TW_CHAIN[chain]) urls.push(`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${TW_CHAIN[chain]}/assets/${contract}/logo.png`);
-    if (LLAMA_CID[chain]) urls.push(`https://token-icons.llamao.fi/icons/tokens/${LLAMA_CID[chain]}/${lc}?h=48&w=48`);
   }
   // cryptocurrency-icons by symbol — well-known coins fallback.
   if (symbol) {
@@ -15209,7 +15201,7 @@ function renderPortfolioCharts(w) {
   );
 
   return `
-    <div class="two-col" style="margin-top:1.5rem">
+    <div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:1.25rem">
       <div class="panel">
         <div class="panel-head">
           <span class="panel-title">${t('section.allocationByAsset')}</span>
@@ -15225,8 +15217,10 @@ function renderPortfolioCharts(w) {
           <span class="panel-title">${t('section.allocationByChain')}</span>
           <span style="font-size:0.7rem;color:var(--text-muted)">${sortedChains.length} chain${sortedChains.length>1?'s':''}</span>
         </div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:0.6rem">
-          ${chainBarsHTML}
+        <div class="panel-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.5rem 1.5rem">
+            ${chainBarsHTML}
+          </div>
         </div>
       </div>
     </div>
@@ -15321,14 +15315,14 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   `).join('');
 
   return `
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;justify-content:center;padding:0.25rem 0.5rem">
-      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0">
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;padding:0.25rem 0.5rem">
+      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0;align-self:center">
         <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="var(--bg2)" stroke-width="${strokeWidth}"/>
         ${svgSegments}
         <text x="${center}" y="${center - 6}" text-anchor="middle" style="font-family:var(--display);font-size:1.25rem;font-weight:700;fill:var(--text)">€${fmt(sliceTotal, 0)}</text>
         <text x="${center}" y="${center + 16}" text-anchor="middle" style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.12em;fill:var(--text-muted);text-transform:uppercase">Tokens</text>
       </svg>
-      <div style="flex:1;min-width:260px;max-height:300px;overflow-y:auto;padding-right:0.5rem">
+      <div style="flex:1;min-width:280px;max-height:340px;overflow-y:auto;padding-right:0.5rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:0 1.5rem;align-content:start">
         ${legend}
       </div>
     </div>
