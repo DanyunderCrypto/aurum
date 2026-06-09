@@ -9585,7 +9585,7 @@ function aurumUnmatchedTransfers(events, opts = {}) {
     if (e.chain) byDest[to].chains.add(e.chain);
     if (e.timestamp && e.timestamp > byDest[to].lastTs) byDest[to].lastTs = e.timestamp;
   }
-  const limit = opts.limit || 25;
+  const limit = opts.limit || 100;
   return Object.entries(byDest)
     .map(([address, d]) => ({ address, count: d.count, assets: [...d.assets], chains: [...d.chains], lastTs: d.lastTs }))
     .sort((a, b) => b.count - a.count)
@@ -19239,19 +19239,23 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   let unmatchedNote = '';
   if (Array.isArray(_unmatched) && _unmatched.length) {
     const esc = s => String(s || '').replace(/'/g, "\\'");
-    const rows = _unmatched.slice(0, 15).map(u => {
-      const short = u.address.slice(0, 8) + '…' + u.address.slice(-6);
+    const unmExpanded = window._unmatchedExpanded === true;
+    const UNM_LIMIT = 15;
+    const shown = unmExpanded ? _unmatched : _unmatched.slice(0, UNM_LIMIT);
+    const rows = shown.map(u => {
       const chains = u.chains.slice(0, 4).map(c => c.toUpperCase()).join(', ') + (u.chains.length > 4 ? '…' : '');
       const assets = u.assets.slice(0, 4).join(', ') + (u.assets.length > 4 ? '…' : '');
-      return `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center">
+      return `<div style="display:flex;justify-content:space-between;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--border);align-items:flex-start">
         <div style="flex:1;min-width:0">
-          <span style="font-family:var(--mono);font-size:0.72rem">${short}</span>
-          <span style="color:var(--text-muted);font-size:0.7rem"> · ${u.count} ${t2('sends', 'envios')} · ${chains}${assets ? ' · ' + assets : ''}</span>
+          <div style="font-family:var(--mono);font-size:0.72rem;word-break:break-all;line-height:1.4;user-select:all">${u.address}</div>
+          <div style="color:var(--text-muted);font-size:0.7rem;margin-top:0.15rem">${u.count} ${t2('sends', 'envios')} · ${chains}${assets ? ' · ' + assets : ''}</div>
         </div>
         <button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:0.7rem;padding:0.2rem 0.5rem" onclick="window.aurumOpenClassifyDest('${esc(u.address)}', ${u.count})">${t2('Classify', 'Classificar')}</button>
       </div>`;
     }).join('');
-    const more = _unmatched.length > 15 ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem">${t2(`+${_unmatched.length - 15} more not shown`, `+${_unmatched.length - 15} mais não mostrados`)}</div>` : '';
+    const more = _unmatched.length > UNM_LIMIT
+      ? `<div style="padding:0.5rem;text-align:center"><a href="javascript:void(0)" onclick="window._unmatchedExpanded=${unmExpanded ? 'false' : 'true'};render()" style="color:var(--gold);font-size:0.76rem;text-decoration:none;font-weight:600">${unmExpanded ? t2('▲ Show less', '▲ Mostrar menos') : `▼ ${t2(`Show all ${_unmatched.length}`, `Mostrar todos (${_unmatched.length})`)}`}</a></div>`
+      : '';
     unmatchedNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(245,180,60,0.07);border-color:rgba(245,180,60,0.4)">
       <span style="font-size:1rem">🔀</span>
       <div style="flex:1"><strong>${t2('Unmatched transfers', 'Transferências sem par')}</strong> — ${t2('these are the biggest send destinations we do not recognize. If any is your own deposit address at an exchange, or another wallet of yours, classify it so the transfer is linked (and not mistaken for a sale). Sends to swap/bridge routers are already filtered out.', 'estes são os maiores destinos de envio que não reconhecemos. Se algum for o teu endereço de depósito numa exchange, ou outra carteira tua, classifica-o para a transferência ser ligada (e não confundida com uma venda). Envios para routers de swap/bridge já estão filtrados.')}
