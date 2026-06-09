@@ -11851,10 +11851,18 @@ function _getFifoStateFor(w) {
 // para não desperdiçar pedidos a cada reload (cada 400 conta para o rate-limit e, em
 // rajada, dispara 429 que faz faltar dados no portfólio). Pré-semeado com as chains
 // que sabemos não estarem no plano Alchemy atual.
-const _ALCHEMY_KNOWN_UNAVAILABLE = ['superseed','metis','mantle','mode','sonic','moonbeam','frax','opbnb','polygonzkevm','bob','flow','sei','astar'];
+// Chains que a chave Alchemy não serve DE TODO (nem RPC básico). Vazia: as chains exóticas
+// que aqui estavam (metis, sonic, frax, etc.) afinal RESPONDEM a RPC básico (eth_getBalance/
+// eth_call) — só não têm as Enhanced APIs (geridas por NO_ENHANCED_API_CHAINS). Pré-semeá-las
+// como indisponíveis escondia os saldos reais dessas redes. Mantém-se só a marcação dinâmica
+// (uma chain só entra aqui se um pedido falhar mesmo, e nunca por falta de Enhanced APIs).
+const _ALCHEMY_KNOWN_UNAVAILABLE = [];
+// MIGRAÇÃO: limpar marcações persistidas em sessões antigas que incluíam estas 13 chains
+// (semeadas pela versão anterior). Sem isto, voltariam a entrar a partir do localStorage.
+const _ALCHEMY_RPC_BASIC_OK = new Set(['superseed','metis','mantle','mode','sonic','moonbeam','frax','opbnb','polygonzkevm','zkevm','bob','flow','sei','astar']);
 let _alchemyChainUnavailable;
 try {
-  const _saved = JSON.parse(localStorage.getItem('_alchemyUnavail_v1') || '[]');
+  const _saved = JSON.parse(localStorage.getItem('_alchemyUnavail_v1') || '[]').filter(c => !_ALCHEMY_RPC_BASIC_OK.has(c));
   _alchemyChainUnavailable = new Set([..._ALCHEMY_KNOWN_UNAVAILABLE, ..._saved]);
 } catch { _alchemyChainUnavailable = new Set(_ALCHEMY_KNOWN_UNAVAILABLE); }
 // Sempre que aprendemos uma nova chain indisponível, persiste (debounced via microtask).
