@@ -9569,6 +9569,10 @@ const KNOWN_ROUTERS = {
   '0x2626664c2603336e57b271c5c0b26f421741e481': 'Uniswap Router (Base)',
   '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 'USDC (token contract)',
   '0x6352a56caadc4f1e25cd6c75970fa768a3304e64': 'OpenOcean Router',
+  // Pool Party (joinpoolparty.io) — actively-managed DeFi liquidity pools. These contracts show up
+  // as generic ("ERC1967Proxy" / unnamed) on explorers, so they're matched by exact address.
+  '0xd6f2f4b4638f8783e2b7697454c6bf292f25b54f': 'Pool Party',
+  '0x90b5f4d2aeca515d368bb73e4b3cd4155dcb42d3': 'Pool Party',
 };
 window.aurumKnownRouters = KNOWN_ROUTERS;
 
@@ -9795,6 +9799,55 @@ const _PROTOCOL_PATTERNS = [
   [/superminter|secondaryswap|calllerandcommenter|onchaingm/i, 'Sound/Zora'],
   [/megabadge|badge/i, 'Badge (NFT)'],
   [/dmail/i, 'Dmail'],
+  // DEXs / AMMs seen in the real list
+  [/pancake/i, 'PancakeSwap'],
+  [/camelot/i, 'Camelot'],
+  [/ramses/i, 'Ramses'],
+  [/thruster/i, 'Thruster'],
+  [/izumi|izi[sz]wap/i, 'iZiSwap'],
+  [/syncswap/i, 'SyncSwap'],
+  [/fraxswap|^frax/i, 'Frax'],
+  [/joepair|joev\d|traderjoe|^joe/i, 'Trader Joe (LFJ)'],
+  [/bakeryswap/i, 'BakerySwap'],
+  [/deltaswap/i, 'DeltaSwap'],
+  [/crocswap/i, 'Ambient (Croc)'],
+  [/algebra/i, 'Algebra DEX'],
+  [/dodo/i, 'DODO'],
+  [/woorouter|woocross|woosupercharger|masterchefwoo|^woo/i, 'WOO'],
+  [/elementex/i, 'Element'],
+  [/rainbowrouter/i, 'Rainbow'],
+  // Lending / yield / vaults seen in the real list
+  [/pendle/i, 'Pendle'],
+  [/silo/i, 'Silo'],
+  [/fluid|fluidliquidity/i, 'Fluid'],
+  [/sturdy/i, 'Sturdy'],
+  [/boringvault/i, 'Veda (BoringVault)'],
+  [/hypervisor/i, 'Gamma (Hypervisor)'],
+  [/ichivault|ichi/i, 'ICHI'],
+  [/steerperiphery|steer/i, 'Steer'],
+  [/beefy/i, 'Beefy'],
+  [/timeswap/i, 'Timeswap'],
+  [/merc20delegator|^moonwell|mtoken/i, 'Moonwell'],
+  [/vbnb|venus/i, 'Venus'],
+  [/lyra/i, 'Lyra'],
+  [/theo/i, 'Theo'],
+  // Bridges / messaging / cross-chain seen in the real list
+  [/orbiter/i, 'Orbiter'],
+  [/meson/i, 'Meson'],
+  [/hashflow/i, 'Hashflow'],
+  [/portico/i, 'Portico'],
+  [/gaszip|gasmovr|gasbridge/i, 'Gas refuel'],
+  [/warproute|hyperlane/i, 'Hyperlane'],
+  [/butterrouter|butter/i, 'Butter'],
+  [/zetaregistry|zeta/i, 'ZetaChain'],
+  [/portalrouter|portalsrouter|portalsmulticall/i, 'Portals'],
+  [/rubic|crosschainswap/i, 'Rubic'],
+  [/rango/i, 'Rango'],
+  // Names / identity / social
+  [/registrarcontroller|basenames|ensregistr/i, 'ENS/Basenames'],
+  [/zora1155|zorauniversal|zora/i, 'Zora'],
+  [/seadrop|opensea/i, 'OpenSea'],
+  [/alienswap/i, 'Alienswap'],
   // Misc infra
   [/stakinghelper|staking/i, 'Staking'],
   [/bridgehelper|bridge/i, 'Bridge'],
@@ -9819,8 +9872,17 @@ function _protocolFromName(name) {
   // (3) Brand before a colon.
   let s = raw;
   if (s.includes(':')) s = s.split(':')[0].trim();
-  // (4) Strip contract-type suffixes so we keep the protocol, not the contract role.
-  s = s.replace(/\b(Router|Diamond|Proxy|Pool|Vault|Factory|Implementation|Gateway|Delegator|V\d+)\b/gi, '').trim();
+  // (4) Strip trailing version/role suffixes to expose the brand. Applied repeatedly so e.g.
+  // "PancakeV3Pool" → "Pancake", "RamsesV3Pool" → "Ramses", "CamelotPair" → "Camelot",
+  // "SyncSwapClassicPool" → "SyncSwap". Guarded: we only strip if a meaningful brand (≥3 chars)
+  // remains, so short names like "Pool" or "Pair" alone aren't gutted into nothing.
+  const _SUFFIX = /(Router|Diamond|Proxy|Delegator|Implementation|Gateway|Wrapper|Helper|Manager|Periphery|Position|Classic|Delegated|Migratable|Native|V\d+(_\d+)?|0\d|Pool|Pair|Gauge|Vault|Token|NFT)$/i;
+  let prev;
+  do {
+    prev = s;
+    const stripped = s.replace(_SUFFIX, '').trim();
+    if (stripped.length >= 3) s = stripped;  // keep stripping while a real brand remains
+  } while (s !== prev);
   s = s.replace(/\s{2,}/g, ' ').replace(/[·\-_]+$/, '').trim();
   return s || raw;
 }
@@ -9879,12 +9941,46 @@ async function _blockscoutInfo(chain, address) {
   return null;
 }
 
+// Reconciles cached destination classifications with the current KNOWN_ROUTERS list. When a new
+// address is added to KNOWN_ROUTERS (e.g. a protocol like Pool Party whose contracts show up
+// generically on explorers), any previously-cached generic classification for that address is
+// upgraded in place to the known label. Returns the number of entries updated. Safe to call often.
+function aurumReconcileKnownDests() {
+  const routers = window.aurumKnownRouters || {};
+  const cd = state.classifiedDests || {};
+  let updated = 0;
+  for (const addr of Object.keys(cd)) {
+    const known = routers[addr];
+    if (!known) continue;
+    const info = cd[addr];
+    const proto = _protocolFromName(known);
+    // Only overwrite auto classifications (never a manual CEX/own choice the user made on purpose).
+    if (info && info.kind === 'cex') continue;
+    if (info && info.kind === 'own' && !info.auto) continue;
+    if (info && info.label === known && info.protocol === proto) continue; // already correct
+    cd[addr] = { kind: 'contract', label: known, protocol: proto, auto: true, via: 'known', at: Date.now() };
+    updated++;
+  }
+  if (updated) {
+    try { saveState(); } catch (_) {}
+    try { Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_') || k.startsWith('_unmatched_')) delete window[k]; }); } catch (_) {}
+  }
+  return updated;
+}
+window.aurumReconcileKnownDests = aurumReconcileKnownDests;
+
 async function aurumAutoClassifyDests(events, opts = {}) {
   const onProgress = opts.onProgress || (() => {});
   const ownerAddrs = new Set((_allOwnerAddresses() || []).map(a => a.toLowerCase()));
   if (!state.classifiedDests) state.classifiedDests = {};
   const routers = window.aurumKnownRouters || {};
   const key = _anyEtherscanKey();
+
+  // Reconcile cache with the known-router list: if an address was previously cached generically
+  // (e.g. "ERC1967Proxy") but is now in KNOWN_ROUTERS (e.g. a newly-added protocol like Pool Party),
+  // upgrade its label/protocol in place. Runs every time so newly-added known addresses take effect
+  // without the user having to reset them by hand.
+  aurumReconcileKnownDests();
 
   // Candidate list: unknown destinations + the chain each appeared on (first chain seen).
   const unmatched = aurumUnmatchedTransfers(events, { limit: 500 });
@@ -10808,6 +10904,9 @@ async function loadState() {
         Object.assign(state, migrated);
       }
       _ensureStateShape();
+      // Upgrade any cached destination labels for addresses newly added to KNOWN_ROUTERS
+      // (e.g. Pool Party), so they show the right protocol name without a manual reset.
+      try { if (typeof aurumReconcileKnownDests === 'function') aurumReconcileKnownDests(); } catch (_) {}
 
       // Request browser persistence (best effort)
       storageManager.requestPersistence().catch(() => {});
