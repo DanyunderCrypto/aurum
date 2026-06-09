@@ -5272,6 +5272,17 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
   const s = size;
   const fallback = _logoFallbackCircle(symbol, 'var(--bg3)', s);
   const urls = [];
+  // Reaproveitar metadata de holdings soltos: cards de posição (Moralis/Mobula) muitas vezes
+  // só têm o símbolo (address/logo vazios). Se o MESMO símbolo existe como holding com logo da
+  // Alchemy, herdamos contract+logoUrl+chain daí. É o que faz o USDat ter logo no card = donut.
+  if (symbol && (!logoUrl || !contract)) {
+    const hit = window._logoBySymbol && window._logoBySymbol[symbol.toUpperCase()];
+    if (hit) {
+      if (!logoUrl && hit.logoUrl) logoUrl = hit.logoUrl;
+      if (!contract && hit.contract) contract = hit.contract;
+      if (!chain && hit.chain) chain = hit.chain;
+    }
+  }
   // 1ª fonte: o logo que a Alchemy já nos deu na resposta dos saldos (quando existe).
   // SEGURANÇA: só carregamos logos de domínios de CONFIANÇA. Tokens de scam (sobretudo
   // na Solana) trazem metadata com URLs IPFS/arbitrários que podem ser maliciosos
@@ -15003,6 +15014,18 @@ function renderPortfolioCharts(w) {
       m.qty += h.qty; m.value += value; m.contract = m.contract || h.contract; m.chain = h.chain;
       if (h.logoUrl && !m.logoUrl) m.logoUrl = h.logoUrl;
       assetMeta.set(h.asset, m);
+      // Mapa global símbolo→{contract,logoUrl,chain}: os cards de posição (Moralis/Mobula)
+      // muitas vezes só têm o símbolo (address/logo vêm vazios da API). Este mapa deixa-os
+      // reaproveitar o contract+logoUrl que a Alchemy já deu ao MESMO token enquanto holding
+      // solto — por isso o USDat passa a ter logo no card, igual ao donut.
+      if (h.asset && (h.contract || h.logoUrl)) {
+        window._logoBySymbol = window._logoBySymbol || {};
+        const key = h.asset.toUpperCase();
+        const ex = window._logoBySymbol[key];
+        if (!ex || (!ex.logoUrl && h.logoUrl)) {
+          window._logoBySymbol[key] = { contract: h.contract || (ex && ex.contract) || '', logoUrl: h.logoUrl || (ex && ex.logoUrl) || '', chain: h.chain || (ex && ex.chain) || '' };
+        }
+      }
       totalPortfolio += value;
     }
     // Batch-fetch Chainlink prices (oracle-grade) for tokens with feeds, then re-render.
