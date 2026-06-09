@@ -11595,6 +11595,7 @@ function afterRender() {
     if (typeof updateSim === 'function') updateSim();
   }
   if (currentTab === 'dashboard') startInterestTicker();
+  if (currentTab === 'dashboard' && typeof _hydrateSparklines === 'function') { _hydrateSparklines().catch(() => {}); }
   else stopInterestTicker();
   applyStealthMode();
   if (typeof applyStaticI18n === 'function') applyStaticI18n();
@@ -15184,19 +15185,18 @@ function renderPortfolioCharts(w) {
   const chainBarsHTML = _chainsToShow.map(([chain, val], i) => {
     const pct = (val / totalPortfolio) * 100;
     return `
-      <div style="display:flex;align-items:center;gap:0.6rem;font-size:0.78rem">
-        <div style="min-width:70px;font-family:var(--mono);text-transform:uppercase;color:var(--text-muted);font-size:0.7rem">${chain}</div>
-        <div style="flex:1;background:var(--bg2);height:10px;border-radius:5px;overflow:hidden">
-          <div style="background:${colors[i % colors.length]};height:100%;width:${pct}%;transition:width 0.3s"></div>
-        </div>
-        <div style="min-width:90px;text-align:right;font-family:var(--mono);font-size:0.74rem">€${fmt(val)} · ${pct.toFixed(1)}%</div>
+      <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.7rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:9px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${colors[i % colors.length]};flex-shrink:0"></div>
+        <div style="font-family:var(--mono);text-transform:uppercase;color:var(--text);font-size:0.72rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${chain}</div>
+        <div style="text-align:right;white-space:nowrap;font-family:var(--mono);font-size:0.72rem"><span style="color:var(--text)">€${fmt(val)}</span> <span style="color:var(--text-dim)">${pct.toFixed(1)}%</span></div>
       </div>
     `;
-  }).join('') + (
+  }).join('');
+  const chainToggleHTML = (
     (!_showAllChains && _hiddenChains > 0)
-      ? `<button onclick="window._showAllChains=true;render()" style="background:none;border:none;color:var(--gold);font-size:0.74rem;cursor:pointer;padding:0.4rem 0;text-align:left;font-family:var(--mono)">+ ver mais ${_hiddenChains} rede${_hiddenChains>1?'s':''}</button>`
+      ? `<button onclick="window._showAllChains=true;render()" style="background:none;border:none;color:var(--blue);font-size:0.74rem;cursor:pointer;padding:0.6rem 0 0;text-align:left;font-family:var(--mono)">+ ver mais ${_hiddenChains} rede${_hiddenChains>1?'s':''}</button>`
       : (_showAllChains && sortedChains.length > _CHAIN_LIMIT)
-        ? `<button onclick="window._showAllChains=false;render()" style="background:none;border:none;color:var(--text-muted);font-size:0.74rem;cursor:pointer;padding:0.4rem 0;text-align:left;font-family:var(--mono)">− mostrar menos</button>`
+        ? `<button onclick="window._showAllChains=false;render()" style="background:none;border:none;color:var(--text-muted);font-size:0.74rem;cursor:pointer;padding:0.6rem 0 0;text-align:left;font-family:var(--mono)">− mostrar menos</button>`
         : ''
   );
 
@@ -15218,13 +15218,67 @@ function renderPortfolioCharts(w) {
           <span style="font-size:0.7rem;color:var(--text-muted)">${sortedChains.length} chain${sortedChains.length>1?'s':''}</span>
         </div>
         <div class="panel-body">
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.5rem 1.5rem">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.5rem">
             ${chainBarsHTML}
           </div>
+          ${chainToggleHTML}
         </div>
       </div>
     </div>
   `;
+}
+
+// ── Sparklines por token (coluna "7 dias", estilo Koinly) ──────────────────
+// Busca a série de preços de 7 dias do DefiLlama (/chart) em batch, com cache em
+// memória (a sessão chega — não vale a pena persistir um gráfico decorativo). Os
+// mini-gráficos são injetados DEPOIS do render (assíncrono, não bloqueia o dashboard).
+window._sparkCache = window._sparkCache || {};
+async function _fetchSparklines(coinIds) {
+  const need = [...new Set(coinIds)].filter(id => id && !(id in window._sparkCache));
+  if (!need.length) return;
+  // DefiLlama /chart aceita vários coins separados por vírgula. span=8 pontos, 1 por dia.
+  const BATCH = 30;
+  for (let i = 0; i < need.length; i += BATCH) {
+    const slice = need.slice(i, i + BATCH);
+    try {
+      const url = `${DEFILLAMA_BASE}/chart/${slice.map(encodeURIComponent).join(',')}?span=8&period=1d&searchWidth=6h`;
+      const res = await fetch(url);
+      if (!res.ok) { slice.forEach(id => window._sparkCache[id] = null); continue; }
+      const json = await res.json();
+      const coins = json.coins || {};
+      slice.forEach(id => {
+        const c = coins[id];
+        const prices = (c && Array.isArray(c.prices)) ? c.prices.map(p => p.price).filter(n => n > 0) : null;
+        window._sparkCache[id] = (prices && prices.length >= 2) ? prices : null;
+      });
+    } catch { slice.forEach(id => window._sparkCache[id] = null); }
+  }
+}
+// Mini-SVG da série de preços. Verde se subiu no período, vermelho se desceu. Sem eixos.
+function _renderMiniSpark(prices, w = 72, h = 22) {
+  if (!prices || prices.length < 2) return '';
+  const min = Math.min(...prices), max = Math.max(...prices), range = (max - min) || 1;
+  const pts = prices.map((p, i) => {
+    const x = (i / (prices.length - 1)) * w;
+    const y = h - ((p - min) / range) * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const up = prices[prices.length - 1] >= prices[0];
+  const col = up ? 'var(--green, #34D399)' : 'var(--red, #F87171)';
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" style="display:block"><polyline points="${pts.join(' ')}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+// Depois do render: busca os sparklines dos tokens visíveis e injeta-os nos placeholders.
+async function _hydrateSparklines() {
+  const slots = Array.from(document.querySelectorAll('[data-spark-coinid]'));
+  if (!slots.length) return;
+  const ids = slots.map(s => s.getAttribute('data-spark-coinid')).filter(Boolean);
+  await _fetchSparklines(ids);
+  slots.forEach(slot => {
+    const id = slot.getAttribute('data-spark-coinid');
+    const prices = window._sparkCache[id];
+    const svg = _renderMiniSpark(prices);
+    if (svg) slot.innerHTML = svg;
+  });
 }
 
 // Pure SVG donut chart — now with token logos and per-asset unrealized PnL in the legend
@@ -15291,6 +15345,12 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
         }
       }
     }
+    // Sparkline de 7 dias (preenchido assincronamente após o render via _hydrateSparklines).
+    let sparkSlot = '';
+    if (!isOther && meta && typeof resolveCoinId === 'function') {
+      const cid = resolveCoinId(s.label, meta.chain, meta.contract);
+      if (cid) sparkSlot = `<div data-spark-coinid="${cid}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+    }
     return `
       <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.25rem;border-bottom:1px solid var(--border-soft)">
         ${logo}
@@ -15298,6 +15358,7 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.98rem;font-weight:600;color:var(--text)">${s.label}</div>
           <div style="font-family:var(--mono);font-size:0.76rem;color:var(--text-dim);margin-top:0.12rem">${(s.pct*100).toFixed(1)}%</div>
         </div>
+        ${sparkSlot}
         <div style="text-align:right;white-space:nowrap">
           <div style="font-family:var(--mono);font-size:0.98rem;font-weight:600;color:var(--text)">€${fmt(s.value)}</div>
           ${pnlHtml}
