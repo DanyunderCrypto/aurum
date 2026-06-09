@@ -9782,7 +9782,14 @@ async function _blockscoutInfo(chain, address) {
       if (!res.ok) continue;
       const j = await res.json();
       if (!j) continue;
-      const name = (j.name || (j.public_tags && j.public_tags[0] && j.public_tags[0].display_name) || '');
+      // Name priority: a public tag (curated label) > the implementation name (for proxies, the
+      // top-level name is just "ERC1967Proxy" — the real protocol is in implementations[].name,
+      // e.g. "Dmailmail") > the contract's own name. This surfaces the actual protocol.
+      const implName = Array.isArray(j.implementations) && j.implementations[0] && j.implementations[0].name;
+      const publicTag = Array.isArray(j.public_tags) && j.public_tags[0] && (j.public_tags[0].display_name || j.public_tags[0].label);
+      const topName = j.name || '';
+      const isProxy = !!j.proxy_type || /proxy/i.test(topName);
+      const name = publicTag || (isProxy && implName) || topName || implName || '';
       return {
         isContract: !!j.is_contract,
         name,
