@@ -9671,6 +9671,18 @@ window.aurumUnclassifyDest = aurumUnclassifyDest;
 // the key). Gracefully degrades: if no key, we still classify known routers from KNOWN_ROUTERS.
 const _ETHERSCAN_V2 = 'https://api.etherscan.io/v2/api';
 
+// Chains the Etherscan V2 API actually covers (getcontractcreation works). L2s NOT here
+// (Soneium, Ink, Lens, Abstract, Berachain, etc.) have their own explorers — the V2 API
+// returns nothing for them, so a contract there would wrongly look like an EOA. For those we
+// can't verify creator/contract status, so we treat unknown destinations on uncovered chains
+// as 'contract' (almost always infra/routers on new L2s, never a personal CEX deposit address).
+const _ETHERSCAN_V2_CHAINS = new Set([
+  'eth', 'bsc', 'polygon', 'arbitrum', 'optimism', 'base', 'avalanche', 'gnosis', 'mantle',
+  'scroll', 'linea', 'zksync', 'zkevm', 'blast', 'celo', 'sonic', 'moonbeam', 'opbnb', 'fraxtal',
+  'frax', 'unichain', 'apechain', 'worldchain', 'sei', 'bob', 'taiko', 'wemix', 'cronos', 'kroma',
+  'metis', 'zora', 'fantom',
+]);
+
 // chain key → Etherscan V2 chainid (from CHAINS map). Only chains Etherscan V2 supports.
 function _etherscanChainId(chain) {
   try { return (CHAINS[chain] && CHAINS[chain].id) || null; } catch (_) { return null; }
@@ -9696,13 +9708,27 @@ async function aurumAutoClassifyDests(events, opts = {}) {
     .map(u => ({ address: u.address, chain: (u.chains && u.chains[0]) || 'eth' }))
     .filter(c => c.address && c.address.length >= 20);
 
-  let autoOwn = 0, autoContract = 0, autoRouter = 0, manual = 0;
+  let autoOwn = 0, autoContract = 0, autoRouter = 0, autoUncovered = 0, manual = 0;
 
   // First pass (free, no API): known routers → 'contract'.
   for (const c of candidates) {
     if (routers[c.address]) {
       state.classifiedDests[c.address] = { kind: 'contract', label: routers[c.address], auto: true, at: Date.now() };
       autoRouter++;
+    }
+  }
+
+  // Second pass (free, no API): destinations on chains the Etherscan V2 API does NOT cover
+  // (Soneium, Ink, Lens, Abstract, etc.). We can't verify them, but a destination receiving
+  // dozens of native-ETH sends on a brand-new L2 is virtually always infra (router/bridge),
+  // not a personal CEX deposit address. Mark as 'contract' with a note so it leaves the manual
+  // list. (If the user disagrees, they can still reclassify — nothing is taxed differently:
+  // 'contract' just means "not my CEX deposit / not my wallet".)
+  for (const c of candidates) {
+    if (state.classifiedDests[c.address]) continue;
+    if (!_ETHERSCAN_V2_CHAINS.has(c.chain)) {
+      state.classifiedDests[c.address] = { kind: 'contract', label: `Unverifiable (${c.chain} not on Etherscan API)`, auto: true, uncovered: true, at: Date.now() };
+      autoUncovered++;
     }
   }
 
@@ -9762,9 +9788,12 @@ async function aurumAutoClassifyDests(events, opts = {}) {
     manual += remaining.length;
   }
 
+  const summary = { autoOwn, autoContract, autoRouter, autoUncovered, manual, hadKey: !!key, at: Date.now() };
+  state._autoClassifySummary = summary;
   try { saveState(); } catch (_) {}
-  try { Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_')) delete window[k]; }); } catch (_) {}
-  return { autoOwn, autoContract, autoRouter, manual, hadKey: !!key };
+  // Invalidate caches so the panel re-renders with the now-classified addresses removed.
+  try { Object.keys(window).forEach(k => { if (k.startsWith('_fifoCache_') || k.startsWith('_ownerFifoCache_') || k.startsWith('_unmatched_')) delete window[k]; }); } catch (_) {}
+  return summary;
 }
 window.aurumAutoClassifyDests = aurumAutoClassifyDests;
 
@@ -9792,6 +9821,7 @@ async function aurumAutoClassifyDestsUI(walletId) {
     const parts = [];
     if (r.autoOwn) parts.push(t2(`${r.autoOwn} your own contract(s)`, `${r.autoOwn} contrato(s) teu(s)`));
     if (r.autoContract + r.autoRouter) parts.push(t2(`${r.autoContract + r.autoRouter} smart contract(s)/router(s)`, `${r.autoContract + r.autoRouter} contrato(s)/router(s)`));
+    if (r.autoUncovered) parts.push(t2(`${r.autoUncovered} on chains the API can't verify (likely infra)`, `${r.autoUncovered} em chains que a API não verifica (provável infra)`));
     if (r.manual) parts.push(t2(`${r.manual} left to classify manually`, `${r.manual} para classificar à mão`));
     const msg = parts.length ? parts.join(' · ') : t2('Nothing new to classify', 'Nada novo para classificar');
     const keyNote = r.hadKey ? '' : t2(' (add an Etherscan API key in Settings for full auto-detection)', ' (adiciona uma chave Etherscan nas Definições para auto-deteção completa)');
@@ -19400,11 +19430,52 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   // imported CSV (basis travels, transfer isn't taxed); as "own wallet" marks it a self-transfer.
   const _unmatched = walletId ? window['_unmatched_' + walletId] : null;
   let unmatchedNote = '';
-  if (Array.isArray(_unmatched) && _unmatched.length) {
+  // Persistent summary of the last auto-classification (so the user sees what it did, beyond the toast).
+  let autoSummary = '';
+  const _acs = state._autoClassifySummary;
+  if (_acs && (_acs.autoOwn || _acs.autoContract || _acs.autoRouter || _acs.autoUncovered)) {
+    const bits = [];
+    if (_acs.autoOwn) bits.push(t2(`${_acs.autoOwn} your own contract(s)`, `${_acs.autoOwn} contrato(s) teu(s)`));
+    if (_acs.autoContract + _acs.autoRouter) bits.push(t2(`${_acs.autoContract + _acs.autoRouter} smart contract(s)/router(s)`, `${_acs.autoContract + _acs.autoRouter} contrato(s)/router(s)`));
+    if (_acs.autoUncovered) bits.push(t2(`${_acs.autoUncovered} on unverifiable chains`, `${_acs.autoUncovered} em chains não verificáveis`));
+    autoSummary = `<div style="font-size:0.72rem;color:var(--green);margin-top:0.4rem">✓ ${t2('Auto-detected and removed from the list', 'Auto-detetados e removidos da lista')}: ${bits.join(' · ')}. <a href="javascript:void(0)" onclick="window._showClassified=${window._showClassified ? 'false' : 'true'};render()" style="color:var(--blue,#3B82F6);text-decoration:none">${window._showClassified ? t2('hide', 'esconder') : t2('view', 'ver')}</a></div>`;
+  }
+  // Build the "classified" list (what auto-detect + manual triage resolved), shown on demand.
+  let classifiedList = '';
+  if (window._showClassified) {
+    const cd = state.classifiedDests || {};
+    const entries = Object.entries(cd);
+    if (entries.length) {
+      const kindLabel = (info) => {
+        if (info.kind === 'own') return t2('Your wallet/contract', 'Carteira/contrato teu');
+        if (info.kind === 'cex') return `CEX: ${info.exchange || '?'}`;
+        if (info.kind === 'contract') return info.uncovered ? t2('Contract (unverifiable chain)', 'Contrato (chain não verificável)') : t2('Smart contract', 'Contrato');
+        return t2('Ignored', 'Ignorado');
+      };
+      const crows = entries.slice(0, window._classifiedExpanded ? entries.length : 20).map(([addr, info]) => `
+        <div style="display:flex;justify-content:space-between;gap:0.6rem;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center">
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:0.7rem;word-break:break-all;line-height:1.4;user-select:all;color:var(--text-muted)">${addr}</div>
+            <div style="font-size:0.68rem;color:var(--text-muted)">${kindLabel(info)}${info.auto ? ' · auto' : ''}</div>
+          </div>
+          <button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:0.68rem;padding:0.15rem 0.45rem" onclick="window.aurumUnclassifyDest('${String(addr).replace(/'/g, "\\'")}')">${t2('Undo', 'Repor')}</button>
+        </div>`).join('');
+      const cmore = entries.length > 20
+        ? `<div style="padding:0.4rem;text-align:center"><a href="javascript:void(0)" onclick="window._classifiedExpanded=${window._classifiedExpanded ? 'false' : 'true'};render()" style="color:var(--blue,#3B82F6);font-size:0.72rem;text-decoration:none">${window._classifiedExpanded ? t2('▲ Show less', '▲ Mostrar menos') : `▼ ${t2(`Show all ${entries.length}`, `Mostrar todos (${entries.length})`)}`}</a></div>`
+        : '';
+      classifiedList = `<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px dashed var(--border)">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.3rem">${t2('Classified destinations', 'Destinos classificados')} (${entries.length})</div>
+        ${crows}${cmore}
+      </div>`;
+    }
+  }
+
+  const _hasUnmatched = Array.isArray(_unmatched) && _unmatched.length;
+  if (_hasUnmatched || autoSummary || classifiedList) {
     const esc = s => String(s || '').replace(/'/g, "\\'");
     const unmExpanded = window._unmatchedExpanded === true;
     const UNM_LIMIT = 15;
-    const shown = unmExpanded ? _unmatched : _unmatched.slice(0, UNM_LIMIT);
+    const shown = _hasUnmatched ? (unmExpanded ? _unmatched : _unmatched.slice(0, UNM_LIMIT)) : [];
     const rows = shown.map(u => {
       const chains = u.chains.slice(0, 4).map(c => c.toUpperCase()).join(', ') + (u.chains.length > 4 ? '…' : '');
       const assets = u.assets.slice(0, 4).join(', ') + (u.assets.length > 4 ? '…' : '');
@@ -19416,9 +19487,13 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
         <button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:0.7rem;padding:0.2rem 0.5rem" onclick="window.aurumOpenClassifyDest('${esc(u.address)}', ${u.count})">${t2('Classify', 'Classificar')}</button>
       </div>`;
     }).join('');
-    const more = _unmatched.length > UNM_LIMIT
+    const more = (_hasUnmatched && _unmatched.length > UNM_LIMIT)
       ? `<div style="padding:0.5rem;text-align:center"><a href="javascript:void(0)" onclick="window._unmatchedExpanded=${unmExpanded ? 'false' : 'true'};render()" style="color:var(--gold);font-size:0.76rem;text-decoration:none;font-weight:600">${unmExpanded ? t2('▲ Show less', '▲ Mostrar menos') : `▼ ${t2(`Show all ${_unmatched.length}`, `Mostrar todos (${_unmatched.length})`)}`}</a></div>`
       : '';
+    const detailsBlock = _hasUnmatched ? `<details style="margin-top:0.6rem" ${window._unmatchedOpen ? 'open' : ''} ontoggle="window._unmatchedOpen=this.open">
+        <summary style="cursor:pointer;font-size:0.74rem;color:var(--amber,#d97706)">${t2(`Review ${_unmatched.length} unknown destination(s)`, `Rever ${_unmatched.length} destino(s) desconhecido(s)`)}</summary>
+        <div style="margin-top:0.4rem">${rows}${more}</div>
+      </details>` : `<div style="font-size:0.74rem;color:var(--green);margin-top:0.5rem">✓ ${t2('No unknown destinations left to classify.', 'Não há destinos desconhecidos por classificar.')}</div>`;
     unmatchedNote = `<div class="alert" style="margin-bottom:0.8rem;font-size:0.76rem;align-items:flex-start;background:rgba(245,180,60,0.07);border-color:rgba(245,180,60,0.4)">
       <span style="font-size:1rem">🔀</span>
       <div style="flex:1"><strong>${t2('Unmatched transfers', 'Transferências sem par')}</strong> — ${t2('these are send destinations we do not recognize. Run auto-detect first — it identifies your own contracts (agent smart-accounts) and known routers/protocols automatically. What is left is most likely your private deposit address at an exchange, or another wallet of yours: classify those by hand so the transfer is linked (and not mistaken for a sale).', 'estes são destinos de envio que não reconhecemos. Corre a auto-deteção primeiro — identifica automaticamente os teus próprios contratos (smart-accounts de agentes) e routers/protocolos conhecidos. O que sobrar é, muito provavelmente, o teu endereço de depósito privado numa exchange, ou outra carteira tua: classifica esses à mão para a transferência ser ligada (e não confundida com uma venda).')}
@@ -19431,10 +19506,9 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
           </div>
         </div>
       </div>
-      <details style="margin-top:0.6rem" ${window._unmatchedOpen ? 'open' : ''} ontoggle="window._unmatchedOpen=this.open">
-        <summary style="cursor:pointer;font-size:0.74rem;color:var(--amber,#d97706)">${t2(`Review ${_unmatched.length} unknown destination(s)`, `Rever ${_unmatched.length} destino(s) desconhecido(s)`)}</summary>
-        <div style="margin-top:0.4rem">${rows}${more}</div>
-      </details>
+      ${autoSummary}
+      ${detailsBlock}
+      ${classifiedList}
       </div>
     </div>`;
   }
