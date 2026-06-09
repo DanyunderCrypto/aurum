@@ -14461,7 +14461,7 @@ function renderDefiPositions(w) {
     const _solToks = (p.tokens || []).filter(t => t.symbol);
     // Detalhe: tokens da posição + metadata relevante (APY, health factor, in-range, leverage)
     const tokensHtml = _solToks.map(t =>
-      `${fmt(t.amount)} ${t.symbol}${t.valueUSD ? ` ($${(t.valueUSD).toFixed(2)})` : ''}`).join(' + ');
+      `${fmt(t.amount)} ${t.symbol}${t.valueUSD ? ` (€${fmt(t.valueUSD * (window._lastEurUsdRate || (typeof live!=='undefined'&&live.eurRate)||0.92))})` : ''}`).join(' + ');
     let metaHtml = '';
     const md = p.metadata || {};
     const _apy = (md.apy && parseFloat(md.apy) > 0) ? (parseFloat(md.apy) < 1 ? parseFloat(md.apy) : parseFloat(md.apy) / 100) : null;
@@ -14603,7 +14603,7 @@ function renderDefiPositions(w) {
     const _mChainName = (CHAINS[mp.chain]?.name) || mp.chain;
     const _mSub = `${(mp.protocol||'').toUpperCase()} · ${(_mChainName||'').toUpperCase()}${mp.label ? ' · ' + mp.label : ''}`;
     const _mMetrics = (mp.apy || mp.unclaimedUSD > 0)
-      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${mp.apy ? `APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>` : ''}${mp.unclaimedUSD>0?`${mp.apy?' · ':''}por reclamar $${fmt(mp.unclaimedUSD)}`:''} <span style="opacity:0.6">· via Moralis</span></div>`
+      ? `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">${mp.apy ? `APY <span style="color:var(--green)">${mp.apy.toFixed(2)}%</span>` : ''}${mp.unclaimedUSD>0?`${mp.apy?' · ':''}por reclamar €${fmt(mp.unclaimedUSD*_mEur)}`:''} <span style="opacity:0.6">· via Moralis</span></div>`
       : `<div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono);opacity:0.6">via Moralis</div>`;
     let _mCard = null;
     if (!isLend && _mTokens.length === 2) {
@@ -14668,7 +14668,7 @@ function renderDefiPositions(w) {
       status: mp.apy ? `<span style="color:var(--green)">APY ${mp.apy.toFixed(2)}%</span>` : (mp.label || ''),
       health: mp.apy ? { type: 'range', inRange: true, label: `APY ${mp.apy.toFixed(2)}%`, color: 'var(--green)' } : null,
       cardData: _mCard,
-      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` ($${fmt(t.usd)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: $${fmt(mp.unclaimedUSD)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
+      detailHTML: `<div style="font-size:0.78rem;color:var(--text-muted);font-family:var(--mono)">${(mp.tokens||[]).map(t => `${t.symbol}: ${Number(t.amount||0).toFixed(4)}${t.usd?` (€${fmt(t.usd*_mEur)})`:''}`).join('<br>')}${mp.unclaimedUSD>0?`<br>Por reclamar: €${fmt(mp.unclaimedUSD*_mEur)}`:''}<br><span style="opacity:0.6">via Moralis · ${mp.label||''}</span></div>`,
     });
   }
 
@@ -15756,6 +15756,10 @@ function renderMorphoMarketCard(m) {
 function renderDefiCard(c) {
   const chainKey = c.chainKey || '';
   const hasLogo = typeof tokenLogo === 'function';
+  // Show all monetary values in EUR (the PT user's currency). Token values are stored in USD;
+  // convert on display using the canonical live rate so the card never mixes € and $.
+  const _r = (typeof live !== 'undefined' && live.eurRate) ? live.eurRate : (window._lastEurUsdRate || 0.92);
+  const _eur = (usd) => '€' + fmt((Number(usd) || 0) * _r);
   // Cor da métrica HF
   const hfColor = c.hf == null ? 'var(--muted)' : c.hf < 1.2 ? 'var(--red)' : c.hf < 1.5 ? 'var(--gold)' : 'var(--green)';
 
@@ -15840,12 +15844,12 @@ function renderDefiCard(c) {
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token0.symbol}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token0.amount||0).toFixed(4)}</div>
-          ${c.pair.token0.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token0.valueUSD)}</div>` : ''}
+          ${c.pair.token0.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(c.pair.token0.valueUSD)}</div>` : ''}
         </div>
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token1.symbol}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token1.amount||0).toFixed(4)}</div>
-          ${c.pair.token1.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(c.pair.token1.valueUSD)}</div>` : ''}
+          ${c.pair.token1.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(c.pair.token1.valueUSD)}</div>` : ''}
         </div>
       </div>`;
   } else if (c.variant === 'aggregate' && c.aggregate) {
@@ -15855,17 +15859,17 @@ function renderDefiCard(c) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.collateral')}</div>
-          <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">$${fmt(ag.collatUSD)}</div>
+          <div style="font-family:var(--mono);color:var(--white);font-weight:600;font-size:0.95rem">${_eur(ag.collatUSD)}</div>
         </div>
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
           <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${t('pos.debt')}</div>
-          <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">$${fmt(ag.debtUSD)}</div>
+          <div style="font-family:var(--mono);color:var(--amber);font-weight:600;font-size:0.95rem">${_eur(ag.debtUSD)}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
         <div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.ltv')}</div><span style="font-family:var(--mono);color:${ltvColor};font-size:0.85rem">${fmt(ag.ltv||0,1)}%</span></div>
         ${ag.liqThreshold != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.liqThreshold')}</div><span style="font-family:var(--mono);color:var(--red);font-size:0.85rem">${(ag.liqThreshold/100).toFixed(2)}%</span></div>` : '<div></div>'}
-        ${ag.availableUSD != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.available')}</div><span style="font-family:var(--mono);color:var(--blue);font-size:0.85rem">$${fmt(ag.availableUSD)}</span></div>` : '<div></div>'}
+        ${ag.availableUSD != null ? `<div><div style="color:var(--text-dim);text-transform:uppercase;font-size:0.62rem;letter-spacing:0.12em;margin-bottom:0.2rem">${t('pos.available')}</div><span style="font-family:var(--mono);color:var(--blue);font-size:0.85rem">${_eur(ag.availableUSD)}</span></div>` : '<div></div>'}
       </div>`;
   } else if (c.variant === 'single' && c.single) {
     const sg = c.single;
@@ -15873,7 +15877,7 @@ function renderDefiCard(c) {
       <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
         <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${sg.kindLabel || 'Posição'}</div>
         <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(sg.amount)} ${sg.symbol}</div>
-        ${sg.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">$${fmt(sg.valueUSD)}</div>` : ''}
+        ${sg.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(sg.valueUSD)}</div>` : ''}
       </div>`;
   }
 
