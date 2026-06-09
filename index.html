@@ -5284,11 +5284,36 @@ function tokenLogo(symbol, chain, contract, size = 24, logoUrl = null) {
     const known = _KNOWN_TOKEN_LOGOS[symbol.toLowerCase()];
     if (known && _isTrustedLogoUrl(known)) urls.push(known);
   }
-  // DexScreener by contract — broadest coverage (2M+ tokens incl. DeFi/protocol tokens).
-  const DS_CHAIN = { eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon', avalanche:'avalanche', bnb:'bsc' };
+  // DexScreener by contract — broad coverage. Expanded chain map (was only 7; the app supports
+  // 40+). Tokens on unmapped chains used to skip straight to the (sparse) symbol fallback.
+  const DS_CHAIN = {
+    eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon',
+    avalanche:'avalanche', bnb:'bsc', bsc:'bsc', scroll:'scroll', gnosis:'gnosischain',
+    linea:'linea', mantle:'mantle', blast:'blast', celo:'celo', sonic:'sonic', zksync:'zksync',
+    metis:'metis', berachain:'berachain', unichain:'unichain', mode:'mode', sei:'seiv2',
+    apechain:'apechain', ronin:'ronin', moonbeam:'moonbeam', abstract:'abstract', worldchain:'worldchain',
+  };
   const dsChain = DS_CHAIN[chain];
-  if (dsChain && contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
-    urls.push(`https://dd.dexscreener.com/ds-data/tokens/${dsChain}/${contract.toLowerCase()}.png`);
+  // Trust Wallet chain slugs (their repo uses its own names). Broad token coverage by contract,
+  // served from a CDN already on our trusted list. Address used as-is (lowercase); the cascade
+  // falls through on 404, so a checksum mismatch just tries the next source — no harm.
+  const TW_CHAIN = {
+    eth:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism', polygon:'polygon',
+    avalanche:'avalanchec', bnb:'smartchain', bsc:'smartchain', gnosis:'xdai', celo:'celo',
+    fantom:'fantom', cronos:'cronos', aurora:'aurora', moonbeam:'moonbeam', metis:'metis',
+  };
+  // DefiLlama token icons (by chainId:contract) — wide chain coverage, good for DeFi/long-tail.
+  const LLAMA_CID = {
+    eth:1, base:8453, arbitrum:42161, optimism:10, polygon:137, bnb:56, bsc:56, avalanche:43114,
+    gnosis:100, scroll:534352, linea:59144, mantle:5000, blast:81457, zksync:324, celo:42220,
+    sonic:146, metis:1088, mode:34443, sei:1329, berachain:80094, unichain:130, soneium:1868,
+    ink:57073, worldchain:480, apechain:33139, ronin:2020, frax:252, moonbeam:1284, opbnb:204,
+  };
+  if (contract && /^0x[a-fA-F0-9]{40}$/.test(contract)) {
+    const lc = contract.toLowerCase();
+    if (dsChain) urls.push(`https://dd.dexscreener.com/ds-data/tokens/${dsChain}/${lc}.png`);
+    if (TW_CHAIN[chain]) urls.push(`https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${TW_CHAIN[chain]}/assets/${contract}/logo.png`);
+    if (LLAMA_CID[chain]) urls.push(`https://token-icons.llamao.fi/icons/tokens/${LLAMA_CID[chain]}/${lc}?h=48&w=48`);
   }
   // cryptocurrency-icons by symbol — well-known coins fallback.
   if (symbol) {
@@ -5325,7 +5350,9 @@ function _isTrustedLogoUrl(url) {
     'cdn.jsdelivr.net',
     'coin-images.coingecko.com', 'assets.coingecko.com',
     'static.coinstats.app',
-    'raw.githubusercontent.com', // token lists oficiais (Solana, Uniswap)
+    'raw.githubusercontent.com', // token lists oficiais (Solana, Uniswap) + Trust Wallet assets
+    'assets-cdn.trustwallet.com', // Trust Wallet token logos (por contrato)
+    'token-icons.llamao.fi', 'icons.llamao.fi', // DefiLlama token + protocol icons
     'arweave.net', // metadata Solana oficial (alguns tokens legítimos)
     'static.jup.ag', 'metadata.jito.network',
   ];
