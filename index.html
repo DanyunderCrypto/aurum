@@ -12777,11 +12777,9 @@ async function fetchPortfolioBalances(evmAddr, key) {
   if (!allNetworks.length) return null;
 
   // O Portfolio API limita o nº de redes por pedido (~15). Enviar as 36 de uma
-  // Lotes de 6 redes: o nº total de páginas é o mesmo (depende do nº de tokens), mas
-  // cada falha perde 6 redes em vez de 12, e a paginação por lote é menos profunda.
-  // (Diagnóstico Jun/2026: a Base sozinha tinha 965 tokens ≈ 10 páginas; um lote de 12
-  // redes ultrapassava largamente o MAX_PAGES antigo e cortava tokens REAIS — apxUSD, USDC.)
-  const NET_BATCH = 6;
+  // vez dá 400 Bad Request. Dividimos em lotes de 12 (folga de segurança) — são
+  // 3 pedidos em vez de milhares, na mesma um salto enorme.
+  const NET_BATCH = 12;
   const netBatches = [];
   for (let i = 0; i < allNetworks.length; i += NET_BATCH) {
     netBatches.push(allNetworks.slice(i, i + NET_BATCH));
@@ -12799,27 +12797,16 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // Conjunto de redes que o Portfolio API rejeita (descoberto dinamicamente).
   // Persiste na sessão para não repetir o erro em refreshes seguintes.
   window._portfolioUnsupported = window._portfolioUnsupported || new Set();
-  // Registo de redes cujo lote falhou NESTE refresh (para diagnóstico e avisos).
-  // Limpo a cada fetch para refletir só o estado atual.
-  window._portfolioFailedNets = new Set();
 
   for (let bi = 0; bi < netBatches.length; bi++) {
     let networks = netBatches[bi].filter(n => !window._portfolioUnsupported.has(n));
     if (!networks.length) continue;
     let pageKey = undefined;
     let pages = 0;
-    // Tecto de SEGURANÇA, não corte: o loop para sozinho quando não há pageKey. Com
-    // lotes de 6 redes e ~100 tokens/página, 40 páginas ≈ 4000 tokens por lote — folga
-    // larga. O corte antigo (5) truncava lotes reais e perdia tokens com valor.
-    const MAX_PAGES = 40;
+    const MAX_PAGES = 5;
     let batchRetries = 0;
-    let retries429 = 0;
     try {
-      // while(pages<MAX) em vez de do/while(pageKey && …): no padrão antigo, um 429 na
-      // PRIMEIRA página fazia `continue` saltar para a condição com pageKey=undefined → o
-      // lote inteiro (12 redes!) era abandonado silenciosamente. Era a causa de holdings
-      // reais (apxUSD, USDC…) desaparecerem de forma intermitente conforme o rate limit.
-      while (pages < MAX_PAGES) {
+      do {
         const body = {
           addresses: [{ address: evmAddr, networks }],
           withMetadata: true,
@@ -12835,15 +12822,9 @@ async function fetchPortfolioBalances(evmAddr, key) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (res.status === 429) { // rate limit — backoff crescente e repete a MESMA página
-          retries429++;
-          if (retries429 > 5) {
-            console.warn(`[Portfolio] lote (${networks.join(',')}) desistiu após 429 repetidos — dados destas redes em falta neste refresh`);
-            networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-            break;
-          }
-          await new Promise(r => setTimeout(r, 1200 * retries429));
-          continue; // condição é pages<MAX_PAGES (ainda true) → repete de facto
+        if (res.status === 429) { // rate limit — espera e repete este lote
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
         }
         if (res.status === 400) {
           // Provável rede não suportada: lê a mensagem, remove a rede e repete.
@@ -12861,15 +12842,9 @@ async function fetchPortfolioBalances(evmAddr, key) {
             pageKey = undefined; pages = 0;
             continue; // tenta o lote de novo sem a rede problemática
           }
-          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado por 400 — dados destas redes em falta neste refresh`);
-          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
           break; // 400 por outra razão — salta o lote
         }
-        if (!res.ok) {
-          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado a meio (HTTP ${res.status}, página ${pages + 1}) — dados possivelmente parciais`);
-          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-          break;
-        }
+        if (!res.ok) break; // outro erro → salta o lote
         const j = await res.json();
         const tokens = j?.data?.tokens || [];
         anySuccess = true;
@@ -12903,12 +12878,8 @@ async function fetchPortfolioBalances(evmAddr, key) {
         }
         pageKey = j?.data?.pageKey;
         pages++;
-        if (!pageKey) break; // sem mais páginas — lote completo
-      }
-    } catch (e) {
-      console.warn(`[Portfolio] lote (${networks.join(',')}) falhou (${e.message}) — continua para os outros`);
-      networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-    }
+      } while (pageKey && pages < MAX_PAGES);
+    } catch (e) { /* lote falhou — continua para os outros */ }
   }
 
   if (!anySuccess) return null; // nenhum lote funcionou → fallback ao método antigo
@@ -12926,10 +12897,8 @@ async function fetchSolanaBalances(solAddr, key) {
   const holdings = [];
   const priceMap = new Map();
   try {
-    let pageKey = undefined, pages = 0, retries429 = 0;
-    // while explícito (não do/while): ver nota no fetchPortfolioBalances — um 429 na
-    // primeira página abandonava a Solana inteira silenciosamente.
-    while (pages < 5) {
+    let pageKey = undefined, pages = 0;
+    do {
       const body = {
         addresses: [{ address: solAddr, networks: ['solana-mainnet'] }],
         withMetadata: true, withPrices: true,
@@ -12941,12 +12910,7 @@ async function fetchSolanaBalances(solAddr, key) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.status === 429) {
-        retries429++;
-        if (retries429 > 5) { console.warn('[Portfolio] Solana desistiu após 429 repetidos — dados em falta neste refresh'); break; }
-        await new Promise(r => setTimeout(r, 1200 * retries429));
-        continue;
-      }
+      if (res.status === 429) { await new Promise(r => setTimeout(r, 1500)); continue; }
       if (!res.ok) return null; // 400/etc → sem Solana (não-fatal)
       const j = await res.json();
       const tokens = j?.data?.tokens || [];
@@ -12976,8 +12940,7 @@ async function fetchSolanaBalances(solAddr, key) {
       }
       pageKey = j?.data?.pageKey;
       pages++;
-      if (!pageKey) break;
-    }
+    } while (pageKey && pages < 5);
 
     // SOL em staking (delegado a validador) — a Alchemy não o vê. Vem da Vybe (free).
     // É separado do SOL líquido, por isso somar não duplica. Best-effort: se falhar,
@@ -15034,8 +14997,6 @@ function renderPortfolioCharts(w) {
       if (ppu == null && h._portfolioPriceUSD != null && h._portfolioPriceUSD > 0) {
         ppu = h._portfolioPriceUSD * eurRate;
       }
-      // 2. Event-derived price by exact contract (never symbol-fallback)
-      if (ppu == null) ppu = _priceFor(h.asset, h.chain, h.contract);
       // Native tokens (ETH, POL — contract null) get their price from the live market feed
       // (CoinGecko), never from derived_onchain. This is essential: we ban derived_onchain
       // from the portfolio (it's garbage for spam), but ETH/POL must still be valued. Without
@@ -15044,13 +15005,28 @@ function renderPortfolioCharts(w) {
         const mkt = live.prices && (live.prices[h.asset] || live.prices[h.asset === 'POL' ? 'MATIC' : h.asset]);
         if (typeof mkt === 'number' && mkt > 0) ppu = mkt * eurRate;
       }
-      // DexScreener fallback (cached): covers DEX/protocol tokens DefiLlama misses (jrUSDat…)
-      // Só para tokens NÃO-spam — não vale a pena gastar pedidos (e arriscar 429) a
-      // tentar preço de airdrops/lixo que vão ser filtrados de qualquer forma.
+      // 2. DexScreener (cached): preço de MERCADO com liquidity gate (>$50k). Vem ANTES do
+      // preço de evento — um token com mercado real deve usar o mercado, não um preço
+      // histórico de swap. Só para NÃO-spam (poupa pedidos/429).
       if (ppu == null && h.contract && !window.aurumFifoEngine?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
         else if (ds === undefined && !(window._dsTried = window._dsTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`)) needDexPrice.push(h); // not yet fetched
+      }
+      // 3. ÚLTIMO RECURSO: preço derivado de eventos do histórico (livePricesByContract).
+      // Estes preços servem para CUSTO fiscal, mas para VALOR DE MERCADO são frágeis (um swap
+      // antigo de um token sem liquidez gravou um preço que já não reflete mercado nenhum —
+      // ex: GAIN#2 a €0,12/un quando o mercado real é ~€0,001). Só o usamos quando NENHUMA
+      // fonte de mercado (Alchemy/Chainlink/DexScreener) deu preço, E o token NÃO tem um
+      // "irmão" do mesmo símbolo já avaliado a mercado (sinal de que este é o impostor/sem
+      // liquidez). Caso contrário, fica "sem preço" — honesto, não inflaciona.
+      if (ppu == null && h.contract) {
+        const evPrice = _priceFor(h.asset, h.chain, h.contract);
+        if (evPrice != null) {
+          const marketSibling = allocationMap.has(h.asset); // mesmo símbolo já avaliado a mercado?
+          if (!marketSibling) ppu = evPrice;
+          // se há irmão a mercado, este contract sem preço de mercado fica sem valor (provável impostor)
+        }
       }
       if (ppu == null) {
         unpricedCount++;
