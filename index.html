@@ -13870,22 +13870,29 @@ async function fetchDexScreenerPrice(chain, contract) {
     const j = await res.json();
     const pairs = (j && j.pairs) || [];
     if (!pairs.length) { _dexScreenerCache.set(ck, null); return null; }
-    // Pick the most liquid pair (highest USD liquidity) for a robust reference price.
-    pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
-    const best = pairs[0];
+    // CRÍTICO: o DexScreener pode devolver pares onde o token pedido é o QUOTE (não o base),
+    // ou pares de tokens homónimos — o que dá preços absurdos (ex: SUP avaliado a $1.643 quando
+    // vale $0,009, porque casou com outro par). Só aceitamos pares onde o NOSSO contract é o
+    // baseToken — assim o priceUsd refere-se mesmo ao nosso token.
+    const lc = contract.toLowerCase();
+    const ourPairs = pairs.filter(p => (p.baseToken?.address || '').toLowerCase() === lc);
+    if (!ourPairs.length) { _dexScreenerCache.set(ck, { priceUSD: null, noMatch: true }); return _dexScreenerCache.get(ck); }
+    // Par com mais liquidez ENTRE OS QUE SÃO DO NOSSO TOKEN.
+    ourPairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+    const best = ourPairs[0];
     const liq = best.liquidity?.usd || 0;
+    const vol24 = best.volume?.h24 || 0;
     const priceUSD = parseFloat(best.priceUsd);
     if (!isFinite(priceUSD) || priceUSD <= 0) { _dexScreenerCache.set(ck, null); return null; }
-    // LIQUIDITY GATE: scam/airdrop tokens reuse popular symbols ("POOL", "ISS") and create
-    // tiny fake liquidity pairs. Trusting their price inflates the portfolio with worthless
-    // tokens. We only trust a price backed by real liquidity. (Generic — no token blacklist,
-    // no quantity heuristic; just "is this price backed by a real market?")
-    if (liq < DEX_MIN_LIQUIDITY_USD) {
-      _dexScreenerCache.set(ck, { priceUSD: null, logoUrl: best.info?.imageUrl || null, lowLiquidity: true, liq });
+    // LIQUIDITY GATE + VOLUME GATE: liquidez pode ser fingida (pools de fachada). Volume de
+    // troca real de 24h é muito mais difícil de falsificar. Exigimos ambos: liquidez >$50k E
+    // volume 24h > $1k. Um token com $180k de "liquidez" mas $0 de volume é uma armadilha.
+    if (liq < DEX_MIN_LIQUIDITY_USD || vol24 < 1000) {
+      _dexScreenerCache.set(ck, { priceUSD: null, logoUrl: best.info?.imageUrl || null, lowLiquidity: true, liq, vol24 });
       return _dexScreenerCache.get(ck);
     }
     const logoUrl = best.info?.imageUrl || null;
-    const out = { priceUSD, logoUrl, liq };
+    const out = { priceUSD, logoUrl, liq, vol24 };
     _dexScreenerCache.set(ck, out);
     return out;
   } catch (e) {
@@ -15117,6 +15124,7 @@ function renderPortfolioCharts(w) {
     const needChainlink = [];
     for (const h of realBal) {
       let ppu = null;
+      let ppuSrc = null; // 'chainlink' | 'alchemy' | 'native' | 'dexscreener' | 'event' — para guarda de sanidade
       // GUARDA: holding com preço não fiável (ex: receipt token ilíquido com preço Zerion
       // corrompido — change_1d absurdo). Não contribui para o total (não inflar o
       // património com um número falso). É mostrado na lista com aviso, mas vale €0 no total.
@@ -15128,13 +15136,13 @@ function renderPortfolioCharts(w) {
       // 1. CHAINLINK ORACLE (top priority) — oracle-grade, immune to fake pairs. Cached read.
       if (h.contract) {
         const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
-        if (clk && clk.priceUSD) ppu = clk.priceUSD * eurRate;
+        if (clk && clk.priceUSD) { ppu = clk.priceUSD * eurRate; ppuSrc = 'chainlink'; }
         else if (clk === undefined && !(window._clkTried = window._clkTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`) && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
       }
       // 1b. PREÇO DO PORTFOLIO API — a Alchemy já devolveu o preço USD do token
       // na mesma chamada dos saldos. Fonte fiável e gratuita (sem pedido extra).
       if (ppu == null && h._portfolioPriceUSD != null && h._portfolioPriceUSD > 0) {
-        ppu = h._portfolioPriceUSD * eurRate;
+        ppu = h._portfolioPriceUSD * eurRate; ppuSrc = 'alchemy';
       }
       // Native tokens (ETH, POL — contract null) get their price from the live market feed
       // (CoinGecko), never from derived_onchain. This is essential: we ban derived_onchain
@@ -15142,14 +15150,14 @@ function renderPortfolioCharts(w) {
       // this, real ETH spread across chains silently vanished from the total.
       if (ppu == null && h.native) {
         const mkt = live.prices && (live.prices[h.asset] || live.prices[h.asset === 'POL' ? 'MATIC' : h.asset]);
-        if (typeof mkt === 'number' && mkt > 0) ppu = mkt * eurRate;
+        if (typeof mkt === 'number' && mkt > 0) { ppu = mkt * eurRate; ppuSrc = 'native'; }
       }
       // 2. DexScreener (cached): preço de MERCADO com liquidity gate (>$50k). Vem ANTES do
       // preço de evento — um token com mercado real deve usar o mercado, não um preço
       // histórico de swap. Só para NÃO-spam (poupa pedidos/429).
       if (ppu == null && h.contract && !window.aurumFifoEngine?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         const ds = _dexScreenerCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
-        if (ds && ds.priceUSD) ppu = ds.priceUSD * eurRate;
+        if (ds && ds.priceUSD) { ppu = ds.priceUSD * eurRate; ppuSrc = 'dexscreener'; }
         else if (ds === undefined && !(window._dsTried = window._dsTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`)) needDexPrice.push(h); // not yet fetched
       }
       // 3. ÚLTIMO RECURSO: preço derivado de eventos do histórico (livePricesByContract).
@@ -15163,7 +15171,7 @@ function renderPortfolioCharts(w) {
         const evPrice = _priceFor(h.asset, h.chain, h.contract);
         if (evPrice != null) {
           const marketSibling = allocationMap.has(h.asset); // mesmo símbolo já avaliado a mercado?
-          if (!marketSibling) ppu = evPrice;
+          if (!marketSibling) { ppu = evPrice; ppuSrc = 'event'; }
           // se há irmão a mercado, este contract sem preço de mercado fica sem valor (provável impostor)
         }
       }
@@ -15175,6 +15183,18 @@ function renderPortfolioCharts(w) {
       const value = h.qty * ppu;
       if (value < 0.01) continue;
       if (value > 100_000_000) continue;
+      // GUARDA DE SANIDADE (rede de segurança contra preços-fantasma, ex: DexScreener a casar
+      // "SUP" com par errado → $1.643 em vez de $0,009 → €107k falsos). Um holding com valor
+      // ENORME cujo preço veio de fonte NÃO-oracle (dexscreener/evento) é quase de certeza
+      // lixo. Fontes fiáveis (Chainlink/Alchemy/native market) NÃO sofrem este teto — podes
+      // ter legitimamente muito numa stable. Threshold alto (€50k) para nunca apanhar holdings
+      // reais; um único token cripto valer >€50k via DEX sem liquidez é o sinal de fantasma.
+      if (value > 50000 && (ppuSrc === 'dexscreener' || ppuSrc === 'event')) {
+        console.warn(`[Sanity] ${h.asset} descartado: €${value.toFixed(0)} via ${ppuSrc} (preço provavelmente errado — ${ppu.toFixed(2)}/un). Fonte não-oracle não justifica valor tão alto.`);
+        unpricedCount++;
+        if (unpricedSamples.length < 6) unpricedSamples.push(h.asset + ' (preço suspeito)');
+        continue;
+      }
       allocationMap.set(h.asset, (allocationMap.get(h.asset) || 0) + value);
       chainMap.set(h.chain, (chainMap.get(h.chain) || 0) + value);
       const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0, logoUrl: h.logoUrl };
