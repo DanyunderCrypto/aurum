@@ -22319,17 +22319,37 @@ async function fetchMorphoPositions(walletAddr) {
 // Called after history loads in case prices weren't ready when events were processed
 function reapplyPricesToHistory() {
   if (!live.history) return;
-  let updated = 0, missing = 0;
+  let updated = 0, missing = 0, skippedDebt = 0;
   const missingSymbols = new Set();
+  const eng = window.aurumFifoEngine;
   Object.values(live.history).forEach(events => {
     if (!Array.isArray(events)) return;
     events.forEach(e => {
       if ((e.amountUSD === 0 || !e.amountUSD) && e.amountCrypto > 0 && e.asset) {
+        // Tokens de DÍVIDA e receipts de protocolo (eWETH-1-DEBT, variableDebt…, aTokens)
+        // NÃO são ativos com preço de mercado: representam o que se deve / posições em
+        // protocolo, não algo possuído e tributável. Não devem disparar "sem preço" — não
+        // são uma aquisição/alienação. Excluí-los daqui evita falsos alarmes no relatório.
+        if (eng?.isProtocolReceiptToken?.(e.asset) || /-?DEBT\b/i.test(e.asset)) {
+          skippedDebt++;
+          return;
+        }
         const candidates = [e.asset, e.rawSymbol, e.asset?.toUpperCase()].filter(Boolean);
         let price = 0;
         for (const c of candidates) {
           price = getUsdPrice(c);
           if (price > 0) break;
+        }
+        // Stablecoins conhecidas (USDC, apxUSD, GHO…) valem ≈$1 na data por definição — é a
+        // mesma metodologia do Price Oracle (lista USD_STABLECOINS). O getUsdPrice acima não
+        // consulta essa lista, por isso uma stable que ainda não esteja em live.prices caía
+        // como "sem preço". Aqui aplicamos o $1 (convertido a EUR pelo câmbio do dia, se houver
+        // taxa em live.eurRate; senão fica em USD, coerente com o resto). EUR-stables → ~€1.
+        if (price === 0 && typeof isUsdStablecoin === 'function' && isUsdStablecoin(e.asset)) {
+          price = 1;
+        } else if (price === 0 && typeof isEurStablecoin === 'function' && isEurStablecoin(e.asset)) {
+          // €1 → USD equivalente (amountUSD mantém-se em USD para consistência da pipeline)
+          price = (live.eurRate && live.eurRate > 0) ? (1 / live.eurRate) : 1;
         }
         if (price > 0) {
           e.amountUSD = e.amountCrypto * price;
@@ -22342,6 +22362,7 @@ function reapplyPricesToHistory() {
     });
   });
   if (updated > 0) console.log(`✓ Reapplied prices to ${updated} history events`);
+  if (skippedDebt > 0) console.log(`↳ ${skippedDebt} debt/receipt events skipped (not market-priced assets)`);
   if (missing > 0) console.log(`⚠ ${missing} events still without price. Missing symbols:`, Array.from(missingSymbols).join(', '));
 }
 
