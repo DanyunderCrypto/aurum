@@ -4562,6 +4562,18 @@ const CHAINS = {
   polygon:  { name:'Polygon',   id:137,    color:'#8247E5', rpcs:['https://polygon-rpc.com','https://polygon-bor.publicnode.com'],                           explorer:'https://polygonscan.com',         explorerApi:'https://api.polygonscan.com/api',       aavePool:'0x794a61358D6845594F94dc1DB02A252b5b4814aD' },
   scroll:   { name:'Scroll',    id:534352, color:'#FFDBB1', rpcs:['https://rpc.scroll.io'],                                                                  explorer:'https://scrollscan.com',          explorerApi:'https://api.scrollscan.com/api',        aavePool:'0x11fCfe756c05AD438e312a7fd934381537D3cFfe' },
   gnosis:   { name:'Gnosis',    id:100,    color:'#04795B', rpcs:['https://gnosis.drpc.org','https://gnosis.publicnode.com','https://rpc.gnosischain.com','https://1rpc.io/gnosis'], explorer:'https://gnosisscan.io', explorerApi:'https://api.gnosisscan.io/api', aavePool:'0xb50201558B00496A145fE76f7424749556E326D8' },
+  hyperevm: { name:'HyperEVM',  id:999,    color:'#97FCE4', rpcs:['https://rpc.hyperliquid.xyz/evm','https://hyperliquid.drpc.org'], explorer:'https://hyperevmscan.io', explorerApi:null, aavePool:null, nativeSymbol:'HYPE', info:'HyperEVM — EVM layer da Hyperliquid' },
+  monad:    { name:'Monad',     id:143,    color:'#836EF9', rpcs:['https://rpc.monad.xyz','https://monad.drpc.org'], explorer:'https://monadexplorer.com', explorerApi:null, aavePool:null, nativeSymbol:'MON', info:'Monad — L1 EVM de alta performance' },
+  story:    { name:'Story',     id:1514,   color:'#3B82F6', rpcs:['https://mainnet.storyrpc.io','https://story.drpc.org'], explorer:'https://storyscan.xyz', explorerApi:null, aavePool:null, nativeSymbol:'IP', info:'Story Protocol — IP onchain' },
+  shape:    { name:'Shape',     id:360,    color:'#7BE5B6', rpcs:['https://mainnet.shape.network','https://shape.drpc.org'], explorer:'https://shapescan.xyz', explorerApi:null, aavePool:null, nativeSymbol:'ETH', info:'Shape — L2 para criadores' },
+  anime:    { name:'Anime',     id:69000,  color:'#FF4FA3', rpcs:['https://rpc-animechain-39xf6m45e3.t.conduit.xyz','https://anime.drpc.org'], explorer:'https://explorer.animechain.ai', explorerApi:null, aavePool:null, nativeSymbol:'ANIME', info:'AnimeChain — L3 Arbitrum Orbit' },
+  plasma:   { name:'Plasma',    id:9745,   color:'#00E5A0', rpcs:['https://rpc.plasma.to','https://plasma.drpc.org'], explorer:'https://plasmascan.to', explorerApi:null, aavePool:null, nativeSymbol:'XPL', info:'Plasma — L1 para stablecoins' },
+  rise:     { name:'Rise',      id:4153,   color:'#5B8DEF', rpcs:['https://mainnet.riselabs.xyz','https://rise.drpc.org'], explorer:'https://explorer.riselabs.xyz', explorerApi:null, aavePool:null, nativeSymbol:'ETH', info:'Rise — L2 de baixa latência' },
+  botanix:  { name:'Botanix',   id:3637,   color:'#F7931A', rpcs:['https://rpc.botanixlabs.com','https://botanix.drpc.org'], explorer:'https://botanixscan.io', explorerApi:null, aavePool:null, nativeSymbol:'BTC', info:'Botanix — L2 EVM sobre Bitcoin' },
+  cronos:   { name:'Cronos',    id:25,     color:'#002D74', rpcs:['https://evm.cronos.org','https://cronos.drpc.org'], explorer:'https://cronoscan.com', explorerApi:null, aavePool:null, nativeSymbol:'CRO', info:'Cronos — EVM da Crypto.com' },
+  boba:     { name:'Boba',      id:288,    color:'#1CD8D2', rpcs:['https://mainnet.boba.network','https://boba-eth.drpc.org'], explorer:'https://bobascan.com', explorerApi:null, aavePool:null, nativeSymbol:'ETH', info:'Boba — L2 Optimistic' },
+  degen:    { name:'Degen',     id:666666666, color:'#A36EFD', rpcs:['https://rpc.degen.tips','https://degen.drpc.org'], explorer:'https://explorer.degen.tips', explorerApi:null, aavePool:null, nativeSymbol:'DEGEN', info:'Degen Chain — L3 Farcaster' },
+  gensyn:   { name:'Gensyn',    id:685689, color:'#10B981', rpcs:['https://gensyn.drpc.org'], explorer:null, explorerApi:null, aavePool:null, nativeSymbol:'ETH', info:'Gensyn — rollup para AI/ML' },
   linea:    { name:'Linea',     id:59144,  color:'#61DFFF', rpcs:['https://linea.drpc.org','https://linea.publicnode.com','https://rpc.linea.build','https://linea-mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'], explorer:'https://lineascan.build', explorerApi:'https://api.lineascan.build/api', aavePool:'0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9', },
   katana:   { name:'Katana',    id:747474, color:'#FF5C5C', rpcs:['https://rpc.katana.network','https://katana.drpc.org'], explorer:'https://katanascan.com', explorerApi:null, aavePool:null, info:'L2 DeFi by Polygon — money legos' },
   avalanche: { name:'Avalanche', id:43114, color:'#E84142', rpcs:['https://api.avax.network/ext/bc/C/rpc'], explorer:'https://snowtrace.io', explorerApi:null, aavePool:null },
@@ -4775,9 +4787,9 @@ const ALCHEMY_RPCS = {
   optimism: 'https://opt-mainnet.g.alchemy.com/v2/',
   polygon:  'https://polygon-mainnet.g.alchemy.com/v2/',
   scroll:   'https://scroll-mainnet.g.alchemy.com/v2/',
-  gnosis:   null,
+  gnosis:   'https://gnosis-mainnet.g.alchemy.com/v2/',
+  hyperevm: 'https://hyperliquid-mainnet.g.alchemy.com/v2/',
   linea:    'https://linea-mainnet.g.alchemy.com/v2/',
-  katana:   null, // Alchemy doesn't support Katana yet — uses public RPC
   avalanche: 'https://avax-mainnet.g.alchemy.com/v2/',
   bsc:       'https://bnb-mainnet.g.alchemy.com/v2/',
   mantle:    'https://mantle-mainnet.g.alchemy.com/v2/',
@@ -4807,6 +4819,21 @@ const ALCHEMY_RPCS = {
   lens:      'https://lens-mainnet.g.alchemy.com/v2/',
   flow:      'https://flow-mainnet.g.alchemy.com/v2/',
   rootstock: 'https://rootstock-mainnet.g.alchemy.com/v2/',
+  // Chains adicionadas Jun/2026 — subdomínios e chain IDs confirmados contra a key
+  // via teste empírico (eth_chainId + getTokenBalances real). Portfolio API: monad,
+  // story, shape, anime. Só RPC básico: plasma, rise, katana, botanix, cronos, boba, degen, gensyn.
+  monad:    'https://monad-mainnet.g.alchemy.com/v2/',
+  story:    'https://story-mainnet.g.alchemy.com/v2/',
+  shape:    'https://shape-mainnet.g.alchemy.com/v2/',
+  anime:    'https://anime-mainnet.g.alchemy.com/v2/',
+  plasma:   'https://plasma-mainnet.g.alchemy.com/v2/',
+  rise:     'https://rise-mainnet.g.alchemy.com/v2/',
+  katana:   'https://katana-mainnet.g.alchemy.com/v2/',
+  botanix:  'https://botanix-mainnet.g.alchemy.com/v2/',
+  cronos:   'https://cronos-mainnet.g.alchemy.com/v2/',
+  boba:     'https://boba-mainnet.g.alchemy.com/v2/',
+  degen:    'https://degen-mainnet.g.alchemy.com/v2/',
+  gensyn:   'https://gensyn-mainnet.g.alchemy.com/v2/',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7541,6 +7568,13 @@ const COIN_ID_MAP = {
   'GLMR': 'coingecko:moonbeam',
   'METIS': 'coingecko:metis-token',
   'BERA': 'coingecko:berachain-bera',
+  'HYPE': 'coingecko:hyperliquid',
+  'MON':  'coingecko:monad',
+  'IP':   'coingecko:story-2',
+  'XPL':  'coingecko:plasma',
+  'CRO':  'coingecko:crypto-com-chain',
+  'DEGEN': 'coingecko:degen-base',
+  'ANIME': 'coingecko:anime',
   'SOL':  'coingecko:solana',
   // Stablecoins (per chain)
   'USDC': { eth: 'ethereum:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -12748,10 +12782,12 @@ const NATIVE_TOKEN = {
   polygon: 'POL', avalanche: 'AVAX', bsc: 'BNB', opbnb: 'BNB', celo: 'CELO',
   sonic: 'S', mantle: 'MNT', gnosis: 'XDAI', metis: 'METIS', moonbeam: 'GLMR',
   sei: 'SEI', ronin: 'RON', rootstock: 'RBTC', flow: 'FLOW', astar: 'ASTR',
-  berachain: 'BERA', apechain: 'APE', lens: 'GHO',
+  berachain: 'BERA', apechain: 'APE', lens: 'GHO', hyperevm: 'HYPE',
+  monad: 'MON', story: 'IP', anime: 'ANIME', plasma: 'XPL',
+  botanix: 'BTC', cronos: 'CRO', degen: 'DEGEN',
   // restantes (eth, base, arbitrum, optimism, scroll, linea, blast, zksync,
   // zkevm, zora, unichain, mode, ink, soneium, worldchain, bob, superseed,
-  // abstract, frax) usam ETH como nativo.
+  // abstract, frax, shape, rise, boba, gensyn) usam ETH como nativo.
 };
 function _nativeSymbol(chain) { return NATIVE_TOKEN[chain] || 'ETH'; }
 
@@ -12763,7 +12799,8 @@ const PORTFOLIO_API_CHAINS = new Set([
   'eth', 'base', 'arbitrum', 'optimism', 'polygon', 'scroll', 'linea',
   'avalanche', 'bsc', 'blast', 'celo', 'zksync', 'zora', 'berachain',
   'unichain', 'ink', 'soneium', 'worldchain', 'apechain', 'ronin',
-  'abstract', 'lens', 'rootstock',
+  'abstract', 'lens', 'rootstock', 'gnosis', 'hyperevm',
+  'monad', 'story', 'shape', 'anime',
 ]);
 
 // Chains que a Alchemy serve por RPC básico (eth_getBalance/eth_call funcionam) mas
@@ -12774,6 +12811,7 @@ const PORTFOLIO_API_CHAINS = new Set([
 const NO_ENHANCED_API_CHAINS = new Set([
   'mantle', 'sonic', 'zkevm', 'metis', 'mode', 'frax', 'moonbeam',
   'opbnb', 'bob', 'superseed', 'astar', 'sei', 'flow',
+  'plasma', 'rise', 'katana', 'botanix', 'cronos', 'boba', 'degen', 'gensyn',
 ]);
 
 // ERC-20 conhecidos por chain sem Enhanced APIs. Como não há getTokenBalances nestas chains,
