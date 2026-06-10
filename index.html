@@ -12777,9 +12777,11 @@ async function fetchPortfolioBalances(evmAddr, key) {
   if (!allNetworks.length) return null;
 
   // O Portfolio API limita o nº de redes por pedido (~15). Enviar as 36 de uma
-  // vez dá 400 Bad Request. Dividimos em lotes de 12 (folga de segurança) — são
-  // 3 pedidos em vez de milhares, na mesma um salto enorme.
-  const NET_BATCH = 12;
+  // Lotes de 6 redes: o nº total de páginas é o mesmo (depende do nº de tokens), mas
+  // cada falha perde 6 redes em vez de 12, e a paginação por lote é menos profunda.
+  // (Diagnóstico Jun/2026: a Base sozinha tinha 965 tokens ≈ 10 páginas; um lote de 12
+  // redes ultrapassava largamente o MAX_PAGES antigo e cortava tokens REAIS — apxUSD, USDC.)
+  const NET_BATCH = 6;
   const netBatches = [];
   for (let i = 0; i < allNetworks.length; i += NET_BATCH) {
     netBatches.push(allNetworks.slice(i, i + NET_BATCH));
@@ -12797,13 +12799,19 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // Conjunto de redes que o Portfolio API rejeita (descoberto dinamicamente).
   // Persiste na sessão para não repetir o erro em refreshes seguintes.
   window._portfolioUnsupported = window._portfolioUnsupported || new Set();
+  // Registo de redes cujo lote falhou NESTE refresh (para diagnóstico e avisos).
+  // Limpo a cada fetch para refletir só o estado atual.
+  window._portfolioFailedNets = new Set();
 
   for (let bi = 0; bi < netBatches.length; bi++) {
     let networks = netBatches[bi].filter(n => !window._portfolioUnsupported.has(n));
     if (!networks.length) continue;
     let pageKey = undefined;
     let pages = 0;
-    const MAX_PAGES = 10;
+    // Tecto de SEGURANÇA, não corte: o loop para sozinho quando não há pageKey. Com
+    // lotes de 6 redes e ~100 tokens/página, 40 páginas ≈ 4000 tokens por lote — folga
+    // larga. O corte antigo (5) truncava lotes reais e perdia tokens com valor.
+    const MAX_PAGES = 40;
     let batchRetries = 0;
     let retries429 = 0;
     try {
@@ -12853,9 +12861,15 @@ async function fetchPortfolioBalances(evmAddr, key) {
             pageKey = undefined; pages = 0;
             continue; // tenta o lote de novo sem a rede problemática
           }
+          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado por 400 — dados destas redes em falta neste refresh`);
+          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
           break; // 400 por outra razão — salta o lote
         }
-        if (!res.ok) break; // outro erro → salta o lote
+        if (!res.ok) {
+          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado a meio (HTTP ${res.status}, página ${pages + 1}) — dados possivelmente parciais`);
+          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+          break;
+        }
         const j = await res.json();
         const tokens = j?.data?.tokens || [];
         anySuccess = true;
@@ -12891,7 +12905,10 @@ async function fetchPortfolioBalances(evmAddr, key) {
         pages++;
         if (!pageKey) break; // sem mais páginas — lote completo
       }
-    } catch (e) { /* lote falhou — continua para os outros */ }
+    } catch (e) {
+      console.warn(`[Portfolio] lote (${networks.join(',')}) falhou (${e.message}) — continua para os outros`);
+      networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+    }
   }
 
   if (!anySuccess) return null; // nenhum lote funcionou → fallback ao método antigo
