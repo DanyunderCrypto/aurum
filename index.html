@@ -11847,14 +11847,18 @@ function _getFifoStateFor(w) {
 // poluir a consola nesta sessão. (Teste empírico em Mai/2026: com a chave da
 // empresa a ter todas as redes ligadas, as 36 redes respondem ao browser. Esta
 // marcação dinâmica fica como rede de segurança caso alguma falhe pontualmente.)
-// Chains que a chave Alchemy não serve (dão 400/403/404). Persistido em localStorage
-// para não desperdiçar pedidos a cada reload (cada 400 conta para o rate-limit e, em
-// rajada, dispara 429 que faz faltar dados no portfólio). Pré-semeado com as chains
-// que sabemos não estarem no plano Alchemy atual.
-const _ALCHEMY_KNOWN_UNAVAILABLE = ['superseed','metis','mantle','mode','sonic','moonbeam','frax','opbnb','polygonzkevm','bob','flow','sei','astar'];
+// Chains que a chave Alchemy não serve DE TODO (nem RPC básico). Vazia: as chains exóticas
+// que aqui estavam (metis, sonic, frax, etc.) afinal RESPONDEM a RPC básico (eth_getBalance/
+// eth_call) — só não têm as Enhanced APIs (geridas por NO_ENHANCED_API_CHAINS). Pré-semeá-las
+// como indisponíveis escondia os saldos reais dessas redes. Mantém-se só a marcação dinâmica
+// (uma chain só entra aqui se um pedido falhar mesmo, e nunca por falta de Enhanced APIs).
+const _ALCHEMY_KNOWN_UNAVAILABLE = [];
+// MIGRAÇÃO: limpar marcações persistidas em sessões antigas que incluíam estas 13 chains
+// (semeadas pela versão anterior). Sem isto, voltariam a entrar a partir do localStorage.
+const _ALCHEMY_RPC_BASIC_OK = new Set(['superseed','metis','mantle','mode','sonic','moonbeam','frax','opbnb','polygonzkevm','zkevm','bob','flow','sei','astar']);
 let _alchemyChainUnavailable;
 try {
-  const _saved = JSON.parse(localStorage.getItem('_alchemyUnavail_v1') || '[]');
+  const _saved = JSON.parse(localStorage.getItem('_alchemyUnavail_v1') || '[]').filter(c => !_ALCHEMY_RPC_BASIC_OK.has(c));
   _alchemyChainUnavailable = new Set([..._ALCHEMY_KNOWN_UNAVAILABLE, ..._saved]);
 } catch { _alchemyChainUnavailable = new Set(_ALCHEMY_KNOWN_UNAVAILABLE); }
 // Sempre que aprendemos uma nova chain indisponível, persiste (debounced via microtask).
@@ -11919,7 +11923,16 @@ async function _alchemyRpc(chain, method, params, key) {
   // 400/404 = rede não suportada por este endpoint (ex: chains que a Alchemy não serve
   // via este método) → marcar como indisponível para não repetir o pedido (evita encher
   // a consola de erros a cada refresh e poupa chamadas).
-  if (res.status === 400 || res.status === 404) { _alchemyChainUnavailable.add(chain); return null; }
+  // 400/404: pode ser (a) rede mesmo não suportada → amputar; ou (b) "EAPIs not enabled"
+  // — a rede TEM RPC básico (eth_getBalance/eth_call funcionam), só não tem as Enhanced APIs
+  // (alchemy_getTokenBalances/getTokenMetadata). Nesse caso NÃO amputamos: só este método
+  // falha, e a leitura por RPC básico desta chain deve continuar a funcionar.
+  if (res.status === 400 || res.status === 404) {
+    let _isEapi = false;
+    try { const _b = await res.clone().json(); _isEapi = /eapis? not enabled|enhanced api/i.test(_b?.error?.message || ''); } catch {}
+    if (!_isEapi) _alchemyChainUnavailable.add(chain);
+    return null;
+  }
   // 429 = rate limit → abranda o throttle global (backoff) e tenta até 3x.
   let _retry = 0;
   while (res.status === 429 && _retry < 3) {
@@ -12753,6 +12766,72 @@ const PORTFOLIO_API_CHAINS = new Set([
   'abstract', 'lens', 'rootstock',
 ]);
 
+// Chains que a Alchemy serve por RPC básico (eth_getBalance/eth_call funcionam) mas
+// NÃO têm as Enhanced APIs (alchemy_getTokenBalances dá "EAPIs not enabled"). Confirmado
+// empiricamente (Jun/2026). Para estas: NUNCA chamar getTokenBalances (o 400 contaminava
+// e amputava a chain inteira, perdendo até o saldo nativo). Lemos o nativo por eth_getBalance
+// e os ERC-20 conhecidos por eth_call ao balanceOf — degradação graciosa em vez de abandono.
+const NO_ENHANCED_API_CHAINS = new Set([
+  'mantle', 'sonic', 'zkevm', 'metis', 'mode', 'frax', 'moonbeam',
+  'opbnb', 'bob', 'superseed', 'astar', 'sei', 'flow',
+]);
+
+// ERC-20 conhecidos por chain sem Enhanced APIs. Como não há getTokenBalances nestas chains,
+// lemos estes contratos um a um por eth_call(balanceOf). Lista focada nos tokens com valor real
+// (stables, wrapped natives, LSDs). Extensível: acrescenta { symbol, contract, decimals } por chain.
+// NOTA: FRAX renomeou FRAX→frxUSD (mesmo contract) — listar UMA vez, senão conta a dobrar.
+const KNOWN_ERC20_BY_CHAIN = {
+  frax:    [
+    { symbol: 'frxETH', contract: '0xfc00000000000000000000000000000000000006', decimals: 18 },
+    { symbol: 'sfrxETH', contract: '0xfc00000000000000000000000000000000000005', decimals: 18 },
+    { symbol: 'frxUSD', contract: '0xfc00000000000000000000000000000000000001', decimals: 18 },
+  ],
+  mantle:  [
+    { symbol: 'USDC', contract: '0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9', decimals: 6 },
+    { symbol: 'USDT', contract: '0x201eba5cc46d216ce6dc03f6a759e8e766e956ae', decimals: 6 },
+    { symbol: 'WETH', contract: '0xdeaddeaddeaddeaddeaddeaddeaddeaddead1111', decimals: 18 },
+    { symbol: 'mETH', contract: '0xcda86a272531e8640cd7f1a92c01839911b90bb0', decimals: 18 },
+  ],
+  metis:   [
+    { symbol: 'm.USDC', contract: '0xea32a96608495e54156ae48931a7c20f0dcc1a21', decimals: 6 },
+    { symbol: 'm.USDT', contract: '0xbb06dca3ae6887fabf931640f67cab3e3a16f4dc', decimals: 6 },
+    { symbol: 'WETH', contract: '0x420000000000000000000000000000000000000a', decimals: 18 },
+  ],
+  mode:    [
+    { symbol: 'USDC', contract: '0xd988097fb8612cc24eec14542bc03424c656005f', decimals: 6 },
+    { symbol: 'USDT', contract: '0xf0f161fda2712db8b566946122a5af183995e2ed', decimals: 6 },
+    { symbol: 'WETH', contract: '0x4200000000000000000000000000000000000006', decimals: 18 },
+  ],
+  sonic:   [
+    { symbol: 'USDC.e', contract: '0x29219dd400f2bf60e5a23d13be72b486d4038894', decimals: 6 },
+    { symbol: 'WETH', contract: '0x309c92261178fa0cf748a855b90a2e2c0c4f3a4e', decimals: 18 },
+    { symbol: 'wS', contract: '0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38', decimals: 18 },
+  ],
+  sei:     [
+    { symbol: 'USDC', contract: '0x3894085ef7ff0f0aedf52e2a2704928d1ec074f1', decimals: 6 },
+    { symbol: 'WSEI', contract: '0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7', decimals: 18 },
+  ],
+  moonbeam:[
+    { symbol: 'USDC.wh', contract: '0x931715fee2d06333043d11f658c8ce934ac61d0c', decimals: 6 },
+    { symbol: 'WGLMR', contract: '0xacc15dc74880c9944775448304b263d191c6077f', decimals: 18 },
+  ],
+  opbnb:   [
+    { symbol: 'USDT', contract: '0x9e5aac1ba1a2e6aed6b32689dfcf62a509ca96f3', decimals: 18 },
+    { symbol: 'WBNB', contract: '0x4200000000000000000000000000000000000006', decimals: 18 },
+  ],
+  zkevm:   [
+    { symbol: 'USDC.e', contract: '0xa8ce8aee21bc2a48a5ef670afcc9274c7bbbc035', decimals: 6 },
+    { symbol: 'WETH', contract: '0x4f9a0e7fd2bf6067db6994cf12e4495df938e6e9', decimals: 18 },
+  ],
+  bob:     [
+    { symbol: 'USDC', contract: '0xe75d0fb2c24a55ca1e3f96781a2bcc7bdba058f0', decimals: 6 },
+    { symbol: 'WETH', contract: '0x4200000000000000000000000000000000000006', decimals: 18 },
+  ],
+  astar:   [],
+  superseed: [],
+  flow:    [],
+};
+
 // ── Portfolio API: nomes de rede (derivados dos subdomínios Alchemy) ──────────
 // O Portfolio API usa os mesmos nomes que os subdomínios RPC (eth-mainnet, etc.).
 // Extraímo-los automaticamente de ALCHEMY_RPCS para não duplicar a manutenção.
@@ -12779,7 +12858,11 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // O Portfolio API limita o nº de redes por pedido (~15). Enviar as 36 de uma
   // vez dá 400 Bad Request. Dividimos em lotes de 12 (folga de segurança) — são
   // 3 pedidos em vez de milhares, na mesma um salto enorme.
-  const NET_BATCH = 12;
+  // Lotes de 6 redes: o nº total de páginas é o mesmo (depende do nº de tokens), mas
+  // cada falha perde 6 redes em vez de 12, e a paginação por lote é menos profunda.
+  // (A Base sozinha tinha 965 tokens ≈ 10 páginas; lotes de 12 redes ultrapassavam o
+  // MAX_PAGES antigo e cortavam tokens REAIS — apxUSD, USDC.)
+  const NET_BATCH = 6;
   const netBatches = [];
   for (let i = 0; i < allNetworks.length; i += NET_BATCH) {
     netBatches.push(allNetworks.slice(i, i + NET_BATCH));
@@ -12797,16 +12880,22 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // Conjunto de redes que o Portfolio API rejeita (descoberto dinamicamente).
   // Persiste na sessão para não repetir o erro em refreshes seguintes.
   window._portfolioUnsupported = window._portfolioUnsupported || new Set();
+  // Registo de redes cujo lote falhou NESTE refresh (diagnóstico/avisos). Limpo a cada fetch.
+  window._portfolioFailedNets = new Set();
 
   for (let bi = 0; bi < netBatches.length; bi++) {
     let networks = netBatches[bi].filter(n => !window._portfolioUnsupported.has(n));
     if (!networks.length) continue;
     let pageKey = undefined;
     let pages = 0;
-    const MAX_PAGES = 5;
+    const MAX_PAGES = 40; // tecto de SEGURANÇA, não corte: o loop para sozinho sem pageKey
     let batchRetries = 0;
+    let retries429 = 0;
     try {
-      do {
+      // while(pages<MAX) em vez de do/while(pageKey && …): no padrão antigo, um 429 na
+      // PRIMEIRA página fazia `continue` saltar para a condição com pageKey=undefined → o
+      // lote inteiro era abandonado silenciosamente (perdia apxUSD, USDC… conforme o rate limit).
+      while (pages < MAX_PAGES) {
         const body = {
           addresses: [{ address: evmAddr, networks }],
           withMetadata: true,
@@ -12822,9 +12911,15 @@ async function fetchPortfolioBalances(evmAddr, key) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (res.status === 429) { // rate limit — espera e repete este lote
-          await new Promise(r => setTimeout(r, 1500));
-          continue;
+        if (res.status === 429) { // rate limit — backoff crescente e repete a MESMA página
+          retries429++;
+          if (retries429 > 5) {
+            console.warn(`[Portfolio] lote (${networks.join(',')}) desistiu após 429 repetidos — dados destas redes em falta neste refresh`);
+            networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+            break;
+          }
+          await new Promise(r => setTimeout(r, 1200 * retries429));
+          continue; // condição é pages<MAX_PAGES (ainda true) → repete de facto
         }
         if (res.status === 400) {
           // Provável rede não suportada: lê a mensagem, remove a rede e repete.
@@ -12842,9 +12937,15 @@ async function fetchPortfolioBalances(evmAddr, key) {
             pageKey = undefined; pages = 0;
             continue; // tenta o lote de novo sem a rede problemática
           }
+          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado por 400 — dados destas redes em falta neste refresh`);
+          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
           break; // 400 por outra razão — salta o lote
         }
-        if (!res.ok) break; // outro erro → salta o lote
+        if (!res.ok) {
+          console.warn(`[Portfolio] lote (${networks.join(',')}) abortado a meio (HTTP ${res.status}, página ${pages + 1}) — dados possivelmente parciais`);
+          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+          break;
+        }
         const j = await res.json();
         const tokens = j?.data?.tokens || [];
         anySuccess = true;
@@ -12878,8 +12979,12 @@ async function fetchPortfolioBalances(evmAddr, key) {
         }
         pageKey = j?.data?.pageKey;
         pages++;
-      } while (pageKey && pages < MAX_PAGES);
-    } catch (e) { /* lote falhou — continua para os outros */ }
+        if (!pageKey) break; // sem mais páginas — lote completo
+      }
+    } catch (e) {
+      console.warn(`[Portfolio] lote (${networks.join(',')}) falhou (${e.message}) — continua para os outros`);
+      networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+    }
   }
 
   if (!anySuccess) return null; // nenhum lote funcionou → fallback ao método antigo
@@ -12897,8 +13002,10 @@ async function fetchSolanaBalances(solAddr, key) {
   const holdings = [];
   const priceMap = new Map();
   try {
-    let pageKey = undefined, pages = 0;
-    do {
+    let pageKey = undefined, pages = 0, retries429 = 0;
+    // while explícito (não do/while): ver nota no fetchPortfolioBalances — um 429 na
+    // primeira página abandonava a Solana inteira silenciosamente.
+    while (pages < 5) {
       const body = {
         addresses: [{ address: solAddr, networks: ['solana-mainnet'] }],
         withMetadata: true, withPrices: true,
@@ -12910,7 +13017,12 @@ async function fetchSolanaBalances(solAddr, key) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.status === 429) { await new Promise(r => setTimeout(r, 1500)); continue; }
+      if (res.status === 429) {
+        retries429++;
+        if (retries429 > 5) { console.warn('[Portfolio] Solana desistiu após 429 repetidos — dados em falta neste refresh'); break; }
+        await new Promise(r => setTimeout(r, 1200 * retries429));
+        continue;
+      }
       if (!res.ok) return null; // 400/etc → sem Solana (não-fatal)
       const j = await res.json();
       const tokens = j?.data?.tokens || [];
@@ -12940,7 +13052,8 @@ async function fetchSolanaBalances(solAddr, key) {
       }
       pageKey = j?.data?.pageKey;
       pages++;
-    } while (pageKey && pages < 5);
+      if (!pageKey) break;
+    }
 
     // SOL em staking (delegado a validador) — a Alchemy não o vê. Vem da Vybe (free).
     // É separado do SOL líquido, por isso somar não duplica. Best-effort: se falhar,
@@ -13432,18 +13545,44 @@ async function fetchRealBalances(w, { force = false } = {}) {
     // rate-limit). Com a chave partilhada do tier grátis, ler 40 redes por carteira
     // mataria a chave. Esta é a cura: lê só o que o Portfolio API deteta.
     // [Reversível: para reativar, repor o filtro antigo sobre Object.keys(ALCHEMY_RPCS).]
-    const _onchainOnly = [];
+    // As chains sem Enhanced APIs (mantle/sonic/metis/…) NÃO entram no Portfolio API, por isso
+    // são lidas aqui por RPC básico (nativo + ERC-20 conhecidos). São 13 chains, leitura leve
+    // (1 eth_getBalance + 1 batch eth_call por chain), não sobrecarrega o tier grátis.
+    const _onchainOnly = Object.keys(ALCHEMY_RPCS).filter(c => ALCHEMY_RPCS[c] && NO_ENHANCED_API_CHAINS.has(c));
     async function _readOnchainChain(chain) {
       const out = [];
+      const noEAPI = NO_ENHANCED_API_CHAINS.has(chain);
       try {
+        // Saldo nativo: eth_getBalance é RPC básico — funciona em TODAS as chains, mesmo
+        // nas que não têm Enhanced APIs. Lê-se SEMPRE, antes de qualquer coisa que possa falhar.
         const nativeHex = await _alchemyRpc(chain, 'eth_getBalance', [evmAddr, 'latest'], key);
-        if (_alchemyChainUnavailable.has(chain)) return out;
         if (nativeHex) {
           const nativeQty = parseInt(nativeHex, 16) / 1e18;
           if (nativeQty > 1e-9) {
             out.push({ asset: _nativeSymbol(chain), chain, contract: null, qty: nativeQty, decimals: 18, native: true });
           }
         }
+        if (noEAPI) {
+          // Sem Enhanced APIs: getTokenBalances daria 400 e contaminava a chain. Em vez disso,
+          // lemos os ERC-20 CONHECIDOS desta chain por eth_call ao balanceOf (RPC básico).
+          const known = (KNOWN_ERC20_BY_CHAIN[chain] || []);
+          if (known.length) {
+            const calls = known.map(tk => ({
+              method: 'eth_call',
+              params: [{ to: tk.contract, data: '0x70a08231000000000000000000000000' + evmAddr.slice(2).toLowerCase() }, 'latest'],
+            }));
+            const results = await _rpcBatch(chain, calls, key).catch(() => []);
+            for (let i = 0; i < known.length; i++) {
+              const tk = known[i], hex = results[i];
+              if (!hex || hex === '0x' || hex === '0x0') continue;
+              const qty = parseInt(hex, 16) / Math.pow(10, tk.decimals);
+              if (qty <= 1e-9) continue;
+              out.push({ asset: tk.symbol, chain, contract: tk.contract, qty, decimals: tk.decimals, logoUrl: null });
+            }
+          }
+          return out; // não tenta getTokenBalances nesta chain
+        }
+        if (_alchemyChainUnavailable.has(chain)) return out;
         const bal = await _alchemyRpc(chain, 'alchemy_getTokenBalances', [evmAddr, 'erc20'], key);
         const toks = (bal && bal.tokenBalances) || [];
         const nz = toks.filter(t => t.tokenBalance && t.tokenBalance !== '0x' && parseInt(t.tokenBalance, 16) > 0).slice(0, 40);
