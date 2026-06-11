@@ -15395,7 +15395,7 @@ function renderPortfolioCharts(w) {
     // PENDLE: se há posições Pendle e o mapa de preços ainda não está carregado (ou está
     // a expirar), carrega-o em background e re-renderiza. Uma chamada paginada cobre TODAS
     // as posições Pendle de todas as chains de uma vez (eficiente).
-    const _hasPendle = holdings.some(h => h._pendlePosition);
+    const _hasPendle = realBal.some(h => h._pendlePosition);
     if (_hasPendle && (!_pendlePriceMap || (Date.now() - _pendlePriceAt) >= PENDLE_PRICE_TTL)) {
       _loadPendlePrices().then(m => { if (m && Object.keys(m).length) renderDebounced(); }).catch(() => {});
     }
