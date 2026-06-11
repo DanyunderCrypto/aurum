@@ -12905,7 +12905,15 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // cada falha fatal perde só 3 redes, os pedidos são mais leves (menos 503 da Alchemy),
   // e a paginação por lote é menos profunda. (Histórico: lotes de 12 + MAX_PAGES=5
   // cortavam tokens reais; lotes de 6 ainda batiam em 503 na página ~18 do lote grande.)
-  const NET_BATCH = 3;
+  // Lotes de 6 redes, processados em ONDAS CONCORRENTES (BATCH_CONCURRENCY ao mesmo tempo).
+  // O nº total de pedidos à key é o MESMO (depende dos dados, não da ordem) — só corremos
+  // vários lotes em paralelo em vez de em fila, cortando o tempo total de minutos para
+  // segundos. Paralelismo conservador (3) + throttle por pedido para não saturar os CUPS da
+  // Alchemy (picos de 429). O retry+carry-over já cobrem qualquer 429 que ainda escape.
+  // (Histórico: lotes de 12 + MAX_PAGES=5 cortavam tokens; lotes de 3 sequenciais eram
+  // demasiado lentos com 41 chains.)
+  const NET_BATCH = 6;
+  const BATCH_CONCURRENCY = 3;
   const netBatches = [];
   for (let i = 0; i < allNetworks.length; i += NET_BATCH) {
     netBatches.push(allNetworks.slice(i, i + NET_BATCH));
@@ -12926,9 +12934,12 @@ async function fetchPortfolioBalances(evmAddr, key) {
   // Registo de redes cujo lote falhou NESTE refresh (diagnóstico/avisos). Limpo a cada fetch.
   window._portfolioFailedNets = new Set();
 
-  for (let bi = 0; bi < netBatches.length; bi++) {
-    let networks = netBatches[bi].filter(n => !window._portfolioUnsupported.has(n));
-    if (!networks.length) continue;
+  // Processa UM lote (paginação + retry + parsing). Sem estado próprio partilhado além dos
+  // acumuladores comuns (holdings/priceMap/Sets) — seguros para concorrência em JS (single-
+  // threaded: cada callback async corre sem interrupção entre awaits, pushes são atómicos).
+  async function processBatch(batchNetworks) {
+    let networks = batchNetworks.filter(n => !window._portfolioUnsupported.has(n));
+    if (!networks.length) return;
     let pageKey = undefined;
     let pages = 0;
     const MAX_PAGES = 40; // tecto de SEGURANÇA, não corte: o loop para sozinho sem pageKey
@@ -12964,8 +12975,8 @@ async function fetchPortfolioBalances(evmAddr, key) {
           retries429++;
           if (retries429 > 6) {
             console.warn(`[Portfolio] lote (${networks.join(',')}) desistiu após ${retries429 - 1} erros transitórios (último: HTTP ${res.status}) — dados destas redes em falta neste refresh`);
-            networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-            break;
+            networks.forEach(n => window._portfolioFailedNets.add(n));
+            return;
           }
           const retryAfterHdr = parseInt(res.headers.get('Retry-After') || '0', 10);
           const backoff = Math.min(Math.pow(2, retries429) * 600 + Math.random() * 1000, 32000);
@@ -12984,18 +12995,18 @@ async function fetchPortfolioBalances(evmAddr, key) {
             window._portfolioUnsupported.add(unsupported);
             networks = networks.filter(n => n !== unsupported);
             batchRetries++;
-            if (!networks.length) break;
+            if (!networks.length) return;
             pageKey = undefined; pages = 0;
             continue; // tenta o lote de novo sem a rede problemática
           }
           console.warn(`[Portfolio] lote (${networks.join(',')}) abortado por 400 — dados destas redes em falta neste refresh`);
-          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-          break; // 400 por outra razão — salta o lote
+          networks.forEach(n => window._portfolioFailedNets.add(n));
+          return; // 400 por outra razão — salta o lote
         }
         if (!res.ok) {
           console.warn(`[Portfolio] lote (${networks.join(',')}) abortado a meio (HTTP ${res.status}, página ${pages + 1}) — dados possivelmente parciais`);
-          networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
-          break;
+          networks.forEach(n => window._portfolioFailedNets.add(n));
+          return;
         }
         const j = await res.json();
         const tokens = j?.data?.tokens || [];
@@ -13034,8 +13045,14 @@ async function fetchPortfolioBalances(evmAddr, key) {
       }
     } catch (e) {
       console.warn(`[Portfolio] lote (${networks.join(',')}) falhou (${e.message}) — continua para os outros`);
-      networks.forEach(n => (window._portfolioFailedNets = window._portfolioFailedNets || new Set()).add(n));
+      networks.forEach(n => window._portfolioFailedNets.add(n));
     }
+  }
+
+  // Correr os lotes em ondas concorrentes de BATCH_CONCURRENCY.
+  for (let i = 0; i < netBatches.length; i += BATCH_CONCURRENCY) {
+    const wave = netBatches.slice(i, i + BATCH_CONCURRENCY);
+    await Promise.all(wave.map(b => processBatch(b)));
   }
 
   if (!anySuccess) return null; // nenhum lote funcionou → fallback ao método antigo
