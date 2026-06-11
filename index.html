@@ -13570,14 +13570,15 @@ async function fetchRealBalances(w, { force = false } = {}) {
         }
       }
       if (eng?.isProtocolReceiptToken?.(h.asset)) {
-        // EXCEÇÃO PENDLE/YIELD: PT/YT/SY/LP são apanhados pelo filtro de receipt, mas NÃO são
-        // duplicação de outro holding — são posições independentes com valor próprio (yield-
-        // tokenization). Excluí-los apagava património real (~$200+ de posições ativas). Deixamo-
-        // -los entrar, marcados como posição estruturada, para serem VALORIZADOS no dashboard
-        // pelo preço oficial da API Pendle. O tratamento FISCAL não muda (as entradas/saídas já
-        // passam pelo FIFO como permutas) — esta flag é só para a VALORIZAÇÃO/apresentação.
-        if (_isPendleToken(h.asset)) {
-          h._pendlePosition = true;
+        // EXCEÇÃO YIELD-TOKENIZATION (Pendle/Spectra/Napier/...): PT/YT/SY/LP são apanhados
+        // pelo filtro de receipt, mas NÃO são duplicação de outro holding — são posições
+        // independentes com valor próprio (yield-tokenization). Excluí-los apagava património
+        // real (~$200+ de posições ativas). Deixamo-los entrar, marcados como posição de yield,
+        // para serem VALORIZADOS no dashboard pela fonte de preço própria (hoje: API Pendle). O
+        // tratamento FISCAL não muda (entradas/saídas já passam pelo FIFO como permutas) — esta
+        // flag é só para a VALORIZAÇÃO/apresentação.
+        if (_isYieldTokenPosition(h.asset)) {
+          h._yieldPosition = true;
           holdings.push(h);
           continue;
         }
@@ -14009,8 +14010,8 @@ async function _loadPendlePrices() {
     const map = {};
     try {
       let skip = 0, total = 1, pages = 0;
-      while (skip < total && pages < 12) { // tecto de segurança (12*1000 = 12k ativos)
-        const url = `https://api-v2.pendle.finance/core/v1/prices/assets?skip=${skip}&limit=1000`;
+      while (skip < total && pages < 20) { // tecto de segurança (20*2000 = 40k, folga sobre os ~4185 atuais)
+        const url = `https://api-v2.pendle.finance/core/v1/prices/assets?skip=${skip}&limit=2000`;
         const res = await fetch(url);
         if (!res.ok) {
           if (res.status === 429) { await new Promise(r => setTimeout(r, 1500)); continue; }
@@ -14024,7 +14025,7 @@ async function _loadPendlePrices() {
           if (typeof v === 'number' && v > 0) map[k.toLowerCase()] = v; // 0 = sem preço, ignora
         }
         total = j.total || Object.keys(prices).length;
-        skip += 1000;
+        skip += 2000;
         pages++;
       }
       _pendlePriceMap = map;
@@ -14050,12 +14051,20 @@ function _pendlePriceFor(chain, contract) {
   return (typeof v === 'number' && v > 0) ? v : null;
 }
 
-// É um símbolo de posição Pendle/yield-tokenization? (PT/YT/SY/LP/PLP com maturidade)
-function _isPendleToken(asset) {
+// É uma posição de YIELD-TOKENIZATION? (PT/YT/SY/LP/PLP com maturidade). Agnóstico ao
+// protocolo: apanha Pendle, Spectra (YT-imxSPECTRA), Napier, Timeless e qualquer outro que
+// use a convenção de tipos PT/YT/SY/LP. A DETEÇÃO é universal; a FONTE DE PREÇO é que é
+// específica por protocolo (a API Pendle só conhece ativos Pendle — Spectra/Napier precisam
+// das suas próprias fontes quando forem adicionados). Por isso a categoria visual é genérica
+// ("Rendimento Tokenizado"), mas hoje só os ativos Pendle têm preço resolvido.
+function _isYieldTokenPosition(asset) {
   return /^(PT|YT|SY|PLP|LP)-/i.test(asset || '') || /-LPT$/i.test(asset || '');
 }
+// Alias retrocompatível (nome antigo) — evita partir referências existentes.
+const _isPendleToken = _isYieldTokenPosition;
 window._loadPendlePrices = _loadPendlePrices;
 window._pendlePriceFor = _pendlePriceFor;
+window._isYieldTokenPosition = _isYieldTokenPosition;
 
 
 // ── ERC-4626 vault reader (universal) ──────────────────────────
@@ -15287,11 +15296,11 @@ function renderPortfolioCharts(w) {
         if (unpricedSamples.length < 5) unpricedSamples.push(h.asset + ' (preço não fiável)');
         continue;
       }
-      // 0. PENDLE/YIELD: para PT/YT/SY/LP, a fonte AUTORITATIVA é a API oficial Pendle
-      // (não há mercado spot fiável — DexScreener daria preço-fantasma). Tem prioridade
-      // máxima para estes tokens. Se a API Pendle não tiver preço (>0), cai para a cascata
-      // normal (provavelmente fica sem preço, que é o correto para um YT expirado a $0).
-      if (h._pendlePosition && h.contract) {
+      // 0. YIELD-TOKENIZATION: para PT/YT/SY/LP, a fonte AUTORITATIVA é a API do protocolo
+      // emissor (hoje só Pendle implementada). Não há mercado spot fiável — o DexScreener
+      // daria preço-fantasma. Prioridade máxima para estes tokens. Se não houver preço (>0),
+      // cai para a cascata normal (provavelmente fica sem preço, correto p/ um YT expirado a $0).
+      if (h._yieldPosition && h.contract) {
         const pp = _pendlePriceFor(h.chain, h.contract);
         if (pp != null) { ppu = pp * eurRate; ppuSrc = 'pendle'; }
       }
@@ -15392,11 +15401,11 @@ function renderPortfolioCharts(w) {
         .then(results => { if (results.some(Boolean)) renderDebounced(); })
         .catch(() => {});
     }
-    // PENDLE: se há posições Pendle e o mapa de preços ainda não está carregado (ou está
-    // a expirar), carrega-o em background e re-renderiza. Uma chamada paginada cobre TODAS
-    // as posições Pendle de todas as chains de uma vez (eficiente).
-    const _hasPendle = realBal.some(h => h._pendlePosition);
-    if (_hasPendle && (!_pendlePriceMap || (Date.now() - _pendlePriceAt) >= PENDLE_PRICE_TTL)) {
+    // YIELD-TOKENIZATION: se há posições (Pendle/Spectra/...) e o mapa de preços Pendle ainda
+    // não está carregado (ou está a expirar), carrega-o em background e re-renderiza. Uma
+    // chamada paginada cobre TODOS os ativos Pendle de todas as chains de uma vez (eficiente).
+    const _hasYieldPos = realBal.some(h => h._yieldPosition);
+    if (_hasYieldPos && (!_pendlePriceMap || (Date.now() - _pendlePriceAt) >= PENDLE_PRICE_TTL)) {
       _loadPendlePrices().then(m => { if (m && Object.keys(m).length) renderDebounced(); }).catch(() => {});
     }
   } else {
