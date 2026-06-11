@@ -6291,7 +6291,12 @@ const ALCHEMY_SUBDOMAINS = {
 const TRANSFER_CATEGORIES = ['external', 'internal', 'erc20', 'erc721', 'erc1155'];
 
 // Chains supported in Sprint 4 (will expand)
-const INDEXER_SUPPORTED_CHAINS = ['eth', 'base', 'arbitrum', 'optimism', 'polygon', 'scroll', 'linea', 'avalanche', 'bsc', 'mantle', 'blast', 'celo', 'sonic', 'zksync', 'zkevm', 'metis', 'zora', 'berachain', 'unichain', 'mode', 'ink', 'soneium', 'worldchain', 'apechain', 'ronin', 'frax', 'moonbeam', 'opbnb', 'bob', 'superseed', 'astar', 'sei', 'abstract', 'lens', 'flow', 'rootstock'];
+// Chains onde o indexador (alchemy_getAssetTransfers) FUNCIONA. Exclui as
+// NO_ENHANCED_API_CHAINS: nessas, getAssetTransfers dá "EAPIs not enabled" (tal como
+// getTokenBalances), por isso tentá-las só gerava erros e prendia o aviso de "por indexar"
+// para sempre. Lá lemos saldos por RPC básico, mas o HISTÓRICO de transações não é
+// indexável automaticamente (limitação da Alchemy, não da app).
+const INDEXER_SUPPORTED_CHAINS = ['eth', 'base', 'arbitrum', 'optimism', 'polygon', 'scroll', 'linea', 'avalanche', 'bsc', 'blast', 'celo', 'zksync', 'zora', 'berachain', 'unichain', 'ink', 'soneium', 'worldchain', 'apechain', 'ronin', 'abstract', 'lens', 'rootstock', 'gnosis', 'hyperevm', 'monad', 'story', 'shape', 'anime'];
 
 // ─────────────────────────────────────────────────
 // AlchemyAdapter — getAssetTransfers wrapper
@@ -13565,6 +13570,17 @@ async function fetchRealBalances(w, { force = false } = {}) {
         }
       }
       if (eng?.isProtocolReceiptToken?.(h.asset)) {
+        // EXCEÇÃO PENDLE/YIELD: PT/YT/SY/LP são apanhados pelo filtro de receipt, mas NÃO são
+        // duplicação de outro holding — são posições independentes com valor próprio (yield-
+        // tokenization). Excluí-los apagava património real (~$200+ de posições ativas). Deixamo-
+        // -los entrar, marcados como posição estruturada, para serem VALORIZADOS no dashboard
+        // pelo preço oficial da API Pendle. O tratamento FISCAL não muda (as entradas/saídas já
+        // passam pelo FIFO como permutas) — esta flag é só para a VALORIZAÇÃO/apresentação.
+        if (_isPendleToken(h.asset)) {
+          h._pendlePosition = true;
+          holdings.push(h);
+          continue;
+        }
         // É um receipt token (não conta para o património — evita dupla contagem).
         // MAS se for um aToken/debtToken AAVE conhecido, guardamos à parte: precisamos
         // dele para mostrar os tokens REAIS da posição AAVE (o Moralis reporta mal).
@@ -13971,6 +13987,76 @@ async function fetchDexScreenerPrice(chain, contract) {
   }
 }
 window.fetchDexScreenerPrice = fetchDexScreenerPrice;
+
+// ── Pendle price oracle (PT/YT/SY/LP) ──────────────────────────────────────────
+// As posições Pendle (PT/YT/SY/LP) NÃO têm mercado spot fiável — o DexScreener dá
+// preços-fantasma e os YT só se trocam por flash-swap. A fonte CORRETA é a API oficial
+// da Pendle, que devolve o preço por contrato (chainId-contract) de todos os ativos de
+// todas as chains numa chamada paginada. Free tier público (sem key, sem CORS). Mantemos
+// um cache único por sessão (recarregado no máximo a cada 5 min) — uma posição Pendle não
+// muda de valor ao segundo, e isto evita martelar a API (rate limit 100 CU/min).
+let _pendlePriceMap = null;       // { "chainId-contractLower": priceUSD }
+let _pendlePriceAt = 0;           // timestamp do último carregamento
+let _pendleLoading = null;        // promise em curso (evita chamadas concorrentes)
+const PENDLE_PRICE_TTL = 5 * 60 * 1000;
+
+async function _loadPendlePrices() {
+  // Cache válido?
+  if (_pendlePriceMap && (Date.now() - _pendlePriceAt) < PENDLE_PRICE_TTL) return _pendlePriceMap;
+  // Carregamento já em curso? reaproveita a mesma promise.
+  if (_pendleLoading) return _pendleLoading;
+  _pendleLoading = (async () => {
+    const map = {};
+    try {
+      let skip = 0, total = 1, pages = 0;
+      while (skip < total && pages < 12) { // tecto de segurança (12*1000 = 12k ativos)
+        const url = `https://api-v2.pendle.finance/core/v1/prices/assets?skip=${skip}&limit=1000`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          if (res.status === 429) { await new Promise(r => setTimeout(r, 1500)); continue; }
+          break; // erro não-transitório → fica com o que tem
+        }
+        const j = await res.json();
+        const prices = j && j.prices;
+        if (!prices) break;
+        for (const k in prices) {
+          const v = prices[k];
+          if (typeof v === 'number' && v > 0) map[k.toLowerCase()] = v; // 0 = sem preço, ignora
+        }
+        total = j.total || Object.keys(prices).length;
+        skip += 1000;
+        pages++;
+      }
+      _pendlePriceMap = map;
+      _pendlePriceAt = Date.now();
+    } catch (e) {
+      // Rede/CORS falhou — não-fatal. Mantém o mapa anterior (se houver) ou vazio.
+      if (!_pendlePriceMap) _pendlePriceMap = {};
+    } finally {
+      _pendleLoading = null;
+    }
+    return _pendlePriceMap;
+  })();
+  return _pendleLoading;
+}
+
+// Preço USD de um ativo Pendle por chain+contract. Devolve null se não for um ativo Pendle
+// conhecido ou se não tiver preço fiável (>0). Síncrono: lê do mapa já carregado.
+function _pendlePriceFor(chain, contract) {
+  if (!_pendlePriceMap || !contract) return null;
+  const cid = (CHAINS[chain] && CHAINS[chain].id);
+  if (!cid) return null;
+  const v = _pendlePriceMap[`${cid}-${contract.toLowerCase()}`];
+  return (typeof v === 'number' && v > 0) ? v : null;
+}
+
+// É um símbolo de posição Pendle/yield-tokenization? (PT/YT/SY/LP/PLP com maturidade)
+function _isPendleToken(asset) {
+  return /^(PT|YT|SY|PLP|LP)-/i.test(asset || '') || /-LPT$/i.test(asset || '');
+}
+window._loadPendlePrices = _loadPendlePrices;
+window._pendlePriceFor = _pendlePriceFor;
+
 
 // ── ERC-4626 vault reader (universal) ──────────────────────────
 // Most yield vaults (Morpho Vaults, Yearn V3, Beefy, Spark sDAI, etc.) implement the
@@ -15201,8 +15287,16 @@ function renderPortfolioCharts(w) {
         if (unpricedSamples.length < 5) unpricedSamples.push(h.asset + ' (preço não fiável)');
         continue;
       }
+      // 0. PENDLE/YIELD: para PT/YT/SY/LP, a fonte AUTORITATIVA é a API oficial Pendle
+      // (não há mercado spot fiável — DexScreener daria preço-fantasma). Tem prioridade
+      // máxima para estes tokens. Se a API Pendle não tiver preço (>0), cai para a cascata
+      // normal (provavelmente fica sem preço, que é o correto para um YT expirado a $0).
+      if (h._pendlePosition && h.contract) {
+        const pp = _pendlePriceFor(h.chain, h.contract);
+        if (pp != null) { ppu = pp * eurRate; ppuSrc = 'pendle'; }
+      }
       // 1. CHAINLINK ORACLE (top priority) — oracle-grade, immune to fake pairs. Cached read.
-      if (h.contract) {
+      if (ppu == null && h.contract) {
         const clk = _chainlinkCache.get(`${h.chain}:${h.contract.toLowerCase()}`);
         if (clk && clk.priceUSD) { ppu = clk.priceUSD * eurRate; ppuSrc = 'chainlink'; }
         else if (clk === undefined && !(window._clkTried = window._clkTried || new Set()).has(`${h.chain}:${h.contract.toLowerCase()}`) && CHAINLINK_FEEDS[h.chain]?.[h.contract.toLowerCase()]) needChainlink.push(h);
@@ -15297,6 +15391,13 @@ function renderPortfolioCharts(w) {
       Promise.all(needDexPrice.slice(0, 12).map(h => fetchDexScreenerPrice(h.chain, h.contract)))
         .then(results => { if (results.some(Boolean)) renderDebounced(); })
         .catch(() => {});
+    }
+    // PENDLE: se há posições Pendle e o mapa de preços ainda não está carregado (ou está
+    // a expirar), carrega-o em background e re-renderiza. Uma chamada paginada cobre TODAS
+    // as posições Pendle de todas as chains de uma vez (eficiente).
+    const _hasPendle = holdings.some(h => h._pendlePosition);
+    if (_hasPendle && (!_pendlePriceMap || (Date.now() - _pendlePriceAt) >= PENDLE_PRICE_TTL)) {
+      _loadPendlePrices().then(m => { if (m && Object.keys(m).length) renderDebounced(); }).catch(() => {});
     }
   } else {
     for (const lot of fifoState.lots) {
@@ -19477,11 +19578,16 @@ function renderHistory(w) {
   });
 
   // INTEGRIDADE FISCAL: chains onde a carteira TEM saldo (detetadas pelo C4) mas
-  // que NÃO têm transações indexadas. Sem estas transações, o relatório fiscal fica
-  // incompleto — por isso avisamos o utilizador de forma clara.
+  // que NÃO têm transações indexadas. Distinguimos dois casos:
+  //  - INDEXÁVEIS mas ainda não indexadas → aviso acionável ("Indexar agora").
+  //  - NÃO-INDEXÁVEIS (NO_ENHANCED_API_CHAINS: getAssetTransfers não existe lá) → nota
+  //    informativa, não alarme. Pôr estas no aviso de "indexar" prendia-o para sempre,
+  //    porque indexá-las é impossível pela API.
   const _activeChains = (window['_activeChains_' + w.id] || []).filter(Boolean);
   const _chainsWithEvents = new Set(Object.keys(byChain));
-  const _unindexedActiveChains = _activeChains.filter(c => !_chainsWithEvents.has(c));
+  const _notIndexed = _activeChains.filter(c => !_chainsWithEvents.has(c));
+  const _unindexedActiveChains = _notIndexed.filter(c => INDEXER_SUPPORTED_CHAINS.includes(c));
+  const _nonIndexableChains = _notIndexed.filter(c => !INDEXER_SUPPORTED_CHAINS.includes(c));
 
   // Date range
   const dates = walletEvents.map(e => e.timestamp).filter(t => t > 0).sort();
@@ -19739,6 +19845,17 @@ function renderHistory(w) {
           <div style="margin-top:0.6rem">
             <button class="btn btn-gold btn-sm" onclick="startIndexerForActiveWallet()">${(state.lang||'pt')==='en'?'Index now':'Indexar agora'}</button>
           </div>
+        </div>
+      </div>
+    ` : ''}
+
+    ${_nonIndexableChains.length ? `
+      <div class="alert alert-info" style="margin-bottom:1rem;font-size:0.78rem;align-items:flex-start">
+        <span style="font-size:1rem">ℹ</span>
+        <div>
+          ${(state.lang||'pt')==='en'
+            ? `Balances detected on <strong>${_nonIndexableChains.map(c=>c.toUpperCase()).join(', ')}</strong>. These networks don't support automatic transaction indexing (provider limitation), so their balances appear in your portfolio but their history isn't auto-imported. Values there are typically small. You can add transactions manually if needed.`
+            : `Saldos detetados em <strong>${_nonIndexableChains.map(c=>c.toUpperCase()).join(', ')}</strong>. Estas redes não suportam indexação automática de transações (limitação do fornecedor), por isso os saldos aparecem no património mas o histórico não é importado automaticamente. Os valores aí são normalmente pequenos. Podes adicionar transações manualmente se necessário.`}
         </div>
       </div>
     ` : ''}
