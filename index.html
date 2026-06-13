@@ -4,23 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- ══════════════════════════════════════════════════════════════════════════
-     CONTENT-SECURITY-POLICY — Fase 1 (REPORT-ONLY)
-     Esta política NÃO bloqueia nada ainda — só REGISTA na consola o que bloquearia
-     (violações aparecem como "[Report Only] Refused to connect to ..."). Serve para
-     validar que a lista de domínios está completa ANTES de a tornar ativa. Depois de
-     confirmar que a app funciona toda (refresh, importar CSV/Excel, ver posições) sem
-     violações de recursos legítimos, troca-se "-Report-Only" por activo.
+     CONTENT-SECURITY-POLICY — ATIVA
      A JÓIA é connect-src: limita PARA ONDE a app pode enviar dados. Mesmo que um XSS
-     escape, o atacante não consegue exfiltrar — o browser bloqueia fetch para fora desta
-     lista. 'unsafe-inline' em script/style é necessário enquanto a app usar onclick inline
-     (Passo 4 futuro remove-o). frame-ancestors 'none' = anti-clickjacking. ═══════════ -->
-<meta http-equiv="Content-Security-Policy-Report-Only" content="
+     escape ao escape de HTML (Passo 1), o atacante NÃO consegue exfiltrar — o browser
+     bloqueia fetch para qualquer domínio fora desta lista. A lista cobre: proxy Cloudflare,
+     RPCs Alchemy + públicos (drpc/publicnode/etc.), e as APIs de preços/dados.
+     'unsafe-inline' em script/style é necessário enquanto a app usar onclick inline (os 198
+     handlers; Passo 4 futuro remove-os via addEventListener). frame-ancestors 'none' =
+     anti-clickjacking. img-src https: é permissivo de propósito (logos de muitos domínios).
+     NOTA: report-only via <meta> é ignorado pelos browsers — por isso usamos modo ATIVO.
+     Se um domínio legítimo faltar, a consola mostra "Refused to connect" e adiciona-se. ══ -->
+<meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
   img-src 'self' data: https:;
-  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://coins.llama.fi https://icons.llamao.fi https://token-icons.llamao.fi https://api.frankfurter.dev https://*.llamarpc.com https://*.drpc.org;
+  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://coins.llama.fi https://icons.llamao.fi https://token-icons.llamao.fi https://api.frankfurter.dev https://*.llamarpc.com https://*.drpc.org https://*.publicnode.com https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://opbnb-mainnet-rpc.bnbchain.org;
   object-src 'none';
   base-uri 'self';
   frame-ancestors 'none';
