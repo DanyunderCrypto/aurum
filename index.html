@@ -15660,7 +15660,7 @@ function renderPortfolioCharts(w) {
   const sortedChains = [...chainMap.entries()].sort((a, b) => b[1] - a[1]);
 
   // Color palette — variada e moderna (azul, verde, roxo, rosa, âmbar, ciano...)
-  const colors = ['#3B82F6', '#34D399', '#A78BFA', '#F472B6', '#FBBF24', '#22D3EE', '#FB7185', '#818CF8', '#4ADE80'];
+  const colors = ['#3B82F6', '#10D9A0', '#9D5CFF', '#FF5CA8', '#FFB020', '#06C9E8', '#FF6B6B', '#6366F1', '#22C55E'];
 
   // Donut SVG renderer — now with logos + PnL per asset
   const donutSVG = renderDonutSVG(allocItems, colors, totalPortfolio, assetMeta, basisByAsset, fifoByAsset, avgCostByAsset);
@@ -15920,9 +15920,9 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     const clean = (hex || '').replace('#', '');
     if (!/^[0-9a-f]{6}$/i.test(clean)) return hex;
     let r = parseInt(clean.slice(0, 2), 16), g = parseInt(clean.slice(2, 4), 16), b = parseInt(clean.slice(4, 6), 16);
-    r = Math.min(255, Math.round(r + (255 - r) * 0.3));
-    g = Math.min(255, Math.round(g + (255 - g) * 0.3));
-    b = Math.min(255, Math.round(b + (255 - b) * 0.3));
+    r = Math.min(255, Math.round(r + (255 - r) * 0.15));
+    g = Math.min(255, Math.round(g + (255 - g) * 0.15));
+    b = Math.min(255, Math.round(b + (255 - b) * 0.15));
     return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
   };
   const svgGradients = `<defs>${segments.map(s =>
