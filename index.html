@@ -15810,21 +15810,36 @@ async function _geckoSparkline(chain, contract) {
   const hdr = {};
   const ckey = chain + ':' + contract.toLowerCase();
   try {
-    // 1) Pool de maior liquidez do token (cacheada por sessão).
-    let poolAddr = window._geckoPoolCache[ckey];
-    if (poolAddr === undefined) {
+    // 1) Pool de MAIOR liquidez do token (cacheada por sessão). A resposta traz várias pools;
+    // a data[0] nem sempre é a melhor (há pools de liquidez ínfima com preços absurdos). Escolhemos
+    // a de maior reserve_in_usd. Guardamos também se o nosso token é o base ou o quote da pool,
+    // porque o OHLCV vem sempre na perspetiva do BASE token — se o nosso for o quote, invertemos.
+    let cached = window._geckoPoolCache[ckey];
+    if (cached === undefined) {
       await _geckoThrottle();
       const r1 = await fetch(`${base}/networks/${net}/tokens/${contract.toLowerCase()}/pools?page=1`, hdr);
       if (!r1.ok) { window._geckoPoolCache[ckey] = null; return null; }
       const j1 = await r1.json();
-      const pool = j1 && j1.data && j1.data[0];
-      poolAddr = pool ? (pool.attributes && pool.attributes.address) || (pool.id || '').split('_').pop() : null;
-      window._geckoPoolCache[ckey] = poolAddr || null;
+      const pools = (j1 && Array.isArray(j1.data)) ? j1.data : [];
+      // maior reserva
+      let best = null, bestRes = -1;
+      for (const p of pools) {
+        const res = parseFloat(p.attributes && p.attributes.reserve_in_usd) || 0;
+        if (res > bestRes) { bestRes = res; best = p; }
+      }
+      if (!best) { window._geckoPoolCache[ckey] = null; return null; }
+      const baseId = best.relationships && best.relationships.base_token && best.relationships.base_token.data && best.relationships.base_token.data.id || '';
+      // baseId é tipo "eth_0x98a8..."; o nosso token é o base se o contrato bater.
+      const isBase = baseId.toLowerCase().endsWith(contract.toLowerCase());
+      cached = { addr: (best.attributes && best.attributes.address) || (best.id || '').split('_').pop(), isBase };
+      window._geckoPoolCache[ckey] = cached;
     }
-    if (!poolAddr) return null;
-    // 2) OHLCV diário (8 pontos). Usamos os closes.
+    if (!cached || !cached.addr) return null;
+    // 2) OHLCV diário (8 pontos). O ohlcv é sempre do BASE token da pool. Se o nosso token é o
+    // QUOTE, o preço dele = 1/preço-do-base → invertemos os closes.
     await _geckoThrottle();
-    const r2 = await fetch(`${base}/networks/${net}/pools/${poolAddr}/ohlcv/day?aggregate=1&limit=8`, hdr);
+    const tf = cached.isBase ? 'base' : 'quote'; // a Gecko suporta ?token=base|quote no ohlcv
+    const r2 = await fetch(`${base}/networks/${net}/pools/${cached.addr}/ohlcv/day?aggregate=1&limit=8&token=${tf}`, hdr);
     if (!r2.ok) return null;
     const j2 = await r2.json();
     const list = j2 && j2.data && j2.data.attributes && j2.data.attributes.ohlcv_list;
