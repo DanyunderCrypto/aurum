@@ -21,7 +21,7 @@
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
   img-src 'self' data: https:;
-  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://*.drpc.org https://*.publicnode.com https://*.bnbchain.org https://*.infura.io https://*.conduit.xyz https://*.llamarpc.com https://*.llama.fi https://*.llamao.fi https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.geckoterminal.com https://api.morpho.org https://api.frankfurter.dev https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://rpc.apechain.com https://rpc.api.moonbeam.network https://rpc.berachain.com https://rpc.blast.io https://rpc.botanixlabs.com https://rpc.degen.tips https://rpc.frax.com https://rpc.gnosischain.com https://rpc.gobob.xyz https://rpc.hyperliquid.xyz https://rpc.katana.network https://rpc.lens.xyz https://rpc.linea.build https://rpc.mantle.xyz https://rpc.monad.xyz https://rpc.plasma.to https://rpc.scroll.io https://rpc.soneium.org https://rpc.soniclabs.com https://rpc.zora.energy https://rpc-gel.inkonchain.com;
+  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://*.drpc.org https://*.publicnode.com https://*.bnbchain.org https://*.infura.io https://*.conduit.xyz https://*.llamarpc.com https://*.llama.fi https://*.llamao.fi https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://api.frankfurter.dev https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://rpc.apechain.com https://rpc.api.moonbeam.network https://rpc.berachain.com https://rpc.blast.io https://rpc.botanixlabs.com https://rpc.degen.tips https://rpc.frax.com https://rpc.gnosischain.com https://rpc.gobob.xyz https://rpc.hyperliquid.xyz https://rpc.katana.network https://rpc.lens.xyz https://rpc.linea.build https://rpc.mantle.xyz https://rpc.monad.xyz https://rpc.plasma.to https://rpc.scroll.io https://rpc.soneium.org https://rpc.soniclabs.com https://rpc.zora.energy https://rpc-gel.inkonchain.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self';
@@ -15801,8 +15801,13 @@ async function _geckoThrottle() {
 async function _geckoSparkline(chain, contract) {
   const net = _GECKO_NET[chain];
   if (!net || !contract || !/^0x[a-fA-F0-9]{40}$/.test(contract)) return null;
-  const base = 'https://api.geckoterminal.com/api/v2';
-  const hdr = { headers: { 'Accept': 'application/json;version=20230302' } };
+  // VIA PROXY: a GeckoTerminal não envia headers CORS → chamada direta do browser é bloqueada.
+  // Tem de passar pelo Worker Cloudflare (servidor, sem restrição CORS), que reencaminha para a
+  // api.geckoterminal.com. Requer a rota `/gecko/...` adicionada ao Worker (ver PENDENTE).
+  // Formato: {PROXY_BASE}/gecko/{path-da-api-gecko}. Sem a rota, dá 404 silencioso (não CORS).
+  if (!_proxyActive()) return null;
+  const base = PROXY_BASE + '/gecko/api/v2';
+  const hdr = {};
   const ckey = chain + ':' + contract.toLowerCase();
   try {
     // 1) Pool de maior liquidez do token (cacheada por sessão).
