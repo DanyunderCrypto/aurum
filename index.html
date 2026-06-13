@@ -3,6 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- ══════════════════════════════════════════════════════════════════════════
+     CONTENT-SECURITY-POLICY — Fase 1 (REPORT-ONLY)
+     Esta política NÃO bloqueia nada ainda — só REGISTA na consola o que bloquearia
+     (violações aparecem como "[Report Only] Refused to connect to ..."). Serve para
+     validar que a lista de domínios está completa ANTES de a tornar ativa. Depois de
+     confirmar que a app funciona toda (refresh, importar CSV/Excel, ver posições) sem
+     violações de recursos legítimos, troca-se "-Report-Only" por activo.
+     A JÓIA é connect-src: limita PARA ONDE a app pode enviar dados. Mesmo que um XSS
+     escape, o atacante não consegue exfiltrar — o browser bloqueia fetch para fora desta
+     lista. 'unsafe-inline' em script/style é necessário enquanto a app usar onclick inline
+     (Passo 4 futuro remove-o). frame-ancestors 'none' = anti-clickjacking. ═══════════ -->
+<meta http-equiv="Content-Security-Policy-Report-Only" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com data:;
+  img-src 'self' data: https:;
+  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://coins.llama.fi https://icons.llamao.fi https://token-icons.llamao.fi https://api.frankfurter.dev https://*.llamarpc.com https://*.drpc.org;
+  object-src 'none';
+  base-uri 'self';
+  frame-ancestors 'none';
+  form-action 'self';
+">
 <meta name="theme-color" content="#141414">
 <!-- R1: Premium typography -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14447,7 +14470,7 @@ function renderTaxLossHarvest(w) {
               ${losses.slice(0, 20).map((p, i) => `
                 <tr style="border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="_tlhToggle(${i})">
                   <td style="padding:0.5rem;text-align:center"><input type="checkbox" ${window._tlhSelected.has(i) ? 'checked' : ''} onclick="event.stopPropagation();_tlhToggle(${i})"></td>
-                  <td style="padding:0.5rem"><strong>${p.asset}</strong> <span style="opacity:0.6;font-size:0.7rem">${p.chain}</span></td>
+                  <td style="padding:0.5rem"><strong>${escapeHtml(p.asset)}</strong> <span style="opacity:0.6;font-size:0.7rem">${p.chain}</span></td>
                   <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">${fmt(p.totalQty, 6)}</td>
                   <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(p.totalBasis)}</td>
                   <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(p.marketValueEUR)}</td>
@@ -14790,7 +14813,7 @@ function renderDefiPositions(w) {
     lpRows.push(`
       <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
         <div style="flex:1;min-width:0">
-          <div style="font-size:0.85rem;font-weight:600">${lp.token0.symbol}/${lp.token1.symbol} <span style="font-size:0.62rem;color:var(--text-muted)">${lp.feeTier}</span>${stakedBadge}</div>
+          <div style="font-size:0.85rem;font-weight:600">${escapeHtml(lp.token0.symbol)}/${escapeHtml(lp.token1.symbol)} <span style="font-size:0.62rem;color:var(--text-muted)">${lp.feeTier}</span>${stakedBadge}</div>
           <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">
             ${lp.protocol} · ${chainName} · ${rangeBadge}${earnLabel}
           </div>
@@ -14828,7 +14851,7 @@ function renderDefiPositions(w) {
         },
         metricsLine,
       },
-      detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${lp.token0.symbol}: ${Number(lp.token0.amount||0).toFixed(4)} · ${lp.token1.symbol}: ${Number(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
+      detailHTML: metricsLine || `<div style="font-size:0.78rem;color:var(--text-muted)">${escapeHtml(lp.token0.symbol)}: ${Number(lp.token0.amount||0).toFixed(4)} · ${escapeHtml(lp.token1.symbol)}: ${Number(lp.token1.amount||0).toFixed(4)}${earnLabel}</div>`,
     });
   }
 
@@ -14869,7 +14892,7 @@ function renderDefiPositions(w) {
       vaultRows.push(`
         <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
           <div style="flex:1;min-width:0">
-            <div style="font-size:0.85rem;font-weight:600">${v.asset} <span style="font-size:0.6rem;color:var(--muted)">vault</span></div>
+            <div style="font-size:0.85rem;font-weight:600">${escapeHtml(v.asset)} <span style="font-size:0.6rem;color:var(--muted)">vault</span></div>
             <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unid. subjacente · sem preço</div>
           </div>
           <div style="text-align:right;font-family:var(--mono);font-size:0.8rem;color:var(--muted)">—</div>
@@ -14888,7 +14911,7 @@ function renderDefiPositions(w) {
     vaultRows.push(`
       <div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--border-soft)">
         <div style="flex:1;min-width:0">
-          <div style="font-size:0.85rem;font-weight:600">${v.asset} <span style="font-size:0.6rem;color:var(--gold)">vault · ${CHAINS[v.chain]?.name||v.chain}</span></div>
+          <div style="font-size:0.85rem;font-weight:600">${escapeHtml(v.asset)} <span style="font-size:0.6rem;color:var(--gold)">vault · ${CHAINS[v.chain]?.name||v.chain}</span></div>
           <div style="font-size:0.68rem;color:var(--text-muted);font-family:var(--mono)">${fmt(assetsQty)} unid. subjacente</div>
         </div>
         <div style="text-align:right;font-family:var(--mono);font-size:0.9rem;font-weight:700">€${fmt(valueEUR)}</div>
@@ -16114,7 +16137,7 @@ function renderDashboard(w) {
         <div class="metric-label">Próxima Isenção</div>
         ${nextExempt ? `
           <div class="metric-value" style="font-size:1.5rem"><span class="currency-symbol">€</span>${fmt(nextExempt.eur)}</div>
-          <div class="metric-sub">${nextExempt.daysLeft}d · ${nextExempt.asset || '—'}</div>
+          <div class="metric-sub">${nextExempt.daysLeft}d · ${escapeHtml(nextExempt.asset || '—')}</div>
         ` : `
           <div class="metric-value muted">—</div>
           <div class="metric-sub">sem lotes pendentes</div>
@@ -16393,7 +16416,7 @@ function renderDefiCard(c) {
     headLeft = `
       <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         <div style="display:flex;align-items:center">${l0}<div style="margin-left:-8px;display:flex">${l1}</div></div>
-        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.pair.token0.symbol} ${c.pairSep || '/'} ${c.pair.token1.symbol}</div>
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${escapeHtml(c.pair.token0.symbol)} ${c.pairSep || '/'} ${escapeHtml(c.pair.token1.symbol)}</div>
         ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
         ${c.pair.staked ? '<span style="font-size:0.6rem;color:var(--gold);border:1px solid rgba(59,130,246,0.4);border-radius:20px;padding:1px 7px">⚡ staked</span>' : ''}
       </div>`;
@@ -16402,7 +16425,7 @@ function renderDefiCard(c) {
     headLeft = `
       <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap">
         ${sl}
-        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${c.single.symbol}</div>
+        <div style="font-family:var(--display);font-size:1.15rem;font-weight:600;color:var(--white);letter-spacing:-0.01em">${escapeHtml(c.single.symbol)}</div>
         ${c.protocol ? `<span style="font-size:0.62rem;font-weight:600;color:${c.accent || 'var(--gold)'};background:${c.accent ? c.accent+'1f' : 'rgba(59,130,246,0.12)'};border:1px solid ${c.accent ? c.accent+'40' : 'rgba(59,130,246,0.3)'};border-radius:20px;padding:2px 9px">${c.protocol}</span>` : ''}
       </div>`;
   } else {
@@ -16464,12 +16487,12 @@ function renderDefiCard(c) {
     body = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token0.symbol}</span></div>
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l0}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${escapeHtml(c.pair.token0.symbol)}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token0.amount||0).toFixed(4)}</div>
           ${c.pair.token0.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(c.pair.token0.valueUSD)}</div>` : ''}
         </div>
         <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
-          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${c.pair.token1.symbol}</span></div>
+          <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem">${l1}<span style="font-size:0.8rem;color:var(--white);font-weight:600">${escapeHtml(c.pair.token1.symbol)}</span></div>
           <div style="font-family:var(--mono);font-size:0.82rem;color:var(--text)">${Number(c.pair.token1.amount||0).toFixed(4)}</div>
           ${c.pair.token1.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(c.pair.token1.valueUSD)}</div>` : ''}
         </div>
@@ -16498,7 +16521,7 @@ function renderDefiCard(c) {
     body = `
       <div style="padding:0.85rem 0.9rem;background:var(--card-inset);border:1px solid var(--card-inset-border);border-radius:11px">
         <div style="font-size:0.64rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.35rem">${sg.kindLabel || 'Posição'}</div>
-        <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(sg.amount)} ${sg.symbol}</div>
+        <div style="font-family:var(--mono);font-size:0.85rem;color:var(--text)">${fmt(sg.amount)} ${escapeHtml(sg.symbol)}</div>
         ${sg.valueUSD != null ? `<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-muted);margin-top:0.1rem">${_eur(sg.valueUSD)}</div>` : ''}
       </div>`;
   }
@@ -16614,11 +16637,11 @@ function renderUpcomingExemptions(w) {
         const valEUR = l.qtyRemaining * l.basisEURPerUnit;
         return `<div style="margin-bottom:1rem">
           <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem">
-            <span style="font-size:0.82rem">${l.asset} <span style="opacity:0.6;font-size:0.7rem">${l.chain}</span> — €${fmt(valEUR)}</span>
+            <span style="font-size:0.82rem">${escapeHtml(l.asset)} <span style="opacity:0.6;font-size:0.7rem">${l.chain}</span> — €${fmt(valEUR)}</span>
             <span style="font-family:var(--mono);font-size:0.7rem;color:var(--gold)">${l.daysUntilExempt}d</span>
           </div>
           <div class="prog-wrap"><div class="prog-bar ${barCls}" style="width:${pct}%"></div></div>
-          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Isento em ${isentoDate} · ${fmt(l.qtyRemaining, 6)} ${l.asset}</div>
+          <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">Isento em ${isentoDate} · ${fmt(l.qtyRemaining, 6)} ${escapeHtml(l.asset)}</div>
         </div>`;
       }).join('');
     }
@@ -16635,7 +16658,7 @@ function renderUpcomingExemptions(w) {
     const barCls=pct>=80?'prog-gold':'prog-amber';
     return `<div style="margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem">
-        <span style="font-size:0.82rem">${c.asset} — €${fmt(c.eur)}</span>
+        <span style="font-size:0.82rem">${escapeHtml(c.asset)} — €${fmt(c.eur)}</span>
         <span style="font-family:var(--mono);font-size:0.7rem;color:var(--gold)">${left}d</span>
       </div>
       <div class="prog-wrap"><div class="prog-bar ${barCls}" style="width:${pct}%"></div></div>
@@ -16701,7 +16724,7 @@ function renderRecentHistory() {
           <td class="mono muted" style="font-size:0.7rem">${e.date || '—'}</td>
           <td><span class="chain-dot" style="background:${(CHAINS[e.chain]?.color)||'#888'}"></span> ${(CHAINS[e.chain]?.name)||e.chain.toUpperCase()}</td>
           <td><span style="color:${typeColor[t]||'#888'};font-weight:600;font-family:var(--mono);font-size:0.7rem;letter-spacing:0.05em">${dirIcon(e.direction)} ${t}</span></td>
-          <td><span style="font-weight:600">${e.asset || '?'}</span></td>
+          <td><span style="font-weight:600">${escapeHtml(e.asset || '?')}</span></td>
           <td class="mono" style="text-align:right;font-size:0.74rem">${(e.amount || 0).toFixed(Math.min(6, e.amount < 1 ? 6 : 2))}</td>
           <td class="mono" style="text-align:right;color:${valEUR !== null ? 'var(--gold)' : 'var(--muted)'};font-size:0.78rem">${valEUR !== null ? '€' + valEUR.toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="mono muted" style="font-size:0.6rem">${explorerUrl ? `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:none">${(e.txHash||'').slice(0,8)}…</a>` : '—'}</td>
@@ -16772,7 +16795,7 @@ function renderRecentHistory() {
         <td class="mono muted" style="font-size:0.7rem">${dateStr}<br><span style="opacity:0.6">${timeStr}</span></td>
         <td><span class="chain-dot" style="background:${CHAINS[e.chain]?.color||'#888'}"></span> ${CHAINS[e.chain]?.name || e.chain}</td>
         <td><span style="color:${typeColor};font-weight:600;font-family:var(--mono);font-size:0.7rem;letter-spacing:0.1em">${typeLabel}</span></td>
-        <td><span style="font-weight:600">${e.asset || '?'}</span><br><span style="font-family:var(--mono);font-size:0.65rem;color:var(--muted)">${(e.amountCrypto||0).toFixed(4)}</span></td>
+        <td><span style="font-weight:600">${escapeHtml(e.asset || '?')}</span><br><span style="font-family:var(--mono);font-size:0.65rem;color:var(--muted)">${(e.amountCrypto||0).toFixed(4)}</span></td>
         <td class="mono gold" style="text-align:right;${valColor}">$${usd.toFixed(2)}</td>
         <td class="mono blue" style="text-align:right;${valColor}">€${eur.toFixed(2)}</td>
         <td class="mono muted" style="font-size:0.6rem">${explorerUrl?`<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:none">${(e.txhash||'').slice(0,8)}…${(e.txhash||'').slice(-4)}</a>`:'—'}</td>
@@ -17441,7 +17464,7 @@ function renderLotSuggestions() {
       ${sugs.slice(0, 20).map((s, i) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0.75rem;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:6px;font-size:0.78rem">
           <div style="flex:1">
-            <div><span class="chain-dot" style="background:${CHAINS[s.chain]?.color||'#888'}"></span> <strong>${s.asset}</strong> · ${s.amountCrypto.toFixed(4)} <span style="color:var(--muted)">($${s.amountUSD.toFixed(2)})</span></div>
+            <div><span class="chain-dot" style="background:${CHAINS[s.chain]?.color||'#888'}"></span> <strong>${escapeHtml(s.asset)}</strong> · ${s.amountCrypto.toFixed(4)} <span style="color:var(--muted)">($${s.amountUSD.toFixed(2)})</span></div>
             <div style="font-family:var(--mono);font-size:0.65rem;color:var(--muted);margin-top:0.2rem">
               ${s.date} · ${CHAINS[s.chain]?.name||s.chain} · ${s.proto==='morpho'?'Morpho':'AAVE V3'} · ${s.txhash?s.txhash.slice(0,10)+'…':'sem hash'}
             </div>
@@ -17599,7 +17622,7 @@ function mempoolShowTooltip(e, lot) {
   const exemptDate = new Date((new Date(lot.acqDate+'T12:00:00')).getTime() + 365*86400000);
   const chain = CHAINS[lot.chain];
   tip.innerHTML = `
-    <div class="mempool-tooltip-header">${lot.asset || '—'} · €${fmt(lot.eur)}</div>
+    <div class="mempool-tooltip-header">${escapeHtml(lot.asset || '—')} · €${fmt(lot.eur)}</div>
     <div class="mempool-tooltip-row"><span class="mempool-tooltip-label">Quantidade</span><span class="mempool-tooltip-value">${fmt(lot.qty, 4)}</span></div>
     <div class="mempool-tooltip-row"><span class="mempool-tooltip-label">Chain</span><span class="mempool-tooltip-value" style="color:${chain?.color||'#888'}">${chain?.name || lot.chain || '—'}</span></div>
     <div class="mempool-tooltip-row"><span class="mempool-tooltip-label">Adquirido</span><span class="mempool-tooltip-value">${fmtDate(lot.acqDate)}</span></div>
@@ -17864,7 +17887,7 @@ function renderStrategy(w) {
           return `
             <div class="lot-card-h" onclick="openLotDrillDown('${drillKey}')" style="cursor:pointer" title="Click para ver as transactions originais">
               <div class="lot-card-asset">
-                <div class="lot-card-asset-name">${c.asset || '?'}</div>
+                <div class="lot-card-asset-name">${escapeHtml(c.asset || '?')}</div>
                 <div class="lot-card-asset-chain">${c.chain || ''}</div>
                 ${isMonthAgg ? `<div class="lot-card-asset-tag" style="background:rgba(59,130,246,0.15);color:var(--gold);border-color:rgba(59,130,246,0.4)">Σ ${c._aggregatedCount} mês</div>` : (isDayAgg ? `<div class="lot-card-asset-tag">Σ ${c._count} dia</div>` : '')}
               </div>
@@ -17883,7 +17906,7 @@ function renderStrategy(w) {
               </div>
               <div class="lot-card-val">
                 <div class="lot-card-val-eur">€${fmt(eur)}</div>
-                <div class="lot-card-val-qty">${fmt(c.qty || 0, 6)} ${c.asset||''}</div>
+                <div class="lot-card-val-qty">${fmt(c.qty || 0, 6)} ${escapeHtml(c.asset||'')}</div>
               </div>
             </div>
           `;
@@ -17951,7 +17974,7 @@ function renderStrategy(w) {
                       const colors = mempoolBlockColors(c._status);
                       const drillKey = c.id || '';
                       return `<tr onclick="openLotDrillDown('${drillKey}')" style="cursor:pointer" title="Click para drill-down">
-                        <td><strong>${c.asset || '?'}</strong>${c._count>1?` <span style="font-size:0.65rem;background:rgba(59,130,246,0.18);padding:0.1rem 0.4rem;border-radius:999px;color:var(--gold);margin-left:0.3rem">Σ${c._count}</span>`:''}</td>
+                        <td><strong>${escapeHtml(c.asset || '?')}</strong>${c._count>1?` <span style="font-size:0.65rem;background:rgba(59,130,246,0.18);padding:0.1rem 0.4rem;border-radius:999px;color:var(--gold);margin-left:0.3rem">Σ${c._count}</span>`:''}</td>
                         <td style="font-size:0.7rem;color:var(--text-muted)">${c.chain||''}</td>
                         <td style="text-align:right;font-family:var(--mono);font-size:0.78rem">${fmt(c.qty||0, 6)}</td>
                         <td style="text-align:right;font-family:var(--mono);font-size:0.82rem;font-weight:500">€${fmt(c.eur||0)}</td>
@@ -17982,7 +18005,7 @@ function renderStrategy(w) {
         const status = mempoolBlockStatus(daysHeld(c.acqDate));
         const color = mempoolBlockColors(status).top;
         const exemptDate = new Date((new Date(c.acqDate+'T12:00:00')).getTime() + 365*86400000);
-        return `<div class="mempool-timeline-marker" style="left:${pct}%;--markerColor:${color}" title="${c.asset} €${fmt(c.eur)} → ${fmtDate(exemptDate.toISOString().split('T')[0])}"></div>`;
+        return `<div class="mempool-timeline-marker" style="left:${pct}%;--markerColor:${color}" title="${escapeHtml(c.asset)} €${fmt(c.eur)} → ${fmtDate(exemptDate.toISOString().split('T')[0])}"></div>`;
       }).join('');
 
       return `
@@ -18065,7 +18088,7 @@ function renderStrategy(w) {
               <td class="mono">${fmtDate(c.acqDate)}</td>
               <td class="mono muted">${fmtDate(c.depDate)}</td>
               <td><span class="chain-dot" style="background:${chain?.color||'#888'}"></span> <span style="font-size:0.8rem;color:${chain?.color||'#888'}">${chain?.name||c.chain||'—'}</span></td>
-              <td style="font-weight:600">${c.asset||'—'}</td>
+              <td style="font-weight:600">${escapeHtml(c.asset||'—')}</td>
               <td class="mono">${c.qty?fmt(c.qty,4):'—'}</td>
               <td class="mono gold">€${fmt(c.eur)}</td>
               <td class="mono">${held}</td>
@@ -19104,7 +19127,7 @@ function openLotDrillDown(lotKey) {
       <div style="background:var(--bg1);border:1px solid var(--border2);border-radius:8px;padding:1.25rem;max-width:720px;width:100%;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1rem;gap:1rem">
           <div>
-            <div style="font-weight:600;font-size:1.05rem;margin-bottom:0.2rem">${lot.asset || '?'} <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">${lot.chain || ''}</span></div>
+            <div style="font-weight:600;font-size:1.05rem;margin-bottom:0.2rem">${escapeHtml(lot.asset || '?')} <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">${lot.chain || ''}</span></div>
             <div style="font-size:0.78rem;color:var(--text-muted)">${aggLabel}</div>
           </div>
           <button onclick="closeLotDrillModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.6rem;cursor:pointer;line-height:1">×</button>
@@ -20164,7 +20187,7 @@ function renderHistory(w) {
                     <td style="font-family:var(--mono);font-size:0.75rem">${e.date || '—'}</td>
                     <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${chainColor(e.chain)};margin-right:0.4rem"></span>${e.chain.toUpperCase()}</td>
                     <td>${typeBadge(e.userOverride?.txType || e.type)} ${overrideMark}${spamMark}</td>
-                    <td style="font-family:var(--mono);font-weight:600;font-size:0.78rem">${e.asset || '?'}</td>
+                    <td style="font-family:var(--mono);font-weight:600;font-size:0.78rem">${escapeHtml(e.asset || '?')}</td>
                     <td style="text-align:right;font-family:var(--num);font-size:0.78rem">${fmtAmount(e)}</td>
                     <td style="text-align:right;font-family:var(--num);font-size:0.78rem;color:${typeof e.priceEUR === 'number' ? 'var(--gold)' : 'var(--text-muted)'}">
                       ${(window.aurumFifoEngine && window.aurumFifoEngine.isLendingMovement && window.aurumFifoEngine.isLendingMovement(e) && !e.userOverride?.forceFifo)
@@ -20784,7 +20807,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         ${(consolidated && _bridgeLinks.length) ? `<div class="alert alert-info" style="font-size:0.78rem;margin-bottom:1rem">
           <span>🔗</span>
           <div><strong>${_bridgeLinks.length} transferência${_bridgeLinks.length>1?'s':''} entre as tuas carteiras</strong> detetada${_bridgeLinks.length>1?'s':''} e tratada${_bridgeLinks.length>1?'s':''} como movimento interno (sem imposto — o custo de aquisição viaja com a cripto).
-          ${_bridgeLinks.slice(0,4).map(l=>`<div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);margin-top:0.3rem">${fmt(l.outAmount,4)} ${l.asset} · ${(''+l.outWallet).replace(/^cex:/,'').slice(0,16)} → ${(''+l.inWallet).replace(/^cex:/,'').slice(0,16)}${l.gapHours?` (${l.gapHours}h)`:''}</div>`).join('')}
+          ${_bridgeLinks.slice(0,4).map(l=>`<div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);margin-top:0.3rem">${fmt(l.outAmount,4)} ${escapeHtml(l.asset)} · ${(''+l.outWallet).replace(/^cex:/,'').slice(0,16)} → ${(''+l.inWallet).replace(/^cex:/,'').slice(0,16)}${l.gapHours?` (${l.gapHours}h)`:''}</div>`).join('')}
           ${_bridgeLinks.length>4?`<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">… e mais ${_bridgeLinks.length-4}</div>`:''}
           </div>
         </div>` : ''}
@@ -20819,7 +20842,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
             <span>⏳</span>
             <div>
               <strong>${approaching.length} lot(s) prestes a tornar-se isentos (G1)</strong> nos próximos 60 dias.
-              ${approaching.slice(0,3).map(l => `<br>· ${l.asset} ${fmt(l.qtyRemaining,6)} — faltam <strong>${l.daysUntilExempt} dias</strong> (adquirido ${l.acqDate})`).join('')}
+              ${approaching.slice(0,3).map(l => `<br>· ${escapeHtml(l.asset)} ${fmt(l.qtyRemaining,6)} — faltam <strong>${l.daysUntilExempt} dias</strong> (adquirido ${l.acqDate})`).join('')}
               ${approaching.length > 3 ? `<br>... e mais ${approaching.length - 3}` : ''}
             </div>
           </div>
@@ -20853,7 +20876,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                 </tr></thead>
                 <tbody>
                   ${top.map(r => `<tr style="border-bottom:1px solid var(--border)">
-                    <td style="padding:0.3rem 0.4rem;font-weight:600">${r.asset}</td>
+                    <td style="padding:0.3rem 0.4rem;font-weight:600">${escapeHtml(r.asset)}</td>
                     <td style="padding:0.3rem 0.4rem;color:var(--text-muted)">${r.chain || '—'}</td>
                     <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
                     <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${r.valueEUR != null ? '€' + fmt(r.valueEUR) : `<span style="color:var(--text-muted)">${t2('no price', 'sem preço')}</span>`}</td>
@@ -20897,7 +20920,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                       ? `<span style="color:var(--green);font-weight:600">✓ ${t2('Exempt (G1)', 'Isento (G1)')}</span>`
                       : `<span style="color:var(--gold)">${r.daysUntilExempt} ${t2('days left', 'dias p/ isenção')}</span>`;
                     return `<tr style="border-bottom:1px solid var(--border)">
-                      <td style="padding:0.3rem 0.4rem;font-weight:600">${r.asset}${r.chain ? `<span style="color:var(--text-muted);font-weight:400;font-size:0.7rem"> · ${r.chain}</span>` : ''}</td>
+                      <td style="padding:0.3rem 0.4rem;font-weight:600">${escapeHtml(r.asset)}${r.chain ? `<span style="color:var(--text-muted);font-weight:400;font-size:0.7rem"> · ${r.chain}</span>` : ''}</td>
                       <td style="padding:0.3rem 0.4rem;text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
                       <td style="padding:0.3rem 0.4rem;color:var(--text-muted);font-size:0.72rem">${r.acqDate || '—'}</td>
                       <td style="padding:0.3rem 0.4rem;text-align:right">${badge}</td>
@@ -20980,7 +21003,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                   ${dispsReal.slice(0, 50).map(d => `
                     <tr style="border-bottom:1px solid var(--border-soft)">
                       <td style="padding:0.5rem;font-family:var(--mono);font-size:0.72rem">${d.disposalDate}</td>
-                      <td style="padding:0.5rem"><strong>${d.asset}</strong> <span style="opacity:0.6;font-size:0.7rem">${d.chain}</span></td>
+                      <td style="padding:0.5rem"><strong>${escapeHtml(d.asset)}</strong> <span style="opacity:0.6;font-size:0.7rem">${d.chain}</span></td>
                       <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">${fmt(d.qtyDisposed, 6)}</td>
                       <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(d.proceedsEUR)}</td>
                       <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(d.basisEUR)}</td>
@@ -21031,7 +21054,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
                   ${rewardsInYear.slice(0, 30).map(r => `
                     <tr style="border-bottom:1px solid var(--border-soft)">
                       <td style="padding:0.5rem;font-family:var(--mono);font-size:0.72rem">${r.date}</td>
-                      <td style="padding:0.5rem"><strong>${r.asset}</strong></td>
+                      <td style="padding:0.5rem"><strong>${escapeHtml(r.asset)}</strong></td>
                       <td style="padding:0.5rem"><span class="badge badge-gold" style="font-size:0.65rem">${r.kind}</span></td>
                       <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">${fmt(r.qty, 6)}</td>
                       <td style="padding:0.5rem;text-align:right;font-family:var(--mono)">€${fmt(r.fairValueEUR)}</td>
@@ -21271,7 +21294,7 @@ function renderFiscal(w) {
               ${months.map(m => `<tr>
                 <td style="font-family:var(--mono)">${m}</td>
                 <td style="font-family:var(--num);text-align:right">${byMonth[m].count}</td>
-                <td>${byMonth[m].asset}</td>
+                <td>${escapeHtml(byMonth[m].asset)}</td>
                 <td style="font-family:var(--num);text-align:right">${byMonth[m].qty.toFixed(6)}</td>
                 <td style="font-family:var(--num);text-align:right;color:var(--gold)">€${fmt(byMonth[m].eur)}</td>
               </tr>`).join('')}
@@ -25038,7 +25061,7 @@ function openCardTaxSetup(cardId) {
           <input type="checkbox" id="taxLoan_${loan.id}" value="${loan.id}" ${currentLinked.includes(loan.id)?'checked':''}>
           <div>
             <div style="font-weight:500">${loan.label}</div>
-            <div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">Asset emprestado: ${loan.asset}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);font-family:var(--mono)">Asset emprestado: ${escapeHtml(loan.asset)}</div>
           </div>
         </label>
       `).join('')}
@@ -25640,7 +25663,7 @@ ${lots.length === 0 ? `<p style="color:#666">Sem cashbacks em ${fiscalYear}.</p>
       ${Object.keys(byMonth).sort().map(m => `<tr>
         <td>${m}</td>
         <td class="num">${byMonth[m].count}</td>
-        <td>${byMonth[m].asset}</td>
+        <td>${escapeHtml(byMonth[m].asset)}</td>
         <td class="num">${byMonth[m].qty.toFixed(6)}</td>
         <td class="num gold">€${fmt(byMonth[m].eur)}</td>
       </tr>`).join('')}
@@ -25669,7 +25692,7 @@ ${lots.length === 0 ? '<p style="color:#666">Sem dados.</p>' : `
     <tbody>
       ${lots.slice(0, 50).map(l => `<tr>
         <td>${l.acqDate}</td>
-        <td>${l.asset}</td>
+        <td>${escapeHtml(l.asset)}</td>
         <td class="num">${(+l.qty||0).toFixed(8)}</td>
         <td class="num">€${(+l.eur||0).toFixed(2)}</td>
         <td>${l.proto||''}</td>
@@ -25743,26 +25766,26 @@ function exportReportByType(type) {
         <div class="card"><div class="card-label">${t2('Estimated tax (28% on G)', 'Imposto estimado (28% sobre G)')}</div><div class="card-value red">€${fmtN(Math.max(0, sumG) * 0.28)}</div></div>
       </div>
       <table><thead><tr><th>${t2('Date', 'Data')}</th><th>${t2('Asset', 'Ativo')}</th><th>Qty</th><th>${t2('Proceeds', 'Realização')} €</th><th>${t2('Basis', 'Custo')} €</th><th>${t2('Gain/Loss', 'Ganho/Perda')} €</th><th>${t2('Regime', 'Regime')}</th></tr></thead><tbody>
-      ${real.map(d => `<tr><td>${d.disposalDate}</td><td>${d.asset}</td><td class="num">${fmtN(d.qtyDisposed, 6)}</td><td class="num">€${fmtN(d.proceedsEUR)}</td><td class="num">€${fmtN(d.basisEUR)}</td><td class="num ${d.gainEUR >= 0 ? 'green' : 'red'}">€${fmtN(d.gainEUR)}</td><td>${d.regime}</td></tr>`).join('')}
+      ${real.map(d => `<tr><td>${d.disposalDate}</td><td>${escapeHtml(d.asset)}</td><td class="num">${fmtN(d.qtyDisposed, 6)}</td><td class="num">€${fmtN(d.proceedsEUR)}</td><td class="num">€${fmtN(d.basisEUR)}</td><td class="num ${d.gainEUR >= 0 ? 'green' : 'red'}">€${fmtN(d.gainEUR)}</td><td>${d.regime}</td></tr>`).join('')}
       </tbody></table>`;
   } else if (type === 'income') {
     const totalE = rewards.reduce((s, x) => s + (x.fairValueEUR || 0), 0);
     body = `<div class="summary-cards"><div class="card"><div class="card-label">${t2('Total income (Annex E)', 'Rendimentos totais (Anexo E)')}</div><div class="card-value gold">€${fmtN(totalE)}</div></div>
         <div class="card"><div class="card-label">${t2('Events', 'Eventos')}</div><div class="card-value">${rewards.length}</div></div></div>
       <table><thead><tr><th>${t2('Date', 'Data')}</th><th>${t2('Asset', 'Ativo')}</th><th>Qty</th><th>${t2('Value', 'Valor')} €</th><th>${t2('Type', 'Tipo')}</th></tr></thead><tbody>
-      ${rewards.map(x => `<tr><td>${x.date || '—'}</td><td>${x.asset}</td><td class="num">${fmtN(x.qty, 6)}</td><td class="num">€${fmtN(x.fairValueEUR || 0)}</td><td>${x.kind || '—'}</td></tr>`).join('')}
+      ${rewards.map(x => `<tr><td>${x.date || '—'}</td><td>${escapeHtml(x.asset)}</td><td class="num">${fmtN(x.qty, 6)}</td><td class="num">€${fmtN(x.fairValueEUR || 0)}</td><td>${x.kind || '—'}</td></tr>`).join('')}
       </tbody></table>`;
   } else if (type === 'eoy') {
     const eoy = _buildEndOfYearHoldings(events, fiscalYear);
     body = `<div class="note">${t2('Balances held at 31 Dec — what Annex J (foreign custody) asks you to declare. Quantities are exact; EUR values are estimates from the last known price.', 'Saldos detidos a 31 de Dezembro — o que o Anexo J (custódia estrangeira) pede para declarar. As quantidades são exatas; os valores em EUR são estimativas do último preço conhecido.')}</div>
       <table><thead><tr><th>${t2('Asset', 'Ativo')}</th><th>${t2('Chain', 'Rede')}</th><th>${t2('Quantity', 'Quantidade')}</th><th>${t2('Est. value', 'Valor est.')} €</th></tr></thead><tbody>
-      ${eoy.rows.map(r => `<tr><td>${r.asset}</td><td>${r.chain || '—'}</td><td class="num">${fmtN(r.qty, 8)}</td><td class="num">${r.valueEUR != null ? '€' + fmtN(r.valueEUR) : '—'}</td></tr>`).join('')}
+      ${eoy.rows.map(r => `<tr><td>${escapeHtml(r.asset)}</td><td>${r.chain || '—'}</td><td class="num">${fmtN(r.qty, 8)}</td><td class="num">${r.valueEUR != null ? '€' + fmtN(r.valueEUR) : '—'}</td></tr>`).join('')}
       </tbody></table>`;
   } else if (type === 'maturity') {
     const mat = _buildAssetMaturity(lots);
     body = `<div class="note">${t2('In Portugal, a holding sold after 365 days is exempt (Annex G1, 0%); sold before, taxed at 28% (Annex G). This shows how long until each lot becomes tax-free.', 'Em Portugal, uma posição vendida após 365 dias é isenta (Anexo G1, 0%); vendida antes, tributada a 28% (Anexo G). Isto mostra quanto falta para cada lote ficar isento.')}</div>
       <table><thead><tr><th>${t2('Asset', 'Ativo')}</th><th>${t2('Quantity', 'Quantidade')}</th><th>${t2('Acquired', 'Adquirido')}</th><th>${t2('Status', 'Estado')}</th></tr></thead><tbody>
-      ${mat.rows.map(r => `<tr><td>${r.asset}</td><td class="num">${fmtN(r.qty, 6)}</td><td>${r.acqDate || '—'}</td><td>${r.exempt ? t2('Exempt (G1)', 'Isento (G1)') : t2(`${r.daysUntilExempt}d to exemption`, `${r.daysUntilExempt}d p/ isenção`)}</td></tr>`).join('')}
+      ${mat.rows.map(r => `<tr><td>${escapeHtml(r.asset)}</td><td class="num">${fmtN(r.qty, 6)}</td><td>${r.acqDate || '—'}</td><td>${r.exempt ? t2('Exempt (G1)', 'Isento (G1)') : t2(`${r.daysUntilExempt}d to exemption`, `${r.daysUntilExempt}d p/ isenção`)}</td></tr>`).join('')}
       </tbody></table>`;
   }
 
