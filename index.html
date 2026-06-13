@@ -5419,6 +5419,23 @@ const _KNOWN_TOKEN_LOGOS = {
   'wsteth': 'https://assets.coingecko.com/coins/images/18834/small/wstETH.png',
   'reth':   'https://assets.coingecko.com/coins/images/20764/small/reth.png',
   'aero':   'https://assets.coingecko.com/coins/images/31745/small/token.png',
+  // Tokens base comuns que as libs por símbolo às vezes falham (ex: cryptocurrency-icons não
+  // tem 'weth'). Por símbolo, CDN CoinGecko de confiança — resolve em qualquer chain.
+  'eth':    'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+  'weth':   'https://assets.coingecko.com/coins/images/2518/small/weth.png',
+  'wbtc':   'https://assets.coingecko.com/coins/images/7598/small/wrapped_bitcoin_wbtc.png',
+  'btc':    'https://assets.coingecko.com/coins/images/1/small/bitcoin.png',
+  'dai':    'https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png',
+  'busd':   'https://assets.coingecko.com/coins/images/9576/small/BUSD.png',
+  'frax':   'https://assets.coingecko.com/coins/images/13422/small/FRAX_icon.png',
+  'gho':    'https://assets.coingecko.com/coins/images/30663/small/gho-token-logo.png',
+  'aave':   'https://assets.coingecko.com/coins/images/12645/small/aave-token-round.png',
+  'link':   'https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png',
+  'wbera':  'https://assets.coingecko.com/coins/images/25235/small/BERA.png',
+  'bera':   'https://assets.coingecko.com/coins/images/25235/small/BERA.png',
+  'usds':   'https://assets.coingecko.com/coins/images/39926/small/usds.webp',
+  'usde':   'https://assets.coingecko.com/coins/images/33613/small/usde.png',
+  'susde':  'https://assets.coingecko.com/coins/images/33669/small/sUSDe.png',
 };
 
 // Só permite logos de CDNs de confiança. Bloqueia IPFS, data:, e domínios arbitrários
@@ -15049,24 +15066,41 @@ function renderDefiPositions(w) {
     for (const [label, val] of Object.entries(_byCat)) if (val > 0.01) defiSlices.push([label, val]);
   }
   defiSlices.sort((a, b) => b[1] - a[1]);
-  const _defiColors = ['#3B82F6', '#34D399', '#A78BFA', '#FBBF24', '#F472B6', '#22D3EE'];
+  const _defiColors = ['#3B82F6', '#10D9A0', '#9D5CFF', '#FF5CA8', '#FFB020', '#06C9E8'];
+  // Clareia uma cor hex (para o gradiente por fatia). Mesma lógica do donut "Allocation by Asset".
+  const _defiLighten = (hex) => {
+    const clean = (hex || '').replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(clean)) return hex;
+    let r = parseInt(clean.slice(0, 2), 16), g = parseInt(clean.slice(2, 4), 16), b = parseInt(clean.slice(4, 6), 16);
+    r = Math.min(255, Math.round(r + (255 - r) * 0.15));
+    g = Math.min(255, Math.round(g + (255 - g) * 0.15));
+    b = Math.min(255, Math.round(b + (255 - b) * 0.15));
+    return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+  };
   let defiDonutHtml = '';
   // Total para o donut = soma das fatias (inclui Solana, que não está no grandTotalEUR
   // para evitar dupla contagem no património, mas DEVE aparecer no donut DeFi).
   const _donutTotalEUR = defiSlices.reduce((s, [, v]) => s + v, 0);
   if (defiSlices.length && _donutTotalEUR > 0.01) {
     const _ds = 130, _sw = 22, _r = (_ds / 2) - (_sw / 2), _circ = 2 * Math.PI * _r, _c = _ds / 2;
+    const _gap = defiSlices.length > 1 ? _circ * 0.006 : 0; // espaço entre fatias
     let _cum = 0;
+    const _defiGrads = `<defs>${defiSlices.map(([, ], i) =>
+      `<linearGradient id="dfd${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${_defiColors[i % _defiColors.length]}"/><stop offset="100%" stop-color="${_defiLighten(_defiColors[i % _defiColors.length])}"/></linearGradient>`
+    ).join('')}</defs>`;
     const arcs = defiSlices.map(([label, value], i) => {
       const pct = value / _donutTotalEUR;
-      const dash = `${pct * _circ} ${_circ}`;
+      const arcLen = Math.max(0, pct * _circ - _gap);
+      const dash = `${arcLen} ${_circ}`;
       const rot = _cum * 360 - 90;
       _cum += pct;
-      return `<circle cx="${_c}" cy="${_c}" r="${_r}" fill="none" stroke="${_defiColors[i % _defiColors.length]}" stroke-width="${_sw}" stroke-dasharray="${dash}" transform="rotate(${rot} ${_c} ${_c})"/>`;
+      return `<circle cx="${_c}" cy="${_c}" r="${_r}" fill="none" stroke="url(#dfd${i})" stroke-width="${_sw}" stroke-dasharray="${dash}" stroke-linecap="round" transform="rotate(${rot} ${_c} ${_c})"/>`;
     }).join('');
     defiDonutHtml = `
       <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;justify-content:center">
         <svg viewBox="0 0 ${_ds} ${_ds}" width="${_ds}" height="${_ds}" style="flex-shrink:0">
+          ${_defiGrads}
+          <circle cx="${_c}" cy="${_c}" r="${_r}" fill="none" stroke="var(--bg2)" stroke-width="${_sw}"/>
           ${arcs}
           <text x="${_c}" y="${_c - 3}" text-anchor="middle" style="font-family:var(--mono);font-size:14px;font-weight:700;fill:var(--text)">€${fmt(_donutTotalEUR)}</text>
           <text x="${_c}" y="${_c + 13}" text-anchor="middle" style="font-size:8px;fill:var(--text-muted);letter-spacing:0.1em">DEFI</text>
@@ -15074,7 +15108,7 @@ function renderDefiPositions(w) {
         <div style="flex:1;min-width:240px;max-width:420px">
           ${defiSlices.map((s, i) => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.55rem 0;border-bottom:1px solid var(--border-soft)">
-              <span style="font-size:0.85rem;color:var(--text)"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:10px"></span>${s[0]}</span>
+              <span style="font-size:0.85rem;color:var(--text)"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_defiColors[i % _defiColors.length]};margin-right:10px"></span>${escapeHtml(s[0])}</span>
               <span style="font-size:0.85rem;font-family:var(--mono);color:var(--text)">€${fmt(s[1])} <span style="color:var(--text-muted)">· ${(s[1] / _donutTotalEUR * 100).toFixed(0)}%</span></span>
             </div>
           `).join('')}
