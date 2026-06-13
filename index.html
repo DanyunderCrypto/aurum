@@ -10,9 +10,10 @@
      bloqueia fetch para qualquer domínio fora desta lista. A lista cobre: proxy Cloudflare,
      RPCs Alchemy + públicos (drpc/publicnode/etc.), e as APIs de preços/dados.
      'unsafe-inline' em script/style é necessário enquanto a app usar onclick inline (os 198
-     handlers; Passo 4 futuro remove-os via addEventListener). frame-ancestors 'none' =
-     anti-clickjacking. img-src https: é permissivo de propósito (logos de muitos domínios).
-     NOTA: report-only via <meta> é ignorado pelos browsers — por isso usamos modo ATIVO.
+     handlers; Passo 4 futuro remove-os via addEventListener). img-src https: é permissivo de
+     propósito (logos de muitos domínios). NOTA: report-only e frame-ancestors via <meta> são
+     ignorados pelos browsers — por isso usamos modo ATIVO, e o anti-clickjacking
+     (frame-ancestors / X-Frame-Options) deve ser configurado no header HTTP do Cloudflare.
      Se um domínio legítimo faltar, a consola mostra "Refused to connect" e adiciona-se. ══ -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
@@ -23,7 +24,6 @@
   connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://*.drpc.org https://*.publicnode.com https://*.bnbchain.org https://*.infura.io https://*.conduit.xyz https://*.llamarpc.com https://*.llama.fi https://*.llamao.fi https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://api.frankfurter.dev https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://rpc.apechain.com https://rpc.api.moonbeam.network https://rpc.berachain.com https://rpc.blast.io https://rpc.botanixlabs.com https://rpc.degen.tips https://rpc.frax.com https://rpc.gnosischain.com https://rpc.gobob.xyz https://rpc.hyperliquid.xyz https://rpc.katana.network https://rpc.lens.xyz https://rpc.linea.build https://rpc.mantle.xyz https://rpc.monad.xyz https://rpc.plasma.to https://rpc.scroll.io https://rpc.soneium.org https://rpc.soniclabs.com https://rpc.zora.energy https://rpc-gel.inkonchain.com;
   object-src 'none';
   base-uri 'self';
-  frame-ancestors 'none';
   form-action 'self';
 ">
 <meta name="theme-color" content="#141414">
