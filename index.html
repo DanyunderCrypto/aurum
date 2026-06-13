@@ -15770,6 +15770,10 @@ async function _fetchSparklines(coinIds) {
 function _renderMiniSpark(prices, w = 72, h = 22) {
   if (!prices || prices.length < 2) return '';
   const min = Math.min(...prices), max = Math.max(...prices), range = (max - min) || 1;
+  // Curva PLANA (stablecoins: USDC, apxUSD, USDat...): variação <0.5% no período → o sparkline
+  // seria uma reta sem informação. Não desenhar — slot fica vazio (mais limpo que uma linha morta).
+  const mid = (max + min) / 2;
+  if (mid > 0 && (range / mid) < 0.005) return '';
   const pts = prices.map((p, i) => {
     const x = (i / (prices.length - 1)) * w;
     const y = h - ((p - min) / range) * (h - 4) - 2;
@@ -15789,9 +15793,11 @@ async function _hydrateSparklines() {
     const id = slot.getAttribute('data-spark-coinid');
     const prices = window._sparkCache[id];
     const svg = _renderMiniSpark(prices);
-    // Sem dados (token que o DefiLlama não cobre): traço neutro plano, esbatido. Mantém a
-    // coluna visualmente consistente — todos os tokens têm "algo", sem buracos que parecem bug.
-    slot.innerHTML = svg || `<svg viewBox="0 0 72 22" width="72" height="22" preserveAspectRatio="none" style="display:block;opacity:0.4"><line x1="2" y1="11" x2="70" y2="11" stroke="var(--text-muted)" stroke-width="1.6"/></svg>`;
+    // Sem dados (token sem histórico de preço, ou stablecoin com curva plana): deixar o slot
+    // VAZIO. Os 72px de largura mantêm-se (alinhamento das colunas intacto), mas NÃO desenhamos
+    // uma linha reta morta — 8 traços baços pareciam um bug/erro de render. Mostrar curva só
+    // quando há movimento real de preço (como DeBank/Rabby fazem). Honesto e limpo.
+    slot.innerHTML = svg || '';
   });
 }
 
