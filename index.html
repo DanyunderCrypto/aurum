@@ -3129,6 +3129,26 @@ body.stealth-mode .stealth-badge {
 <script>
 'use strict';
 // ══════════════════════════════════════════════════════════
+// SEGURANÇA — escape de HTML para dados NÃO-CONFIÁVEIS
+// ══════════════════════════════════════════════════════════
+// Símbolos/nomes de token vêm da BLOCKCHAIN e são controlados por quem cria o token.
+// Um atacante pode criar um token com símbolo tipo <img src=x onerror="...rouba dados..."> e
+// enviá-lo por airdrop (custa cêntimos). Sem escape, esse HTML executa quando renderizamos a
+// lista de ativos via innerHTML → XSS → exfiltração do estado fiscal/chaves. Esta função
+// neutraliza qualquer HTML em dados não-confiáveis. APLICAR a TUDO o que deriva de dados
+// on-chain (asset, symbol, name, labels) antes de entrar em innerHTML/template HTML.
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+window.escapeHtml = escapeHtml;
+
+// ══════════════════════════════════════════════════════════
 // CENTRO DE AJUDA
 // ══════════════════════════════════════════════════════════
 const HELP_FAQS = [
@@ -13569,39 +13589,47 @@ async function fetchRealBalances(w, { force = false } = {}) {
     _portfolioPrices = (_portfolio && _portfolio.priceMap) || new Map();
     if (_solana && _solana.priceMap) for (const [k, v] of _solana.priceMap) _portfolioPrices.set(k, v);
     const _evmHoldings = (_portfolio && _portfolio.holdings) || [];
-    // Separar vaults (ERC-4626) dos holdings normais. O Portfolio API dá saldo
-    // em bruto, por isso para tokens SEM preço conhecido sondamos se são vault.
+    // PERFORMANCE: antes sondávamos readErc4626Vault em SÉRIE para CADA holding sem preço
+    // (818 holdings × ~175ms = 143s no hard refresh — o gargalo real). Agora:
+    //  1) Uma passagem rápida classifica cada holding SEM rede (spam, nativo, com-preço,
+    //     receipt/yield vão direto; só os "talvez-vault" ficam para sondar).
+    //  2) Os candidatos a vault que JÁ sabemos não serem vault (cache negativo persistente)
+    //     ou que são lixo gritante (pré-filtro) são tratados como holding normal sem sondar.
+    //  3) Os restantes candidatos REAIS são sondados em PARALELO (concorrência limitada),
+    //     não em série. Resultado: hard refresh de ~143s para poucos segundos.
+    const _vaultCandidates = [];
     for (const h of _evmHoldings) {
       const probe = { asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty };
       if (eng?.isSpamToken?.(probe)) continue;
       if (h.native) { holdings.push(h); continue; }
+
+      // Receipt/yield ANTES da sondagem de vault (ordem preservada da lógica original via flag).
+      const _isReceipt = eng?.isProtocolReceiptToken?.(h.asset);
       const hasKnownPrice = !!_priceForContractStatic(h.contract, h.chain) || (h._portfolioPriceUSD != null);
-      if (!hasKnownPrice) {
-        // só sondamos vault em redes principais (onde os protocolos existem) para poupar pedidos
-        const rawHex = '0x' + Math.floor(h.qty * Math.pow(10, h.decimals)).toString(16);
-        let vault = null;
-        try { vault = await readErc4626Vault(h.chain, h.contract, rawHex, key); } catch {}
-        if (vault) {
-          vaults.push({ asset: h.asset, chain: h.chain, vaultContract: h.contract, shares: h.qty, decimals: h.decimals, underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw, logoUrl: h.logoUrl });
-          continue;
+
+      // Candidato a sondagem de vault: SÓ se não tem preço conhecido E não é receipt.
+      // (Um token já com preço, ou um receipt, nunca precisou de sondagem de vault.)
+      if (!hasKnownPrice && !_isReceipt) {
+        // Não sondar o que JÁ sabemos não ser vault (cache negativo persistente) nem lixo
+        // gritante (símbolo com URL/claim/visit/emoji — nunca é um vault ERC-4626 legítimo).
+        if (!_isKnownNotVault(h.chain, h.contract) && !_isObviousJunkSymbol(h.asset)) {
+          _vaultCandidates.push(h);
+          continue; // decidido na 2ª passagem (sondagem paralela)
         }
+        // sabido-não-vault ou lixo → holding normal (fica sem preço, filtrado depois se for spam)
+        holdings.push(h);
+        continue;
       }
-      if (eng?.isProtocolReceiptToken?.(h.asset)) {
+
+      // Caminho receipt/yield (idêntico ao original).
+      if (_isReceipt) {
         // EXCEÇÃO YIELD-TOKENIZATION (Pendle/Spectra/Napier/...): PT/YT/SY/LP são apanhados
-        // pelo filtro de receipt, mas NÃO são duplicação de outro holding — são posições
-        // independentes com valor próprio (yield-tokenization). Excluí-los apagava património
-        // real (~$200+ de posições ativas). Deixamo-los entrar, marcados como posição de yield,
-        // para serem VALORIZADOS no dashboard pela fonte de preço própria (hoje: API Pendle). O
-        // tratamento FISCAL não muda (entradas/saídas já passam pelo FIFO como permutas) — esta
-        // flag é só para a VALORIZAÇÃO/apresentação.
+        // pelo filtro de receipt, mas NÃO são duplicação — são posições com valor próprio.
         if (_isYieldTokenPosition(h.asset)) {
           h._yieldPosition = true;
           holdings.push(h);
           continue;
         }
-        // É um receipt token (não conta para o património — evita dupla contagem).
-        // MAS se for um aToken/debtToken AAVE conhecido, guardamos à parte: precisamos
-        // dele para mostrar os tokens REAIS da posição AAVE (o Moralis reporta mal).
         const _c = (h.contract || '').toLowerCase();
         if (_c && _aaveAllContracts().has(_c)) {
           aaveReceipts.push({ contract: _c, asset: h.asset, chain: h.chain });
@@ -13610,6 +13638,29 @@ async function fetchRealBalances(w, { force = false } = {}) {
       }
       holdings.push(h);
     }
+
+    // 2ª passagem: sondar os candidatos a vault em PARALELO (concorrência limitada a 8 para
+    // não saturar o RPC). Cada sondagem que falha marca o contrato como "não-vault" para
+    // sempre (cache negativo persistente) — o próximo hard refresh nem o tenta.
+    const _VAULT_PROBE_CONCURRENCY = 8;
+    for (let i = 0; i < _vaultCandidates.length; i += _VAULT_PROBE_CONCURRENCY) {
+      const slice = _vaultCandidates.slice(i, i + _VAULT_PROBE_CONCURRENCY);
+      await Promise.all(slice.map(async (h) => {
+        let rawHex;
+        try { rawHex = '0x' + BigInt(Math.floor(h.qty * Math.pow(10, h.decimals))).toString(16); }
+        catch { rawHex = '0x' + Math.floor(h.qty * Math.pow(10, h.decimals)).toString(16); }
+        let vault = null;
+        try { vault = await readErc4626Vault(h.chain, h.contract, rawHex, key); } catch {}
+        if (vault) {
+          vaults.push({ asset: h.asset, chain: h.chain, vaultContract: h.contract, shares: h.qty, decimals: h.decimals, underlyingContract: vault.underlyingContract, assetsRaw: vault.assetsRaw, logoUrl: h.logoUrl });
+        } else {
+          // Não é vault → marca como não-vault para sempre, e entra como holding normal.
+          _markNotVault(h.chain, h.contract);
+          holdings.push(h);
+        }
+      }));
+    }
+    _flushNotVault(); // persiste as marcações negativas desta passagem
 
     // Holdings de Solana (SOL + SPL). Não há vaults ERC-4626 na Solana, por isso
     // vão direto para holdings (depois do filtro de spam).
@@ -14093,6 +14144,47 @@ window._isYieldTokenPosition = _isYieldTokenPosition;
 //   decimals()                    → 0x313ce567
 // Returns { underlyingContract, assetsQty } or null if not a vault / call fails.
 const _vaultCache = new Map();
+// CACHE NEGATIVO PERSISTENTE: "este contrato NÃO é um vault ERC-4626" é um facto IMUTÁVEL
+// (o bytecode do contrato não muda). Guardamos em localStorage para nunca mais sondar o mesmo
+// lixo após um hard refresh. Antes: 818 sondagens em série a cada hard refresh = ~143s. Depois:
+// só os contratos NOVOS (nunca vistos) são sondados; os ~13 vaults REAIS continuam a ser lidos
+// fresh (o valor resgatável muda, mas o "é vault" fica cacheado). Chave: "chain:contract".
+const _NOT_VAULT_KEY = 'aurum_notVault_v1';
+let _notVaultSet;
+try { _notVaultSet = new Set(JSON.parse(localStorage.getItem(_NOT_VAULT_KEY) || '[]')); }
+catch { _notVaultSet = new Set(); }
+let _notVaultDirty = false;
+function _markNotVault(chain, contract) {
+  if (!contract) return;
+  _notVaultSet.add(chain + ':' + contract.toLowerCase());
+  _notVaultDirty = true;
+}
+function _isKnownNotVault(chain, contract) {
+  return !!contract && _notVaultSet.has(chain + ':' + contract.toLowerCase());
+}
+// Lixo gritante que NUNCA é um vault ERC-4626 legítimo: símbolos com URLs, "claim"/"visit"/
+// "reward", emojis, ou muito longos (airdrops de phishing). Pré-filtro CONSERVADOR e só
+// NEGATIVO — na dúvida, NÃO marca como lixo (deixa sondar). Nunca exclui um vault real:
+// nenhum sUSDe/sDAI/yvUSDC tem "http" ou emoji no símbolo.
+function _isObviousJunkSymbol(asset) {
+  const s = (asset || '');
+  if (!s) return false;
+  if (s.length > 32) return true;                         // símbolos enormes = airdrop spam
+  if (/https?:|www\.|\.com|\.xyz|\.top|\.vip|\.io\b/i.test(s)) return true; // URL no símbolo
+  if (/\b(claim|visit|reward|airdrop|voucher|bonus|free)\b/i.test(s)) return true;
+  if (/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(s)) return true;       // emoji
+  return false;
+}
+function _flushNotVault() {
+  if (!_notVaultDirty) return;
+  try {
+    // teto de 5000 entradas para não crescer sem limite (FIFO simples: mantém as últimas)
+    let arr = [..._notVaultSet];
+    if (arr.length > 5000) arr = arr.slice(arr.length - 5000);
+    localStorage.setItem(_NOT_VAULT_KEY, JSON.stringify(arr));
+    _notVaultDirty = false;
+  } catch {}
+}
 async function readErc4626Vault(chain, vaultContract, sharesRawHex, key) {
   if (!vaultContract || !sharesRawHex) return null;
   const ck = `${chain}:${vaultContract.toLowerCase()}:${sharesRawHex}`;
@@ -15086,6 +15178,14 @@ function renderDefiPositions(w) {
   const _curTab = window._posActiveTab;
   const uniTable = _rowsWithTab.filter(({ tab }) => tab === _curTab).map(({ r, idx }) => {
     const rid = `uni_${idx}`;
+    // SEGURANÇA (XSS): name/sub/icon derivam de símbolos de token vindos da blockchain
+    // (controlados pelo atacante). Escapamos AQUI, uma vez, antes de qualquer uso em innerHTML.
+    // Trabalhamos sobre uma cópia para não alterar os dados crus (usados em lógica/comparações).
+    r = Object.assign({}, r, {
+      name: escapeHtml(r.name),
+      sub: escapeHtml(r.sub),
+      icon: escapeHtml(r.icon),
+    });
     const open = window._expandedUni.has(rid);
     const kindBadge = { pool: 'Pool', lend: 'Lend/Borrow', vault: 'Vault' }[r.kind] || '';
     // Barra de saúde por tipo: HF (lend/borrow) → barra colorida; range (pools) → pílula.
@@ -15740,13 +15840,13 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     let sparkSlot = '';
     if (!isOther && meta && typeof resolveCoinId === 'function') {
       const cid = resolveCoinId(s.label, meta.chain, meta.contract);
-      if (cid) sparkSlot = `<div data-spark-coinid="${cid}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+      if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
     }
     return `
       <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.25rem;border-bottom:1px solid var(--border-soft)">
         ${logo}
         <div style="flex:1;min-width:0">
-          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.98rem;font-weight:600;color:var(--text)">${s.label}</div>
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.98rem;font-weight:600;color:var(--text)">${escapeHtml(s.label)}</div>
           <div style="font-family:var(--mono);font-size:0.76rem;color:var(--text-dim);margin-top:0.12rem">${(s.pct*100).toFixed(1)}%</div>
         </div>
         ${sparkSlot}
@@ -16170,7 +16270,7 @@ function renderUnifiedPositions() {
               ].map(([l,v,c])=>`<div style="background:rgba(59,130,246,0.03);padding:0.7rem 0.85rem;border-radius:var(--radius)"><div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:0.25rem">${l}</div><div style="font-family:var(--num);font-weight:700;font-size:1.3rem;color:${c}">${v}</div></div>`).join('')}
             </div>
             <div style="margin-top:1rem;font-family:var(--mono);font-size:0.7rem;color:var(--muted)">
-              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" style="color:var(--gold);text-decoration:none">→ ${t('pos.openInAave')}</a>
+              <a href="https://app.aave.com/?marketName=proto_${r.chainKey === 'eth' ? 'mainnet' : r.chainKey}_v3" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:none">→ ${t('pos.openInAave')}</a>
             </div>
           </div>
         </td></tr>`;
@@ -16604,7 +16704,7 @@ function renderRecentHistory() {
           <td><span style="font-weight:600">${e.asset || '?'}</span></td>
           <td class="mono" style="text-align:right;font-size:0.74rem">${(e.amount || 0).toFixed(Math.min(6, e.amount < 1 ? 6 : 2))}</td>
           <td class="mono" style="text-align:right;color:${valEUR !== null ? 'var(--gold)' : 'var(--muted)'};font-size:0.78rem">${valEUR !== null ? '€' + valEUR.toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-          <td class="mono muted" style="font-size:0.6rem">${explorerUrl ? `<a href="${explorerUrl}" target="_blank" style="color:var(--gold);text-decoration:none">${(e.txHash||'').slice(0,8)}…</a>` : '—'}</td>
+          <td class="mono muted" style="font-size:0.6rem">${explorerUrl ? `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:none">${(e.txHash||'').slice(0,8)}…</a>` : '—'}</td>
         </tr>`;
       }).join('')}
       </tbody>
@@ -16675,7 +16775,7 @@ function renderRecentHistory() {
         <td><span style="font-weight:600">${e.asset || '?'}</span><br><span style="font-family:var(--mono);font-size:0.65rem;color:var(--muted)">${(e.amountCrypto||0).toFixed(4)}</span></td>
         <td class="mono gold" style="text-align:right;${valColor}">$${usd.toFixed(2)}</td>
         <td class="mono blue" style="text-align:right;${valColor}">€${eur.toFixed(2)}</td>
-        <td class="mono muted" style="font-size:0.6rem">${explorerUrl?`<a href="${explorerUrl}" target="_blank" style="color:var(--gold);text-decoration:none">${(e.txhash||'').slice(0,8)}…${(e.txhash||'').slice(-4)}</a>`:'—'}</td>
+        <td class="mono muted" style="font-size:0.6rem">${explorerUrl?`<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:none">${(e.txhash||'').slice(0,8)}…${(e.txhash||'').slice(-4)}</a>`:'—'}</td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -16795,7 +16895,7 @@ function renderAaveFullDetail(w) {
               <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.ltv')}</div><div class="mono" style="font-weight:600;color:${p.ltv>70?'var(--red)':p.ltv>50?'var(--gold)':'var(--green)'}">${fmt(p.ltv,2)}%</div></div>
               <div style="padding:0.45rem 0.55rem;background:var(--bg);border-radius:2px"><div style="font-family:var(--mono);font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.15em">${t('pos.available')}</div><div class="blue mono" style="font-weight:600">$${fmt(p.available||0)}</div></div>
             </div>
-            <div style="margin-top:0.5rem"><a href="https://app.aave.com" target="_blank" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.aave.com</a></div>
+            <div style="margin-top:0.5rem"><a href="https://app.aave.com" target="_blank" rel="noopener noreferrer" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.aave.com</a></div>
           </div>`;
         }).join('')}
       </div>
@@ -16829,7 +16929,7 @@ function renderMorphoFullDetail(w) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem">
         ${markets.map(mkt=>renderMorphoMarketCard(mkt)).join('')}
       </div>
-      <div style="margin-top:1rem"><a href="https://app.morpho.org" target="_blank" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.morpho.org</a></div>
+      <div style="margin-top:1rem"><a href="https://app.morpho.org" target="_blank" rel="noopener noreferrer" style="font-family:var(--mono);font-size:0.6rem;color:var(--gold);text-decoration:none">→ app.morpho.org</a></div>
     </div>
   </div>`;
 }
@@ -17976,7 +18076,7 @@ function renderStrategy(w) {
               <td class="mono muted" style="font-size:0.7rem">${isento?'✓':iDate}</td>
               <td><span class="badge badge-muted" style="font-size:0.58rem">${c.proto||'—'}</span></td>
               <td><span class="badge badge-muted" style="font-size:0.58rem">${c.origin||'—'}</span></td>
-              <td class="txhash">${c.txhash?`<a href="${chain?.explorer}/tx/${c.txhash}" target="_blank">${truncTx(c.txhash)}</a>`:'—'}</td>
+              <td class="txhash">${c.txhash?`<a href="${chain?.explorer}/tx/${c.txhash}" target="_blank" rel="noopener noreferrer">${truncTx(c.txhash)}</a>`:'—'}</td>
               <td><button class="btn btn-danger btn-xs" onclick="deleteCollateral('${c.id}')">✕</button></td>
             </tr>`;
           }).join('')}</tbody>
