@@ -21,7 +21,7 @@
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com data:;
   img-src 'self' data: https:;
-  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://*.drpc.org https://*.publicnode.com https://*.bnbchain.org https://*.infura.io https://*.conduit.xyz https://*.llamarpc.com https://*.llama.fi https://*.llamao.fi https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.morpho.org https://api.frankfurter.dev https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://rpc.apechain.com https://rpc.api.moonbeam.network https://rpc.berachain.com https://rpc.blast.io https://rpc.botanixlabs.com https://rpc.degen.tips https://rpc.frax.com https://rpc.gnosischain.com https://rpc.gobob.xyz https://rpc.hyperliquid.xyz https://rpc.katana.network https://rpc.lens.xyz https://rpc.linea.build https://rpc.mantle.xyz https://rpc.monad.xyz https://rpc.plasma.to https://rpc.scroll.io https://rpc.soneium.org https://rpc.soniclabs.com https://rpc.zora.energy https://rpc-gel.inkonchain.com;
+  connect-src 'self' https://*.workers.dev https://*.g.alchemy.com https://*.drpc.org https://*.publicnode.com https://*.bnbchain.org https://*.infura.io https://*.conduit.xyz https://*.llamarpc.com https://*.llama.fi https://*.llamao.fi https://api.coingecko.com https://assets.coingecko.com https://api.dexscreener.com https://dd.dexscreener.com https://api-v2.pendle.finance https://api.geckoterminal.com https://api.morpho.org https://api.frankfurter.dev https://1rpc.io https://rpc.ankr.com https://polygon-rpc.com https://zkevm-rpc.com https://mainnet.storyrpc.io https://evm-rpc.sei-apis.com https://rpc.apechain.com https://rpc.api.moonbeam.network https://rpc.berachain.com https://rpc.blast.io https://rpc.botanixlabs.com https://rpc.degen.tips https://rpc.frax.com https://rpc.gnosischain.com https://rpc.gobob.xyz https://rpc.hyperliquid.xyz https://rpc.katana.network https://rpc.lens.xyz https://rpc.linea.build https://rpc.mantle.xyz https://rpc.monad.xyz https://rpc.plasma.to https://rpc.scroll.io https://rpc.soneium.org https://rpc.soniclabs.com https://rpc.zora.energy https://rpc-gel.inkonchain.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self';
@@ -15775,14 +15775,67 @@ function renderPortfolioCharts(w) {
 }
 
 // ── Sparklines por token (coluna "7 dias", estilo Koinly) ──────────────────
-// Busca a série de preços de 7 dias do DefiLlama (/chart) em batch, com cache em
-// memória (a sessão chega — não vale a pena persistir um gráfico decorativo). Os
-// mini-gráficos são injetados DEPOIS do render (assíncrono, não bloqueia o dashboard).
+// Mapa das nossas chain keys → network slugs da GeckoTerminal (diferem dos chainId).
+// Fonte: api.geckoterminal.com/api/v2/networks. Só as que a GeckoTerminal suporta; as outras
+// simplesmente não tentam (cai no slot vazio, como hoje).
+const _GECKO_NET = {
+  eth: 'eth', base: 'base', arbitrum: 'arbitrum', optimism: 'optimism', polygon: 'polygon_pos',
+  bnb: 'bsc', bsc: 'bsc', avalanche: 'avax', gnosis: 'xdai', scroll: 'scroll', linea: 'linea',
+  mantle: 'mantle', blast: 'blast', zksync: 'zksync', celo: 'celo', sonic: 'sonic', metis: 'metis',
+  mode: 'mode', sei: 'sei-evm', berachain: 'berachain', unichain: 'unichain', soneium: 'soneium',
+  ink: 'ink', apechain: 'apechain', ronin: 'ronin', moonbeam: 'moonbeam', fantom: 'ftm',
+  cronos: 'cronos', aurora: 'aurora', boba: 'boba', zora: 'zora',
+};
+// Cache do mapeamento contrato→pool (poupa a 1ª chamada nas próximas sessões não, mas dentro da
+// sessão sim). E throttle simples para respeitar o rate limit (~30/min) da GeckoTerminal.
+window._geckoPoolCache = window._geckoPoolCache || {};
+let _geckoLastCall = 0;
+async function _geckoThrottle() {
+  const since = Date.now() - _geckoLastCall;
+  if (since < 2200) await new Promise(r => setTimeout(r, 2200 - since)); // ~27/min, folga p/ 30
+  _geckoLastCall = Date.now();
+}
+// Busca o sparkline (7-8 closes diários) de UM token via GeckoTerminal: contrato → pool de maior
+// liquidez → OHLCV diário. Tolerante a falhas: qualquer erro/formato inesperado → null (slot
+// vazio, nada parte). Só é chamada para tokens que o DefiLlama NÃO cobriu.
+async function _geckoSparkline(chain, contract) {
+  const net = _GECKO_NET[chain];
+  if (!net || !contract || !/^0x[a-fA-F0-9]{40}$/.test(contract)) return null;
+  const base = 'https://api.geckoterminal.com/api/v2';
+  const hdr = { headers: { 'Accept': 'application/json;version=20230302' } };
+  const ckey = chain + ':' + contract.toLowerCase();
+  try {
+    // 1) Pool de maior liquidez do token (cacheada por sessão).
+    let poolAddr = window._geckoPoolCache[ckey];
+    if (poolAddr === undefined) {
+      await _geckoThrottle();
+      const r1 = await fetch(`${base}/networks/${net}/tokens/${contract.toLowerCase()}/pools?page=1`, hdr);
+      if (!r1.ok) { window._geckoPoolCache[ckey] = null; return null; }
+      const j1 = await r1.json();
+      const pool = j1 && j1.data && j1.data[0];
+      poolAddr = pool ? (pool.attributes && pool.attributes.address) || (pool.id || '').split('_').pop() : null;
+      window._geckoPoolCache[ckey] = poolAddr || null;
+    }
+    if (!poolAddr) return null;
+    // 2) OHLCV diário (8 pontos). Usamos os closes.
+    await _geckoThrottle();
+    const r2 = await fetch(`${base}/networks/${net}/pools/${poolAddr}/ohlcv/day?aggregate=1&limit=8`, hdr);
+    if (!r2.ok) return null;
+    const j2 = await r2.json();
+    const list = j2 && j2.data && j2.data.attributes && j2.data.attributes.ohlcv_list;
+    if (!Array.isArray(list) || list.length < 2) return null;
+    // ohlcv_list = [[ts,o,h,l,c,v], ...] em ordem decrescente → invertemos e tiramos os closes.
+    const closes = list.map(x => x[4]).filter(n => n > 0).reverse();
+    return closes.length >= 2 ? closes : null;
+  } catch { return null; }
+}
+
+// DefiLlama /chart em batch (rápido). Marca os que não tiver como null. O fallback GeckoTerminal
+// é orquestrado pelo _hydrateSparklines (fase 2), para não bloquear a injeção dos rápidos.
 window._sparkCache = window._sparkCache || {};
-async function _fetchSparklines(coinIds) {
+async function _fetchSparklinesLlamaOnly(coinIds) {
   const need = [...new Set(coinIds)].filter(id => id && !(id in window._sparkCache));
   if (!need.length) return;
-  // DefiLlama /chart aceita vários coins separados por vírgula. span=8 pontos, 1 por dia.
   const BATCH = 30;
   for (let i = 0; i < need.length; i += BATCH) {
     const slice = need.slice(i, i + BATCH);
@@ -15837,21 +15890,47 @@ function _renderMiniSpark(prices, w = 72, h = 22) {
     + `</svg>`;
 }
 // Depois do render: busca os sparklines dos tokens visíveis e injeta-os nos placeholders.
+// 2 FASES para não bloquear: (1) DefiLlama é rápido (batch) → injeta já; (2) GeckoTerminal é
+// lento (sequencial, throttled) → corre em fundo e injeta cada sparkline à medida que chega.
 async function _hydrateSparklines() {
   const slots = Array.from(document.querySelectorAll('[data-spark-coinid]'));
   if (!slots.length) return;
   const ids = slots.map(s => s.getAttribute('data-spark-coinid')).filter(Boolean);
-  await _fetchSparklines(ids);
-  slots.forEach(slot => {
-    const id = slot.getAttribute('data-spark-coinid');
-    const prices = window._sparkCache[id];
-    const svg = _renderMiniSpark(prices);
-    // Sem dados (token sem histórico de preço, ou stablecoin com curva plana): deixar o slot
-    // VAZIO. Os 72px de largura mantêm-se (alinhamento das colunas intacto), mas NÃO desenhamos
-    // uma linha reta morta — 8 traços baços pareciam um bug/erro de render. Mostrar curva só
-    // quando há movimento real de preço (como DeBank/Rabby fazem). Honesto e limpo.
-    slot.innerHTML = svg || '';
-  });
+
+  const injectAll = () => {
+    document.querySelectorAll('[data-spark-coinid]').forEach(slot => {
+      const id = slot.getAttribute('data-spark-coinid');
+      if (slot.dataset.sparkDone === '1') return; // já injetado
+      const prices = window._sparkCache[id];
+      if (prices === undefined) return; // ainda não resolvido (Gecko a caminho) — deixa o placeholder
+      const svg = _renderMiniSpark(prices);
+      slot.innerHTML = svg || '';
+      slot.dataset.sparkDone = '1';
+    });
+  };
+
+  // FASE 1: DefiLlama (rápido). Marca os que falharam como "a tentar Gecko" (deixa undefined).
+  const need = [...new Set(ids)].filter(id => id && !(id in window._sparkCache));
+  await _fetchSparklinesLlamaOnly(need);
+  injectAll(); // mostra já os que o DefiLlama cobriu
+
+  // FASE 2: GeckoTerminal (lento) para os que o DefiLlama não cobriu — em fundo, progressivo.
+  // Só tenta ids ainda não tentados na Gecko (evita martelar a API a cada re-render do dashboard).
+  window._geckoTried = window._geckoTried || new Set();
+  const llamaFailed = need.filter(id => window._sparkCache[id] == null && !window._geckoTried.has(id) && /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id));
+  for (const id of llamaFailed) {
+    window._geckoTried.add(id);
+    const ix = id.indexOf(':');
+    const closes = await _geckoSparkline(id.slice(0, ix), id.slice(ix + 1));
+    if (!closes) continue;
+    window._sparkCache[id] = closes;
+    // injeta este assim que chega (filtro em JS — evita problemas com ':' em seletor CSS)
+    Array.from(document.querySelectorAll('[data-spark-coinid]')).forEach(slot => {
+      if (slot.getAttribute('data-spark-coinid') !== id) return;
+      const svg = _renderMiniSpark(closes);
+      if (svg) { slot.innerHTML = svg; slot.dataset.sparkDone = '1'; }
+    });
+  }
 }
 
 // Pure SVG donut chart — now with token logos and per-asset unrealized PnL in the legend
