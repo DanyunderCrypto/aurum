@@ -15860,7 +15860,10 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
       }
     }
     // Sparkline de 7 dias (preenchido assincronamente após o render via _hydrateSparklines).
-    let sparkSlot = '';
+    // COLUNA SEMPRE PRESENTE com largura fixa: tenha o token sparkline ou não, reservamos os
+    // 72px. Sem isto, tokens sem coinId (Pendle, obscuros) não tinham slot e o valor à direita
+    // "saltava" — as colunas ficavam desalinhadas entre linhas. Agora alinham sempre.
+    let sparkSlot = '<div style="width:72px;flex-shrink:0"></div>'; // placeholder vazio (mesma largura)
     if (!isOther && meta && typeof resolveCoinId === 'function') {
       const cid = resolveCoinId(s.label, meta.chain, meta.contract);
       if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
@@ -15904,18 +15907,28 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   `;
 }
 
-// Grava o valor total do portfólio ao longo do tempo (para o gráfico de evolução
-// do hero). Como só sabemos o valor "agora", a curva constrói-se a partir de hoje:
-// guardamos um ponto por dia (o último valor do dia). Máx ~180 pontos (6 meses).
+// Grava o valor total do portfólio ao longo do tempo (para o gráfico de evolução do hero).
+// Um ponto por dia (o último valor completo do dia). Máx ~180 pontos (6 meses).
+// INTEGRIDADE: só grava valores COMPLETOS. Durante o carregamento on-chain (paralelo, demora),
+// o total está parcial (só algumas chains entraram) — gravar isso criava uma curva errática
+// (ex: €568 parcial ao lado de €2274 completo no mesmo dia). Duas guardas: (1) os saldos não
+// podem estar a meio do fetch; (2) o valor não pode ser uma queda abrupta vs o último ponto
+// conhecido (sinal clássico de leitura parcial), salvo se for mesmo uma variação real pequena.
 function recordPortfolioValue(wid, eur) {
   if (!wid || !(eur > 0)) return;
+  // Guarda 1: saldos ainda a carregar → valor parcial, não gravar.
+  if (window._balanceFetching) return;
   try {
     state.valueHistory = state.valueHistory || {};
     const hist = state.valueHistory[wid] || [];
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const last = hist[hist.length - 1];
+    // Guarda 2: queda abrupta (>40%) face ao último valor conhecido = provável leitura parcial
+    // (faltam chains). Ignora — não polui a curva. Uma perda real de 40% num dia é rara e, a
+    // acontecer, o valor correto entra no refresh seguinte (completo).
+    if (last && last.v > 0 && eur < last.v * 0.6) return;
     if (last && last.d === today) {
-      last.v = eur; // atualiza o ponto de hoje
+      last.v = eur; // atualiza o ponto de hoje (com o valor mais recente e completo)
     } else {
       hist.push({ d: today, v: eur });
     }
@@ -15928,7 +15941,20 @@ function recordPortfolioValue(wid, eur) {
 // → Bézier), gradiente de área que esvanece, e glow subtil na linha. Mesma fonte de dados
 // (state.valueHistory); só o desenho é mais rico. Devolve '' até haver 2 pontos.
 function portfolioSparkline(wid, width = 260, height = 56) {
-  const hist = (state.valueHistory && state.valueHistory[wid]) || [];
+  const rawHist = (state.valueHistory && state.valueHistory[wid]) || [];
+  // SANITIZAÇÃO na leitura: os dados antigos podem conter snapshots PARCIAIS (gravados a meio
+  // do carregamento antes da guarda de integridade existir) — ex: €568 entre €2274 e €1787.
+  // Filtramos pontos que destoam abruptamente dos vizinhos (uma curva de património real não
+  // salta -75%/+300% de um ponto para o outro). Não altera os dados crus, só o que desenhamos.
+  let hist = rawHist;
+  if (rawHist.length >= 3) {
+    const vals = rawHist.map(p => p.v).filter(v => v > 0).sort((a, b) => a - b);
+    const median = vals[Math.floor(vals.length / 2)] || 0;
+    if (median > 0) {
+      // mantém pontos entre 35% e 300% da mediana (remove os parciais grosseiros)
+      hist = rawHist.filter(p => p.v >= median * 0.35 && p.v <= median * 3);
+    }
+  }
   if (hist.length < 2) {
     return `<div style="display:flex;align-items:center;justify-content:center;height:${height}px;font-size:0.7rem;color:var(--text-dim);text-align:center;padding:0 1rem">${t('dash.collectingCurve')}</div>`;
   }
