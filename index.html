@@ -15923,10 +15923,11 @@ function recordPortfolioValue(wid, eur) {
     const hist = state.valueHistory[wid] || [];
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const last = hist[hist.length - 1];
-    // Guarda 2: queda abrupta (>40%) face ao último valor conhecido = provável leitura parcial
-    // (faltam chains). Ignora — não polui a curva. Uma perda real de 40% num dia é rara e, a
-    // acontecer, o valor correto entra no refresh seguinte (completo).
-    if (last && last.v > 0 && eur < last.v * 0.6) return;
+    // Guarda 2: valor INCOERENTE face ao último ponto conhecido = leitura parcial (faltam
+    // chains → queda) ou glitch de preço (pico absurdo, ex: um preço-fantasma de €94569).
+    // Uma variação real de património num dia não salta -40% nem +200%. Se saltar, é lixo:
+    // ignora. O valor correto entra no refresh seguinte (completo e coerente).
+    if (last && last.v > 0 && (eur < last.v * 0.6 || eur > last.v * 3)) return;
     if (last && last.d === today) {
       last.v = eur; // atualiza o ponto de hoje (com o valor mais recente e completo)
     } else {
@@ -15941,20 +15942,7 @@ function recordPortfolioValue(wid, eur) {
 // → Bézier), gradiente de área que esvanece, e glow subtil na linha. Mesma fonte de dados
 // (state.valueHistory); só o desenho é mais rico. Devolve '' até haver 2 pontos.
 function portfolioSparkline(wid, width = 260, height = 56) {
-  const rawHist = (state.valueHistory && state.valueHistory[wid]) || [];
-  // SANITIZAÇÃO na leitura: os dados antigos podem conter snapshots PARCIAIS (gravados a meio
-  // do carregamento antes da guarda de integridade existir) — ex: €568 entre €2274 e €1787.
-  // Filtramos pontos que destoam abruptamente dos vizinhos (uma curva de património real não
-  // salta -75%/+300% de um ponto para o outro). Não altera os dados crus, só o que desenhamos.
-  let hist = rawHist;
-  if (rawHist.length >= 3) {
-    const vals = rawHist.map(p => p.v).filter(v => v > 0).sort((a, b) => a - b);
-    const median = vals[Math.floor(vals.length / 2)] || 0;
-    if (median > 0) {
-      // mantém pontos entre 35% e 300% da mediana (remove os parciais grosseiros)
-      hist = rawHist.filter(p => p.v >= median * 0.35 && p.v <= median * 3);
-    }
-  }
+  const hist = (state.valueHistory && state.valueHistory[wid]) || [];
   if (hist.length < 2) {
     return `<div style="display:flex;align-items:center;justify-content:center;height:${height}px;font-size:0.7rem;color:var(--text-dim);text-align:center;padding:0 1rem">${t('dash.collectingCurve')}</div>`;
   }
