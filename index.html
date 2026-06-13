@@ -15770,18 +15770,37 @@ async function _fetchSparklines(coinIds) {
 function _renderMiniSpark(prices, w = 72, h = 22) {
   if (!prices || prices.length < 2) return '';
   const min = Math.min(...prices), max = Math.max(...prices), range = (max - min) || 1;
-  // Curva PLANA (stablecoins: USDC, apxUSD, USDat...): variação <0.5% no período → o sparkline
-  // seria uma reta sem informação. Não desenhar — slot fica vazio (mais limpo que uma linha morta).
+  // Curva PLANA (stablecoins): variação <0.5% → reta sem informação. Não desenhar.
   const mid = (max + min) / 2;
   if (mid > 0 && (range / mid) < 0.005) return '';
-  const pts = prices.map((p, i) => {
-    const x = (i / (prices.length - 1)) * w;
-    const y = h - ((p - min) / range) * (h - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  // Pontos (margem vertical de 3px p/ o ponto final não cortar)
+  const padY = 3;
+  const P = prices.map((p, i) => ({
+    x: (i / (prices.length - 1)) * w,
+    y: h - ((p - min) / range) * (h - padY * 2) - padY,
+  }));
+  // Curva suave Catmull-Rom → Bézier (passa por todos os pontos, sem oscilar).
+  let d = `M ${P[0].x.toFixed(1)},${P[0].y.toFixed(1)}`;
+  for (let i = 0; i < P.length - 1; i++) {
+    const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
+    const tn = 0.2;
+    const c1x = p1.x + (p2.x - p0.x) * tn, c1y = p1.y + (p2.y - p0.y) * tn;
+    const c2x = p2.x - (p3.x - p1.x) * tn, c2y = p2.y - (p3.y - p1.y) * tn;
+    d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
   const up = prices[prices.length - 1] >= prices[0];
   const col = up ? 'var(--green, #34D399)' : 'var(--red, #F87171)';
-  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" style="display:block"><polyline points="${pts.join(' ')}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  const last = P[P.length - 1];
+  const gid = 'spk' + Math.abs(_hashStr(d)).toString(36).slice(0, 6);
+  // Curva (opção 3): área com gradiente que esvanece + linha suave + ponto luminoso no valor atual.
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" style="display:block;overflow:visible">`
+    + `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0%" stop-color="${col}" stop-opacity="0.32"/>`
+    + `<stop offset="100%" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>`
+    + `<path d="${d} L ${w},${h} L 0,${h} Z" fill="url(#${gid})" stroke="none"/>`
+    + `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`
+    + `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="2" fill="${col}" style="filter:drop-shadow(0 0 3px ${col})"/>`
+    + `</svg>`;
 }
 // Depois do render: busca os sparklines dos tokens visíveis e injeta-os nos placeholders.
 async function _hydrateSparklines() {
@@ -15818,12 +15837,16 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   const sliceTotal = items.reduce((s, [, v]) => s + (v || 0), 0) || total;
 
   let cumulativePct = 0;
+  // GAP entre fatias (em unidades de circunferência): pequeno espaço que separa visualmente
+  // os segmentos, estilo donut moderno. Só aplica se houver mais de 1 fatia.
+  const gapLen = items.length > 1 ? circumference * 0.006 : 0;
   const segments = items.map(([label, value], i) => {
     const pct = value / sliceTotal;
-    const dashArray = `${pct * circumference} ${circumference}`;
+    const arcLen = Math.max(0, pct * circumference - gapLen);
+    const dashArray = `${arcLen} ${circumference}`;
     const rotation = cumulativePct * 360 - 90;
     cumulativePct += pct;
-    return { label, value, pct, color: colors[i % colors.length], dashArray, rotation };
+    return { label, value, pct, color: colors[i % colors.length], dashArray, rotation, gid: 'dn' + i };
   });
 
   const legend = segments.map(s => {
@@ -15890,10 +15913,25 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     `;
   }).join('');
 
+  // Gradiente por fatia (cor sólida → ligeiramente mais clara) para profundidade moderna.
+  const _lighten = (hex) => {
+    // Só clareia cores hex (#RRGGBB). Para var(...) ou outros formatos, devolve a própria
+    // cor → o gradiente fica sólido (degenera graciosamente, sem erro).
+    const clean = (hex || '').replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(clean)) return hex;
+    let r = parseInt(clean.slice(0, 2), 16), g = parseInt(clean.slice(2, 4), 16), b = parseInt(clean.slice(4, 6), 16);
+    r = Math.min(255, Math.round(r + (255 - r) * 0.3));
+    g = Math.min(255, Math.round(g + (255 - g) * 0.3));
+    b = Math.min(255, Math.round(b + (255 - b) * 0.3));
+    return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+  };
+  const svgGradients = `<defs>${segments.map(s =>
+    `<linearGradient id="${s.gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${s.color}"/><stop offset="100%" stop-color="${_lighten(s.color)}"/></linearGradient>`
+  ).join('')}</defs>`;
   const svgSegments = segments.map(s => `
     <circle cx="${center}" cy="${center}" r="${radius}"
-      fill="none" stroke="${s.color}" stroke-width="${strokeWidth}"
-      stroke-dasharray="${s.dashArray}"
+      fill="none" stroke="url(#${s.gid})" stroke-width="${strokeWidth}"
+      stroke-dasharray="${s.dashArray}" stroke-linecap="round"
       transform="rotate(${s.rotation} ${center} ${center})"
     />
   `).join('');
@@ -15901,6 +15939,7 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
   return `
     <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;padding:0.25rem 0.5rem">
       <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0;align-self:center">
+        ${svgGradients}
         <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="var(--bg2)" stroke-width="${strokeWidth}"/>
         ${svgSegments}
         <text x="${center}" y="${center - 6}" text-anchor="middle" style="font-family:var(--display);font-size:1.25rem;font-weight:700;fill:var(--text)">€${fmt(sliceTotal, 0)}</text>
