@@ -17167,7 +17167,7 @@ function renderYieldPositions(w) {
   const cards = holdings.map(h => {
     const type = _yieldTypeOf(h.asset);
     const meta = _YIELD_TYPE_META[type] || _YIELD_TYPE_META.LP;
-    const px = _priceFor(h.asset, h.chain, h.contract);
+    const px = Number(h._portfolioPriceUSD) || _pendlePriceFor(h.chain, h.contract);
     const value = px != null ? (Number(h.qty) || 0) * px : null;
     const valueEur = value != null ? value * (window._eurRate || 0.92) : null;
     const market = _pendleMarketFor(h.chain, h.contract);
@@ -17228,7 +17228,7 @@ function renderYieldPositions(w) {
   }).join('');
 
   const totalEur = holdings.reduce((s, h) => {
-    const px = _priceFor(h.asset, h.chain, h.contract);
+    const px = Number(h._portfolioPriceUSD) || _pendlePriceFor(h.chain, h.contract);
     return s + (px != null ? (Number(h.qty) || 0) * px * (window._eurRate || 0.92) : 0);
   }, 0);
 
