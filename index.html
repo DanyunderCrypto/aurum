@@ -3286,6 +3286,7 @@ const I18N = {
     'section.upcomingExemptions': 'Próximas Isenções (365d)',
     'section.recentTransactions': 'Últimas Transações',
     'section.allocationByAsset': '📊 Distribuição por Ativo',
+    'section.yieldTokenized': 'Rendimento Tokenizado',
     'section.allocationByChain': '⛓ Distribuição por Rede',
     'section.taxLossHarvest': '🎯 Optimização Fiscal · Tax Loss Harvesting',
     'section.activePositions': 'Posições Activas — Todos os Protocolos',
@@ -3893,6 +3894,7 @@ const I18N = {
     'section.upcomingExemptions': 'Upcoming Exemptions (365d)',
     'section.recentTransactions': 'Recent Transactions',
     'section.allocationByAsset': '📊 Allocation by Asset',
+    'section.yieldTokenized': 'Tokenized Yield',
     'section.allocationByChain': '⛓ Allocation by Chain',
     'section.taxLossHarvest': '🎯 Tax Optimization · Tax Loss Harvesting',
     'section.activePositions': 'Active Positions — All Protocols',
@@ -17112,6 +17114,136 @@ function renderRecentHistory() {
 // ══════════════════════════════════════════════════════════
 // POSIÇÕES TAB (replaces Protocolos)
 // ══════════════════════════════════════════════════════════
+// ── Secção "Rendimento Tokenizado": cartões das posições Pendle/yield (PT/YT/LP) ──
+// Cada cartão: tipo, ativo subjacente, logo do mercado, valor da posição, barra de maturidade
+// (elemento de assinatura — uma posição Pendle vive até expirar) e sparkline do implied APY.
+// Dispara o carregamento dos mercados/históricos em background e re-renderiza quando chegam.
+const _YIELD_TYPE_META = {
+  YT:  { label: 'Yield Token',     color: 'var(--gold, #3B82F6)' },
+  PT:  { label: 'Principal Token', color: 'var(--green, #34D399)' },
+  SY:  { label: 'Standardized',    color: '#9D5CFF' },
+  LP:  { label: 'Liquidity',       color: '#FFB020' },
+  PLP: { label: 'Pool LP',         color: '#FFB020' },
+};
+function _yieldTypeOf(asset) {
+  const m = /^(PT|YT|SY|PLP|LP)-/i.exec(asset || '');
+  return m ? m[1].toUpperCase() : 'LP';
+}
+// Sparkline simples do implied APY (reusa o estilo da app). hist=[{ts,apy}]. Devolve SVG ou ''.
+function _yieldApySparkline(hist, width = 120, height = 32) {
+  if (!hist || hist.length < 2) return '';
+  const vals = hist.map(p => p.apy);
+  const min = Math.min(...vals), max = Math.max(...vals), range = (max - min) || 1;
+  const pad = 3;
+  const pts = hist.map((p, i) => ({
+    x: (i / (hist.length - 1)) * width,
+    y: height - ((p.apy - min) / range) * (height - pad * 2) - pad,
+  }));
+  let d = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i-1]||pts[i], p1 = pts[i], p2 = pts[i+1], p3 = pts[i+2]||p2, t = 0.16;
+    d += ` C ${(p1.x+(p2.x-p0.x)*t).toFixed(1)},${(p1.y+(p2.y-p0.y)*t).toFixed(1)} ${(p2.x-(p3.x-p1.x)*t).toFixed(1)},${(p2.y-(p3.y-p1.y)*t).toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  const rising = vals[vals.length-1] >= vals[0];
+  const col = rising ? 'var(--green, #34D399)' : 'var(--red, #F87171)';
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="none" style="display:block;overflow:visible">
+    <path d="${d}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${pts[pts.length-1].x.toFixed(1)}" cy="${pts[pts.length-1].y.toFixed(1)}" r="2" fill="${col}"/>
+  </svg>`;
+}
+function renderYieldPositions(w) {
+  // Recolher posições yield das holdings em cache com valor.
+  const c = window['_balCache_' + w.id];
+  const holdings = (c?.data || []).filter(h => h._yieldPosition && h.contract);
+  if (!holdings.length) return '';
+
+  // Disparar carregamento de mercados (por chain) e históricos em background — re-render ao chegar.
+  const chainsNeeded = [...new Set(holdings.map(h => CHAINS[h.chain]?.id).filter(Boolean))];
+  let _pendingLoad = false;
+  for (const cid of chainsNeeded) {
+    if (!_pendleMarketsByChain[cid]) { _pendingLoad = true; _loadPendleMarkets(cid).then(() => renderDebounced()).catch(()=>{}); }
+  }
+
+  const cards = holdings.map(h => {
+    const type = _yieldTypeOf(h.asset);
+    const meta = _YIELD_TYPE_META[type] || _YIELD_TYPE_META.LP;
+    const px = _priceFor(h.asset, h.chain, h.contract);
+    const value = px != null ? (Number(h.qty) || 0) * px : null;
+    const valueEur = value != null ? value * (window._eurRate || 0.92) : null;
+    const market = _pendleMarketFor(h.chain, h.contract);
+    const name = market?.name || h.asset.replace(/^(PT|YT|SY|PLP|LP)-/i, '').split('-')[0];
+    const logo = market?.icon || '';
+    const expiry = market?.expiry ? new Date(market.expiry) : null;
+    const daysLeft = expiry ? Math.max(0, Math.round((expiry - Date.now()) / 86400000)) : null;
+
+    // Sparkline do implied APY — busca em background se ainda não temos.
+    let sparkHtml = '', apyNow = null;
+    if (market) {
+      const cid = CHAINS[h.chain]?.id;
+      const hist = _pendleApyHist[market.address?.toLowerCase()];
+      if (hist === undefined) { _loadPendleApyHistory(cid, market.address).then(() => renderDebounced()).catch(()=>{}); }
+      else if (hist && hist.length) { sparkHtml = _yieldApySparkline(hist); apyNow = hist[hist.length-1].apy; }
+    }
+
+    // Barra de maturidade (assinatura): proporção de tempo decorrido. Sem origem fiável da emissão,
+    // usamos uma janela de referência de 1 ano antes do expiry para a posição visual.
+    let maturityBar = '';
+    if (expiry && daysLeft != null) {
+      const totalWindow = 365;
+      const pctLeft = Math.max(4, Math.min(100, (daysLeft / totalWindow) * 100));
+      const urgent = daysLeft <= 14;
+      maturityBar = `
+        <div style="margin-top:0.7rem">
+          <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:0.62rem;color:var(--text-dim);margin-bottom:0.3rem">
+            <span>maturidade</span><span style="color:${urgent ? 'var(--red,#F87171)' : 'var(--text-dim)'}">${daysLeft}d · ${expiry.toISOString().slice(0,10)}</span>
+          </div>
+          <div style="height:4px;background:var(--bg3,#161618);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${pctLeft}%;background:${urgent ? 'var(--red,#F87171)' : meta.color};border-radius:2px"></div>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div style="background:var(--bg2,#101012);border:1px solid var(--border-soft,rgba(255,255,255,0.06));border-radius:var(--radius,12px);padding:1rem;display:flex;flex-direction:column;gap:0.1rem">
+        <div style="display:flex;align-items:center;gap:0.6rem">
+          ${logo ? `<img src="${escapeHtml(logo)}" width="28" height="28" style="border-radius:50%;flex-shrink:0" onerror="this.style.display='none'">` : `<div style="width:28px;height:28px;border-radius:50%;background:${meta.color};opacity:0.2;flex-shrink:0"></div>`}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
+            <div style="display:inline-flex;align-items:center;gap:0.35rem;margin-top:0.1rem">
+              <span style="font-family:var(--mono);font-size:0.6rem;letter-spacing:0.08em;color:${meta.color};border:1px solid ${meta.color};border-radius:4px;padding:0.05rem 0.3rem">${type}</span>
+              <span style="font-family:var(--mono);font-size:0.62rem;color:var(--text-dim)">${meta.label}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:var(--mono);font-weight:700;font-size:0.95rem">${valueEur != null ? '€' + fmt(valueEur, 2) : '—'}</div>
+            ${apyNow != null ? `<div style="font-family:var(--mono);font-size:0.66rem;color:var(--text-dim);margin-top:0.1rem">APY ${(apyNow*100).toFixed(1)}%</div>` : ''}
+          </div>
+        </div>
+        ${sparkHtml ? `<div style="margin-top:0.7rem;display:flex;align-items:center;gap:0.6rem">
+          <span style="font-family:var(--mono);font-size:0.6rem;color:var(--text-dim);white-space:nowrap">implied APY</span>
+          <div style="flex:1">${sparkHtml}</div>
+        </div>` : ''}
+        ${maturityBar}
+      </div>`;
+  }).join('');
+
+  const totalEur = holdings.reduce((s, h) => {
+    const px = _priceFor(h.asset, h.chain, h.contract);
+    return s + (px != null ? (Number(h.qty) || 0) * px * (window._eurRate || 0.92) : 0);
+  }, 0);
+
+  return `
+    <div class="panel" style="margin-top:1.5rem">
+      <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="panel-title">⏳ ${t('section.yieldTokenized') || 'Rendimento Tokenizado'}</span>
+        <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text-dim)">€${fmt(totalEur, 2)} · ${holdings.length} ${holdings.length === 1 ? 'posição' : 'posições'}</span>
+      </div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.8rem">
+        ${cards}
+      </div>
+    </div>`;
+}
+
 function renderProtocols(w) {
   // Determine which protocols have active positions
   const activeProtos = [];
@@ -17142,6 +17274,8 @@ function renderProtocols(w) {
     </div>
 
     ${renderDefiPositions(w)}
+
+    ${renderYieldPositions(w)}
 
     ${(window._posActiveTab === 'lending' || !window._posActiveTab) ? `
       ${(typeof renderSimulator === 'function' && activeProtos.length > 0) ? `
