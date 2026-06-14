@@ -16169,12 +16169,13 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     // "saltava" — as colunas ficavam desalinhadas entre linhas. Agora alinham sempre.
     let sparkSlot = '<div style="width:72px;flex-shrink:0"></div>'; // placeholder vazio (mesma largura)
     if (!isOther && meta && typeof resolveCoinId === 'function') {
-      const cid = resolveCoinId(s.label, meta.chain, meta.contract);
-      if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" data-spark-sym="${escapeHtml((s.label||'').toUpperCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
-      // Tokens Pendle/yield: não têm pool DEX spot (sparkline de preço falha). Em vez disso,
-      // mostramos a evolução do implied APY do mercado Pendle (alimentado em _hydrateSparklines).
-      else if (typeof _isYieldTokenPosition === 'function' && _isYieldTokenPosition(s.label) && meta.contract) {
+      // Pendle/yield PRIMEIRO: estes têm contrato EVM válido (logo resolveCoinId devolveria um cid),
+      // mas não têm pool DEX spot — o sparkline de preço falha. Usamos o implied APY do mercado.
+      if (typeof _isYieldTokenPosition === 'function' && _isYieldTokenPosition(s.label) && meta.contract) {
         sparkSlot = `<div data-spark-pendle="${escapeHtml(meta.chain + ':' + meta.contract.toLowerCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+      } else {
+        const cid = resolveCoinId(s.label, meta.chain, meta.contract);
+        if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" data-spark-sym="${escapeHtml((s.label||'').toUpperCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
       }
     }
     return `
