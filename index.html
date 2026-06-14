@@ -15789,10 +15789,26 @@ const _GECKO_NET = {
 // Cache do mapeamento contrato→pool (poupa a 1ª chamada nas próximas sessões não, mas dentro da
 // sessão sim). E throttle simples para respeitar o rate limit (~30/min) da GeckoTerminal.
 window._geckoPoolCache = window._geckoPoolCache || {};
+// Cache PERSISTENTE de tokens que a CoinGecko on-chain NÃO tem (404). A própria CoinGecko
+// recomenda: detetar 404 e marcar o ativo como inativo, para evitar chamadas redundantes que
+// gastam o teto mensal (10k/mês). Guardado em localStorage → sobrevive a refreshes/sessões.
+const _GECKO_404_KEY = 'aurum_gecko404_v1';
+let _gecko404 = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem(_GECKO_404_KEY) || '[]')); }
+  catch { return new Set(); }
+})();
+function _markGecko404(id) {
+  if (_gecko404.has(id)) return;
+  _gecko404.add(id);
+  // teto de segurança: não deixar crescer infinitamente
+  if (_gecko404.size > 3000) { _gecko404 = new Set([..._gecko404].slice(-2000)); }
+  try { localStorage.setItem(_GECKO_404_KEY, JSON.stringify([..._gecko404])); } catch {}
+}
+function _isGecko404(id) { return _gecko404.has(id); }
 let _geckoLastCall = 0;
 async function _geckoThrottle() {
   const since = Date.now() - _geckoLastCall;
-  if (since < 3000) await new Promise(r => setTimeout(r, 3000 - since)); // ~20/min, folga grande p/ 30
+  if (since < 1500) await new Promise(r => setTimeout(r, 1500 - since)); // ~40/min — folga c/ 100/min da CoinGecko
   _geckoLastCall = Date.now();
 }
 // Busca o sparkline (7-8 closes diários) de UM token via GeckoTerminal: contrato → pool de maior
@@ -15818,7 +15834,14 @@ async function _geckoSparkline(chain, contract) {
     if (cached === undefined) {
       await _geckoThrottle();
       const r1 = await fetch(`${base}/networks/${net}/tokens/${contract.toLowerCase()}/pools?page=1`, hdr);
-      if (!r1.ok) { window._geckoPoolCache[ckey] = null; return null; }
+      if (!r1.ok) {
+        window._geckoPoolCache[ckey] = null;
+        // 404 = a CoinGecko não tem este token nesta chain. Marca como permanente (não re-tentar
+        // em futuras sessões) — protege o teto mensal de chamadas. Outros erros (429/5xx) NÃO são
+        // marcados (são temporários, vale a pena re-tentar depois).
+        if (r1.status === 404) _markGecko404(ckey);
+        return null;
+      }
       const j1 = await r1.json();
       const pools = (j1 && Array.isArray(j1.data)) ? j1.data : [];
       // maior reserva
@@ -15952,13 +15975,14 @@ async function _hydrateSparklines() {
   const candidates = need.filter(id =>
     window._sparkCache[id] == null &&
     !window._geckoTried.has(id) &&
+    !_isGecko404(id) &&  // a CoinGecko já confirmou que não tem este token (404) — não re-tentar
     /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id) &&
     !_isStableSym(symById[id])  // stablecoins não precisam (curva plana) e poupam quota
   );
   // Limite por carga: a GeckoTerminal tem rate limit apertado. Tentar no máximo N por passagem;
   // os restantes ficam para o próximo render (a cache do Worker entretanto aquece). Evita o muro
   // de 429 na primeira carga.
-  const PER_LOAD = 4;
+  const PER_LOAD = 10;
   let done = 0;
   for (const id of candidates) {
     if (done >= PER_LOAD) break;
