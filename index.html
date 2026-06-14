@@ -3287,6 +3287,9 @@ const I18N = {
     'section.recentTransactions': 'Últimas Transações',
     'section.allocationByAsset': '📊 Distribuição por Ativo',
     'section.yieldTokenized': 'Rendimento Tokenizado',
+    'yield.active': 'Ativos',
+    'yield.matured': 'Maturados',
+    'yield.all': 'Todos',
     'section.allocationByChain': '⛓ Distribuição por Rede',
     'section.taxLossHarvest': '🎯 Optimização Fiscal · Tax Loss Harvesting',
     'section.activePositions': 'Posições Activas — Todos os Protocolos',
@@ -3895,6 +3898,9 @@ const I18N = {
     'section.recentTransactions': 'Recent Transactions',
     'section.allocationByAsset': '📊 Allocation by Asset',
     'section.yieldTokenized': 'Tokenized Yield',
+    'yield.active': 'Active',
+    'yield.matured': 'Matured',
+    'yield.all': 'All',
     'section.allocationByChain': '⛓ Allocation by Chain',
     'section.taxLossHarvest': '🎯 Tax Optimization · Tax Loss Harvesting',
     'section.activePositions': 'Active Positions — All Protocols',
@@ -15999,6 +16005,28 @@ function _renderMiniSpark(prices, w = 72, h = 22) {
 // 2 FASES para não bloquear: (1) DefiLlama é rápido (batch) → injeta já; (2) GeckoTerminal é
 // lento (sequencial, throttled) → corre em fundo e injeta cada sparkline à medida que chega.
 async function _hydrateSparklines() {
+  // PENDLE: slots de yield (sem pool DEX) — preencher com o implied APY do mercado Pendle.
+  const pendleSlots = Array.from(document.querySelectorAll('[data-spark-pendle]'));
+  for (const slot of pendleSlots) {
+    if (slot.dataset.sparkDone === '1') continue;
+    const ref = slot.getAttribute('data-spark-pendle'); // "chain:contract"
+    const ix = ref.indexOf(':');
+    const chain = ref.slice(0, ix), contract = ref.slice(ix + 1);
+    const cid = CHAINS[chain]?.id;
+    if (!cid) continue;
+    // garante mercados carregados, depois busca o histórico de APY
+    if (!_pendleMarketsByChain[cid]) { _loadPendleMarkets(cid).then(() => _hydrateSparklines()).catch(()=>{}); continue; }
+    const market = _pendleMarketFor(chain, contract);
+    if (!market) { slot.dataset.sparkDone = '1'; continue; }
+    const hist = _pendleApyHist[market.address?.toLowerCase()];
+    if (hist === undefined) { _loadPendleApyHistory(cid, market.address).then(() => _hydrateSparklines()).catch(()=>{}); continue; }
+    if (hist && hist.length >= 2) {
+      const svg = _renderMiniSpark(hist.map(p => p.apy));
+      slot.innerHTML = svg || '';
+    }
+    slot.dataset.sparkDone = '1';
+  }
+
   const slots = Array.from(document.querySelectorAll('[data-spark-coinid]'));
   if (!slots.length) return;
   const ids = slots.map(s => s.getAttribute('data-spark-coinid')).filter(Boolean);
@@ -16143,6 +16171,11 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     if (!isOther && meta && typeof resolveCoinId === 'function') {
       const cid = resolveCoinId(s.label, meta.chain, meta.contract);
       if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" data-spark-sym="${escapeHtml((s.label||'').toUpperCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+      // Tokens Pendle/yield: não têm pool DEX spot (sparkline de preço falha). Em vez disso,
+      // mostramos a evolução do implied APY do mercado Pendle (alimentado em _hydrateSparklines).
+      else if (typeof _isYieldTokenPosition === 'function' && _isYieldTokenPosition(s.label) && meta.contract) {
+        sparkSlot = `<div data-spark-pendle="${escapeHtml(meta.chain + ':' + meta.contract.toLowerCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+      }
     }
     return `
       <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.25rem;border-bottom:1px solid var(--border-soft)">
@@ -17154,15 +17187,41 @@ function _yieldApySparkline(hist, width = 120, height = 32) {
 function renderYieldPositions(w) {
   // Recolher posições yield das holdings em cache com valor.
   const c = window['_balCache_' + w.id];
-  const holdings = (c?.data || []).filter(h => h._yieldPosition && h.contract);
-  if (!holdings.length) return '';
+  const allHoldings = (c?.data || []).filter(h => h._yieldPosition && h.contract);
+  if (!allHoldings.length) return '';
 
   // Disparar carregamento de mercados (por chain) e históricos em background — re-render ao chegar.
-  const chainsNeeded = [...new Set(holdings.map(h => CHAINS[h.chain]?.id).filter(Boolean))];
-  let _pendingLoad = false;
+  const chainsNeeded = [...new Set(allHoldings.map(h => CHAINS[h.chain]?.id).filter(Boolean))];
   for (const cid of chainsNeeded) {
-    if (!_pendleMarketsByChain[cid]) { _pendingLoad = true; _loadPendleMarkets(cid).then(() => renderDebounced()).catch(()=>{}); }
+    if (!_pendleMarketsByChain[cid]) { _loadPendleMarkets(cid).then(() => renderDebounced()).catch(()=>{}); }
   }
+
+  // Data de maturidade de uma posição: do mercado Pendle, ou do próprio símbolo (ex: YT-LBTC-27MAR2025).
+  const _maturityOf = (h) => {
+    const m = _pendleMarketFor(h.chain, h.contract);
+    if (m?.expiry) return new Date(m.expiry);
+    // fallback: extrair do símbolo, formato ...-DDMMMYYYY (ex: 27MAR2025, 5NOV2026)
+    const sm = /(\d{1,2})([A-Z]{3})(\d{4})$/i.exec(h.asset || '');
+    if (sm) {
+      const months = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
+      const mo = months[sm[2].toUpperCase()];
+      if (mo != null) return new Date(Date.UTC(+sm[3], mo, +sm[1]));
+    }
+    return null;
+  };
+  const _isMatured = (h) => { const d = _maturityOf(h); return d ? (d.getTime() < Date.now()) : false; };
+
+  // Contagens para os separadores
+  const nActive = allHoldings.filter(h => !_isMatured(h)).length;
+  const nMatured = allHoldings.filter(h => _isMatured(h)).length;
+
+  // Filtro selecionado (default: ativos, se houver; senão todos)
+  const filter = window._yieldFilter || (nActive > 0 ? 'active' : 'all');
+  const holdings = allHoldings.filter(h => {
+    if (filter === 'active') return !_isMatured(h);
+    if (filter === 'matured') return _isMatured(h);
+    return true;
+  });
 
   const cards = holdings.map(h => {
     const type = _yieldTypeOf(h.asset);
@@ -17234,14 +17293,32 @@ function renderYieldPositions(w) {
 
   return `
     <div class="panel" style="margin-top:1.5rem">
-      <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center">
+      <div class="panel-head" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem">
         <span class="panel-title">⏳ ${t('section.yieldTokenized') || 'Rendimento Tokenizado'}</span>
-        <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text-dim)">€${fmt(totalEur, 2)} · ${holdings.length} ${holdings.length === 1 ? 'posição' : 'posições'}</span>
+        <div style="display:flex;align-items:center;gap:0.8rem">
+          ${nMatured > 0 ? `<div style="display:flex;gap:0.3rem">
+            ${_yieldFilterBtn('active', t('yield.active') || 'Ativos', nActive, filter)}
+            ${_yieldFilterBtn('matured', t('yield.matured') || 'Maturados', nMatured, filter)}
+            ${_yieldFilterBtn('all', t('yield.all') || 'Todos', allHoldings.length, filter)}
+          </div>` : ''}
+          <span style="font-family:var(--mono);font-size:0.8rem;color:var(--text-dim);white-space:nowrap">€${fmt(totalEur, 2)} · ${holdings.length} ${holdings.length === 1 ? 'posição' : 'posições'}</span>
+        </div>
       </div>
       <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.8rem">
         ${cards}
       </div>
     </div>`;
+}
+
+// Botão de filtro da secção de yield (Ativos/Maturados/Todos).
+function _yieldFilterBtn(id, label, count, current) {
+  const on = current === id;
+  return `<button onclick="setYieldFilter('${id}')" style="background:${on ? 'var(--gold,#3B82F6)' : 'transparent'};color:${on ? '#fff' : 'var(--text-dim,#8B8B8B)'};border:1px solid ${on ? 'var(--gold,#3B82F6)' : 'var(--border-soft,rgba(255,255,255,0.06))'};padding:0.25rem 0.6rem;border-radius:6px;font-size:0.72rem;font-family:var(--mono);cursor:pointer;white-space:nowrap">${label} <span style="opacity:0.65">${count}</span></button>`;
+}
+// Trocar o filtro de posições yield (não re-busca dados, só filtra).
+function setYieldFilter(f) {
+  window._yieldFilter = f;
+  renderDebounced();
 }
 
 function renderProtocols(w) {
