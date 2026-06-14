@@ -16291,7 +16291,33 @@ async function _histCacheSet(map) {
 async function _histBuildCurves(wid, onProgress) {
   const balances = _histReconstructBalances();              // Fase A
   // tokens relevantes: os que têm saldo > 0 nalgum momento OU holding atual
-  const relevant = [...balances.keys()];
+  // FILTRO DE RELEVÂNCIA POR VALOR (não por nº de transações — essa é a dimensão errada).
+  // A curva é dominada por poucos tokens de valor; a esmagadora maioria é dust de €0 que o
+  // DefiLlama nem tem (≈64% das chamadas falhavam). Incluímos um token se o seu PICO de saldo,
+  // valorizado ao preço atual conhecido, alguma vez valeu > $1 — captura o que TENS hoje E o que
+  // TIVESTE e vendeste (ambos contam para a curva histórica), excluindo dust sem custo de chamadas.
+  const _holdingsNow = (window['_balCache_' + wid]?.data) || [];
+  const _priceNow = new Map(); // coinKey → preço USD atual (do holding)
+  const _heldKeys = new Set();
+  for (const h of _holdingsNow) {
+    const k = _llamaCoinKey(h.chain, h.contract, h.asset, h.native);
+    if (!k) continue;
+    if ((Number(h.qty) || 0) > 0) _heldKeys.add(k);
+    const px = Number(h._portfolioPriceUSD) || 0;
+    if (px > 0 && !_priceNow.has(k)) _priceNow.set(k, px);
+  }
+  const VALUE_THRESHOLD_USD = 1;
+  const relevant = [...balances.keys()].filter(k => {
+    const info = balances.get(k);
+    if (!info || !info.pts.length) return false;
+    const peakBal = info.pts.reduce((m, p) => Math.max(m, p.bal), 0);
+    const px = _priceNow.get(k);
+    if (px != null) return (peakBal * px) > VALUE_THRESHOLD_USD;  // valor conhecido
+    // sem preço atual (token que já não tens): incluir só se teve presença real (≥3 movimentos
+    // E pico de saldo) — apanha posições antigas vendidas; o preço histórico vem na Fase B.
+    return info.pts.length >= 3 && peakBal > 0;
+  });
+  if (onProgress) onProgress(0, relevant.length);
   const priceSeries = await _histFetchPrices(relevant, onProgress); // Fase B
 
   // FX USD→EUR (taxa atual da app; aproximação aceitável p/ histórico)
