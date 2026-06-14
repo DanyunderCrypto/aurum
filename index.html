@@ -15792,7 +15792,7 @@ window._geckoPoolCache = window._geckoPoolCache || {};
 let _geckoLastCall = 0;
 async function _geckoThrottle() {
   const since = Date.now() - _geckoLastCall;
-  if (since < 2200) await new Promise(r => setTimeout(r, 2200 - since)); // ~27/min, folga p/ 30
+  if (since < 3000) await new Promise(r => setTimeout(r, 3000 - since)); // ~20/min, folga grande p/ 30
   _geckoLastCall = Date.now();
 }
 // Busca o sparkline (7-8 closes diários) de UM token via GeckoTerminal: contrato → pool de maior
@@ -15937,9 +15937,33 @@ async function _hydrateSparklines() {
   // FASE 2: GeckoTerminal (lento) para os que o DefiLlama não cobriu — em fundo, progressivo.
   // Só tenta ids ainda não tentados na Gecko (evita martelar a API a cada re-render do dashboard).
   window._geckoTried = window._geckoTried || new Set();
-  const llamaFailed = need.filter(id => window._sparkCache[id] == null && !window._geckoTried.has(id) && /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id));
-  for (const id of llamaFailed) {
-    window._geckoTried.add(id);
+  // Mapa coinId → símbolo (do DOM), para saltar stablecoins (sparkline seria plano + gasta quota).
+  const symById = {};
+  document.querySelectorAll('[data-spark-coinid]').forEach(s => {
+    const id = s.getAttribute('data-spark-coinid'), sym = s.getAttribute('data-spark-sym');
+    if (id && sym) symById[id] = sym;
+  });
+  const _isStableSym = (sym) => {
+    if (!sym) return false;
+    const n = sym.replace(/^[A-Z]?W/, '').replace(/[^A-Z]/g, ''); // normalização leve
+    return (typeof USD_STABLECOINS !== 'undefined' && (USD_STABLECOINS.has(sym) || USD_STABLECOINS.has(n)))
+        || (typeof EUR_STABLECOINS !== 'undefined' && (EUR_STABLECOINS.has(sym) || EUR_STABLECOINS.has(n)));
+  };
+  const candidates = need.filter(id =>
+    window._sparkCache[id] == null &&
+    !window._geckoTried.has(id) &&
+    /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id) &&
+    !_isStableSym(symById[id])  // stablecoins não precisam (curva plana) e poupam quota
+  );
+  // Limite por carga: a GeckoTerminal tem rate limit apertado. Tentar no máximo N por passagem;
+  // os restantes ficam para o próximo render (a cache do Worker entretanto aquece). Evita o muro
+  // de 429 na primeira carga.
+  const PER_LOAD = 4;
+  let done = 0;
+  for (const id of candidates) {
+    if (done >= PER_LOAD) break;
+    window._geckoTried.add(id); // marca como tentado (não re-tenta nesta sessão, mesmo se falhar)
+    done++;
     const ix = id.indexOf(':');
     const closes = await _geckoSparkline(id.slice(0, ix), id.slice(ix + 1));
     if (!closes) continue;
@@ -16028,7 +16052,7 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
     let sparkSlot = '<div style="width:72px;flex-shrink:0"></div>'; // placeholder vazio (mesma largura)
     if (!isOther && meta && typeof resolveCoinId === 'function') {
       const cid = resolveCoinId(s.label, meta.chain, meta.contract);
-      if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
+      if (cid) sparkSlot = `<div data-spark-coinid="${escapeHtml(cid)}" data-spark-sym="${escapeHtml((s.label||'').toUpperCase())}" style="width:72px;flex-shrink:0;opacity:0.9"></div>`;
     }
     return `
       <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.25rem;border-bottom:1px solid var(--border-soft)">
