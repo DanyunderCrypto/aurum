@@ -15542,8 +15542,12 @@ function renderPortfolioCharts(w) {
       }
       allocationMap.set(h.asset, (allocationMap.get(h.asset) || 0) + value);
       chainMap.set(h.chain, (chainMap.get(h.chain) || 0) + value);
-      const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0, logoUrl: h.logoUrl };
-      m.qty += h.qty; m.value += value; m.contract = m.contract || h.contract; m.chain = h.chain;
+      const m = assetMeta.get(h.asset) || { chain: h.chain, contract: h.contract, qty: 0, value: 0, logoUrl: h.logoUrl, _metaValue: -1 };
+      m.qty += h.qty; m.value += value;
+      // chain E contract têm de vir da MESMA posição (senão geramos pares inválidos tipo
+      // "base:0x<contrato-da-eth>" para tokens multi-rede → 404 no sparkline/logo). Escolhemos a
+      // posição de MAIOR valor como a representativa (a mais líquida, mais provável de ter dados).
+      if (value > (m._metaValue || 0)) { m.chain = h.chain; m.contract = h.contract; m._metaValue = value; }
       if (h.logoUrl && !m.logoUrl) m.logoUrl = h.logoUrl;
       assetMeta.set(h.asset, m);
       // Mapa global símbolo→{contract,logoUrl,chain}: os cards de posição (Moralis/Mobula)
