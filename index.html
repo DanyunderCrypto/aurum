@@ -16350,12 +16350,14 @@ async function _histBuildCurves(wid, onProgress) {
   for (const [key, info] of balances) {
     const reconToday = _histBalanceAt(info.pts, endTs);
     const real = realToday.get(key);
-    if (real != null && reconToday > 1e-9) {
-      const f = real / reconToday;
-      // só corrige desvios plausíveis (0.1×–10×); fora disto é ruído (token DeFi complexo)
-      anchorFactor.set(key, (f > 0.1 && f < 10) ? f : 1);
+    if (reconToday > 1e-9) {
+      // O saldo on-chain real de HOJE é a verdade absoluta. Escalamos a série inteira do token
+      // por (real/recon), SEM limite — é precisamente nos fatores extremos (ETH: recon 12 vs real
+      // 0.03, por entrar/sair centenas de vezes em gas/swaps/lending) que a âncora é mais crucial.
+      // real ausente ou 0 = token que já não tens (vendido/movido) → fator 0 (sem fantasmas).
+      anchorFactor.set(key, (real != null && real > 0) ? (real / reconToday) : 0);
     } else {
-      anchorFactor.set(key, 1);
+      anchorFactor.set(key, 1); // sem saldo reconstruído hoje (token já zerado na timeline) — neutro
     }
   }
 
@@ -16562,6 +16564,86 @@ function portfolioDualChart(curves, width = 720, height = 200) {
     </svg>`;
 }
 
+// Decide o que mostrar no hero: se já há histórico reconstruído → gráfico dual (MtM+capital)
+// com seletor de período e legenda; senão → sparkline simples + botão "Reconstruir histórico".
+function renderHeroChart(w) {
+  const meta = (state._histMeta && state._histMeta[w.id]) || null;
+  const curves = meta && meta.curves;
+  const hasHist = curves && curves.mtm && curves.mtm.length >= 2;
+  const period = (state._histPeriod && state._histPeriod[w.id]) || 'all';
+
+  if (!hasHist) {
+    // Sem histórico reconstruído ainda: sparkline simples + botão
+    return `
+      ${portfolioSparkline(w.id, 1000, 70)}
+      <div style="display:flex;justify-content:center;margin-top:0.8rem">
+        <button onclick="rebuildHistoryClick('${w.id}')" id="rebuildHistBtn" style="background:var(--gold,#3B82F6);color:#fff;border:none;padding:0.5rem 1.1rem;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;font-family:var(--mono);display:flex;align-items:center;gap:0.5rem">
+          <span style="font-size:0.95rem">↻</span> ${t('hist.rebuild') || 'Reconstruir histórico (3 anos)'}
+        </button>
+      </div>`;
+  }
+
+  // Filtrar por período
+  const now = Date.now() / 1000;
+  const cutoffs = { '1m': 30*86400, '6m': 182*86400, '1y': 365*86400, 'all': Infinity };
+  const cut = cutoffs[period] || Infinity;
+  const filt = (arr) => arr.filter(p => {
+    const ts = new Date(p.d).getTime() / 1000;
+    return (now - ts) <= cut;
+  });
+  const view = { mtm: filt(curves.mtm), capital: filt(curves.capital || []) };
+
+  const lastMtm = curves.mtm[curves.mtm.length - 1].v;
+  const lastCap = (curves.capital && curves.capital.length) ? curves.capital[curves.capital.length - 1].v : 0;
+  const pnl = lastMtm - lastCap;
+  const pnlPct = lastCap > 0 ? (pnl / lastCap * 100) : 0;
+  const pnlCol = pnl >= 0 ? 'var(--green,#34D399)' : 'var(--red,#F87171)';
+  const ageMin = meta.at ? Math.round((Date.now() - meta.at) / 60000) : 0;
+  const ageStr = ageMin < 60 ? `${ageMin}min` : `${Math.round(ageMin/60)}h`;
+
+  const periodBtn = (id, label) => `<button onclick="setHistPeriod('${w.id}','${id}')" style="background:${period===id?'var(--gold,#3B82F6)':'transparent'};color:${period===id?'#fff':'var(--text-dim,#8B8B8B)'};border:1px solid ${period===id?'var(--gold,#3B82F6)':'var(--border,#2a2a2a)'};padding:0.25rem 0.6rem;border-radius:6px;font-size:0.72rem;cursor:pointer;font-family:var(--mono)">${label}</button>`;
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem">
+      <div style="display:flex;align-items:center;gap:1.2rem;font-size:0.78rem;font-family:var(--mono)">
+        <span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:3px;background:${pnlCol};border-radius:2px;display:inline-block"></span>${t('hist.value')||'Valor de mercado'}</span>
+        <span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:0;border-top:2px dashed var(--text-dim,#8B8B8B);display:inline-block"></span>${t('hist.invested')||'Capital investido'}</span>
+        <span style="color:${pnlCol};font-weight:700">${pnl>=0?'+':''}€${fmt(pnl,0)} (${pnl>=0?'+':''}${pnlPct.toFixed(1)}%)</span>
+      </div>
+      <div style="display:flex;gap:0.35rem">
+        ${periodBtn('1m','1M')}${periodBtn('6m','6M')}${periodBtn('1y','1A')}${periodBtn('all','Tudo')}
+      </div>
+    </div>
+    ${portfolioDualChart(view, 1000, 90)}
+    <div style="display:flex;justify-content:flex-end;margin-top:0.5rem">
+      <button onclick="rebuildHistoryClick('${w.id}')" style="background:transparent;color:var(--text-dim,#8B8B8B);border:1px solid var(--border,#2a2a2a);padding:0.3rem 0.7rem;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:var(--mono)" title="Atualizado há ${ageStr}">↻ ${t('hist.refresh')||'Atualizar'} <span style="opacity:0.6">(há ${ageStr})</span></button>
+    </div>`;
+}
+
+// Clique no botão de reconstrução: corre o motor com feedback de progresso.
+async function rebuildHistoryClick(wid) {
+  const btn = document.getElementById('rebuildHistBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ A reconstruir…'; }
+  try {
+    if (typeof toast === 'function') toast(t('hist.building') || 'A reconstruir histórico de 3 anos…', 'info');
+    await rebuildPortfolioHistory(wid, (done, total) => {
+      if (btn && total) btn.innerHTML = `⏳ A buscar preços… ${done}/${total}`;
+    });
+    if (typeof toast === 'function') toast(t('hist.done') || 'Histórico reconstruído!', 'success');
+    if (typeof render === 'function') render();
+  } catch (e) {
+    if (typeof toast === 'function') toast('Erro ao reconstruir: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '↻ Reconstruir histórico (3 anos)'; }
+  }
+}
+
+// Trocar o período visível da curva (não re-busca dados, só filtra os já reconstruídos).
+function setHistPeriod(wid, period) {
+  state._histPeriod = state._histPeriod || {};
+  state._histPeriod[wid] = period;
+  if (typeof render === 'function') render();
+}
+
 function renderDashboard(w) {
   // Build unified protocol list
   const protoEntries = [];
@@ -16697,7 +16779,7 @@ function renderDashboard(w) {
         </div>` : ''}
       </div>
       <div style="width:100%;margin-top:1rem;padding:0 2.4rem 1.6rem;box-sizing:border-box">
-        ${portfolioSparkline(w.id, 1000, 70)}
+        ${renderHeroChart(w)}
       </div>
     </div>
 
