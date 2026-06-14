@@ -16237,7 +16237,11 @@ async function _histFetchPrices(coins, onProgress) {
     const batch = need.slice(i, i + perCall);
     const url = `https://coins.llama.fi/chart/${batch.join(',')}?period=1w&span=${SPAN}`;
     try {
-      const r = await fetch(url);
+      // timeout por pedido: nenhum pendura a reconstrução toda
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 8000);
+      const r = await fetch(url, { signal: ctl.signal });
+      clearTimeout(to);
       if (r.ok) {
         const j = await r.json();
         for (const [k, v] of Object.entries(j.coins || {})) {
@@ -16245,10 +16249,10 @@ async function _histFetchPrices(coins, onProgress) {
           out.set(k, series);
         }
       }
-    } catch (_) {}
+    } catch (_) { /* timeout/erro → ignora este lote, continua */ }
     done += batch.length;
     if (onProgress) onProgress(done, need.length);
-    await new Promise(r => setTimeout(r, 250)); // throttle suave
+    await new Promise(r => setTimeout(r, 150)); // throttle suave (poucas chamadas)
   }
   // 3) gravar na cache os novos
   const toCache = {};
@@ -16291,13 +16295,12 @@ async function _histCacheSet(map) {
 async function _histBuildCurves(wid, onProgress) {
   const balances = _histReconstructBalances();              // Fase A
   // tokens relevantes: os que têm saldo > 0 nalgum momento OU holding atual
-  // FILTRO DE RELEVÂNCIA POR VALOR (não por nº de transações — essa é a dimensão errada).
-  // A curva é dominada por poucos tokens de valor; a esmagadora maioria é dust de €0 que o
-  // DefiLlama nem tem (≈64% das chamadas falhavam). Incluímos um token se o seu PICO de saldo,
-  // valorizado ao preço atual conhecido, alguma vez valeu > $1 — captura o que TENS hoje E o que
-  // TIVESTE e vendeste (ambos contam para a curva histórica), excluindo dust sem custo de chamadas.
+  // FILTRO DE RELEVÂNCIA POR VALOR + TETO RÍGIDO. A curva é dominada por poucos tokens; centenas
+  // de chamadas penduram o DefiLlama (rate limit) e arruínam a UX. Estratégia: pontuar cada token
+  // pelo seu PICO de valor (saldo máximo × preço atual conhecido), ordenar, e ficar com o TOP N.
+  // Captura quase 100% do valor da curva (atual + posições grandes vendidas) com poucas chamadas.
   const _holdingsNow = (window['_balCache_' + wid]?.data) || [];
-  const _priceNow = new Map(); // coinKey → preço USD atual (do holding)
+  const _priceNow = new Map(); // coinKey → preço USD atual
   const _heldKeys = new Set();
   for (const h of _holdingsNow) {
     const k = _llamaCoinKey(h.chain, h.contract, h.asset, h.native);
@@ -16306,17 +16309,23 @@ async function _histBuildCurves(wid, onProgress) {
     const px = Number(h._portfolioPriceUSD) || 0;
     if (px > 0 && !_priceNow.has(k)) _priceNow.set(k, px);
   }
+  const MAX_TOKENS = 60;          // teto rígido — reconstrução rápida e robusta
   const VALUE_THRESHOLD_USD = 1;
-  const relevant = [...balances.keys()].filter(k => {
-    const info = balances.get(k);
-    if (!info || !info.pts.length) return false;
+  const scored = [];
+  for (const [k, info] of balances) {
+    if (!info || !info.pts.length) continue;
     const peakBal = info.pts.reduce((m, p) => Math.max(m, p.bal), 0);
+    if (peakBal <= 0) continue;
     const px = _priceNow.get(k);
-    if (px != null) return (peakBal * px) > VALUE_THRESHOLD_USD;  // valor conhecido
-    // sem preço atual (token que já não tens): incluir só se teve presença real (≥3 movimentos
-    // E pico de saldo) — apanha posições antigas vendidas; o preço histórico vem na Fase B.
-    return info.pts.length >= 3 && peakBal > 0;
-  });
+    let score;
+    if (px != null) score = peakBal * px;            // valor de pico conhecido
+    else if (info.pts.length >= 5) score = 0.5;      // token antigo sem preço: prioridade baixa
+    else continue;                                    // dust → fora
+    if (px != null && score <= VALUE_THRESHOLD_USD) continue; // abaixo do limiar → fora
+    scored.push({ k, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const relevant = scored.slice(0, MAX_TOKENS).map(s => s.k);
   if (onProgress) onProgress(0, relevant.length);
   const priceSeries = await _histFetchPrices(relevant, onProgress); // Fase B
 
