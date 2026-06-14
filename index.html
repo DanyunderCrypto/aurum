@@ -16141,6 +16141,257 @@ function renderDonutSVG(items, colors, total, assetMeta, basisByAsset, fifoByAss
 }
 
 // Grava o valor total do portfólio ao longo do tempo (para o gráfico de evolução do hero).
+// ════════════════════════════════════════════════════════════════════════
+// RECONSTRUÇÃO DO HISTÓRICO DE PATRIMÓNIO (curva mark-to-market + capital)
+// ────────────────────────────────────────────────────────────────────────
+// Duas curvas ao longo de ~3 anos: (1) valor de mercado (saldo×preço histórico),
+// (2) capital investido (base de custo FIFO). Fonte de preços: DefiLlama /chart
+// (grátis, sem key). Saldos reconstruídos dos state.events e ANCORADOS no saldo
+// real de hoje (corrige o desvio das posições DeFi). SÓ LEITURA — não toca no FIFO.
+// Trigger manual + cache persistente IndexedDB + cooldown (não gasta em cliques repetidos).
+// ════════════════════════════════════════════════════════════════════════
+const _HIST_CACHE_KEY = 'aurum_histPatrimonio_v1'; // IndexedDB store p/ séries de preço
+const _HIST_COOLDOWN_MS = 6 * 3600 * 1000;          // 6h entre reconstruções completas
+const _LLAMA_CHAIN_SLUG = {
+  eth:'ethereum', ethereum:'ethereum', base:'base', arbitrum:'arbitrum', optimism:'optimism',
+  polygon:'polygon', bsc:'bsc', avalanche:'avax', gnosis:'xdai', scroll:'scroll', linea:'linea',
+  zksync:'era', soneium:'soneium', ink:'ink', berachain:'berachain', unichain:'unichain',
+  mantle:'mantle', mode:'mode', blast:'blast', zora:'zora', celo:'celo', fantom:'fantom',
+  metis:'metis', aurora:'aurora', moonbeam:'moonbeam', cronos:'cronos', kava:'kava',
+  hyperevm:'hyperliquid', sonic:'sonic', fraxtal:'fraxtal', taiko:'taiko', lens:'lens'
+};
+// Token-key DefiLlama a partir de um holding/evento.
+function _llamaCoinKey(chain, contract, asset, native) {
+  if (native || !contract) {
+    // nativos: ETH/L2-ETH → coingecko:ethereum; outros nativos por símbolo conhecido
+    const sym = (asset || '').toUpperCase();
+    if (sym === 'ETH' || sym === 'WETH') return 'coingecko:ethereum';
+    if (sym === 'BNB') return 'coingecko:binancecoin';
+    if (sym === 'MATIC' || sym === 'POL') return 'coingecko:matic-network';
+    if (sym === 'AVAX') return 'coingecko:avalanche-2';
+    if (sym === 'BERA') return 'coingecko:berachain-bera';
+    if (sym === 'HYPE') return 'coingecko:hyperliquid';
+    if (sym === 'CELO') return 'coingecko:celo';
+    if (sym === 'S' || sym === 'SONIC') return 'coingecko:sonic-3';
+    return null; // nativo desconhecido → sem preço (contribui 0)
+  }
+  const slug = _LLAMA_CHAIN_SLUG[chain] || chain;
+  return slug + ':' + contract.toLowerCase();
+}
+
+// FASE A — saldo acumulado de cada token ao longo do tempo (dos eventos).
+// Devolve Map<coinKey, {sym, chain, pts:[{ts, bal}]}> (bal clampado a ≥0).
+function _histReconstructBalances() {
+  const ev = state.events || [];
+  const _delta = (e) => {
+    const a = Number(e.amount != null ? e.amount : e.qty) || 0;
+    if (e.direction === 'in') return a;
+    if (e.direction === 'out') return -a;
+    return 0;
+  };
+  const byKey = new Map();
+  for (const e of ev) {
+    if (!e.timestamp) continue;
+    const key = _llamaCoinKey(e.chain, e.assetContract, e.asset, !e.assetContract);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, { sym: e.asset, chain: e.chain, events: [] });
+    byKey.get(key).events.push(e);
+  }
+  const out = new Map();
+  for (const [key, info] of byKey) {
+    info.events.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    let bal = 0; const pts = [];
+    for (const e of info.events) {
+      bal += _delta(e);
+      if (bal < 0) bal = 0;
+      pts.push({ ts: e.timestamp, bal });
+    }
+    out.set(key, { sym: info.sym, chain: info.chain, pts });
+  }
+  return out;
+}
+
+// Saldo reconstruído de um token numa data (ts): último ponto ≤ ts.
+function _histBalanceAt(pts, ts) {
+  let bal = 0;
+  for (const p of pts) { if (p.ts <= ts) bal = p.bal; else break; }
+  return bal;
+}
+
+// FASE B — buscar séries de preço histórico (DefiLlama /chart), batch + cache IndexedDB.
+// coins: array de coinKeys. Devolve Map<coinKey, [{ts, price}]>.
+async function _histFetchPrices(coins, onProgress) {
+  const SPAN = 160, MAX_PTS = 500;
+  const perCall = Math.max(1, Math.floor(MAX_PTS / SPAN)); // 3 com span 160
+  const out = new Map();
+  // 1) tentar cache IndexedDB primeiro
+  const cached = await _histCacheGet(coins).catch(() => ({}));
+  const need = [];
+  for (const c of coins) {
+    if (cached[c] && Array.isArray(cached[c]) && cached[c].length) out.set(c, cached[c]);
+    else need.push(c);
+  }
+  // 2) buscar os em falta, em lotes
+  let done = 0;
+  for (let i = 0; i < need.length; i += perCall) {
+    const batch = need.slice(i, i + perCall);
+    const url = `https://coins.llama.fi/chart/${batch.join(',')}?period=1w&span=${SPAN}`;
+    try {
+      const r = await fetch(url);
+      if (r.ok) {
+        const j = await r.json();
+        for (const [k, v] of Object.entries(j.coins || {})) {
+          const series = (v.prices || []).map(p => ({ ts: p.timestamp, price: p.price }));
+          out.set(k, series);
+        }
+      }
+    } catch (_) {}
+    done += batch.length;
+    if (onProgress) onProgress(done, need.length);
+    await new Promise(r => setTimeout(r, 250)); // throttle suave
+  }
+  // 3) gravar na cache os novos
+  const toCache = {};
+  for (const c of need) if (out.has(c)) toCache[c] = out.get(c);
+  if (Object.keys(toCache).length) _histCacheSet(toCache).catch(() => {});
+  return out;
+}
+
+// Preço de um token numa data: ponto mais próximo (≤ ts preferido, senão o 1º disponível).
+function _histPriceAt(series, ts) {
+  if (!series || !series.length) return null;
+  let price = null;
+  for (const p of series) { if (p.ts <= ts) price = p.price; else break; }
+  if (price == null) price = series[0].price; // antes do 1º ponto: usa o 1º (token acabara de nascer)
+  return price;
+}
+
+// Cache IndexedDB (reutiliza a infra de storage da app; fallback localStorage).
+async function _histCacheGet(coins) {
+  try {
+    const raw = localStorage.getItem(_HIST_CACHE_KEY);
+    if (!raw) return {};
+    const all = JSON.parse(raw);
+    const out = {};
+    for (const c of coins) if (all[c]) out[c] = all[c];
+    return out;
+  } catch { return {}; }
+}
+async function _histCacheSet(map) {
+  try {
+    const raw = localStorage.getItem(_HIST_CACHE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    Object.assign(all, map);
+    localStorage.setItem(_HIST_CACHE_KEY, JSON.stringify(all));
+  } catch (_) {}
+}
+
+// FASE C+D — compor as duas curvas (MtM + capital), ancorando no saldo de hoje.
+// Devolve { mtm:[{d,v}], capital:[{d,v}] } na grelha semanal.
+async function _histBuildCurves(wid, onProgress) {
+  const balances = _histReconstructBalances();              // Fase A
+  // tokens relevantes: os que têm saldo > 0 nalgum momento OU holding atual
+  const relevant = [...balances.keys()];
+  const priceSeries = await _histFetchPrices(relevant, onProgress); // Fase B
+
+  // FX USD→EUR (taxa atual da app; aproximação aceitável p/ histórico)
+  const fxEUR = (window._eurRate || (live && live.eurRate) || 0.92);
+
+  // grelha semanal: do 1º evento até hoje
+  const ev = state.events || [];
+  const tsAll = ev.map(e => e.timestamp).filter(Boolean).sort((a, b) => a - b);
+  if (!tsAll.length) return { mtm: [], capital: [] };
+  const startTs = tsAll[0], endTs = Math.floor(Date.now() / 1000);
+  const WEEK = 7 * 86400;
+
+  // ── ÂNCORA (Fase D): fator de correção por token = saldo real hoje / reconstruído hoje
+  const holdings = (window['_balCache_' + wid]?.data) || [];
+  const realToday = new Map(); // coinKey → saldo on-chain real hoje
+  for (const h of holdings) {
+    const key = _llamaCoinKey(h.chain, h.contract, h.asset, h.native);
+    if (key) realToday.set(key, (realToday.get(key) || 0) + (Number(h.qty) || 0));
+  }
+  const anchorFactor = new Map();
+  for (const [key, info] of balances) {
+    const reconToday = _histBalanceAt(info.pts, endTs);
+    const real = realToday.get(key);
+    if (real != null && reconToday > 1e-9) {
+      const f = real / reconToday;
+      // só corrige desvios plausíveis (0.1×–10×); fora disto é ruído (token DeFi complexo)
+      anchorFactor.set(key, (f > 0.1 && f < 10) ? f : 1);
+    } else {
+      anchorFactor.set(key, 1);
+    }
+  }
+
+  // MtM por semana
+  const mtm = [];
+  for (let ts = startTs; ts <= endTs; ts += WEEK) {
+    let total = 0;
+    for (const [key, info] of balances) {
+      const bal = _histBalanceAt(info.pts, ts) * (anchorFactor.get(key) || 1);
+      if (bal <= 0) continue;
+      const px = _histPriceAt(priceSeries.get(key), ts);
+      if (px == null) continue;
+      total += bal * px;
+    }
+    const d = new Date(ts * 1000).toISOString().slice(0, 10);
+    mtm.push({ d, v: total * fxEUR });
+  }
+
+  // Capital investido (base de custo FIFO acumulada) por semana
+  const capital = _histBuildCapitalCurve(wid, startTs, endTs, WEEK, fxEUR);
+
+  return { mtm, capital };
+}
+
+// Linha de capital investido: base de custo acumulada (aquisições − devoluções de custo).
+// Usa o motor FIFO (lots com acqTimestamp/basisEURTotal) — a fonte de verdade de custo.
+function _histBuildCapitalCurve(wid, startTs, endTs, WEEK, fxEUR) {
+  try {
+    const eng = window.aurumFifoEngine;
+    const r = eng.process(state.events || [], { walletId: wid, swapMode: state.swapMode || 'permuta' });
+    // Cada lote: capital "investido" entra na acqTimestamp (basisEURTotal). Disposals reduzem.
+    const lotEvents = [];
+    (r.lots || []).forEach(l => {
+      const ts = l.acqTimestamp || (l.acqDate ? Math.floor(new Date(l.acqDate).getTime() / 1000) : null);
+      if (ts) lotEvents.push({ ts, delta: (l.basisEURTotal || 0) });
+    });
+    (r.disposals || []).forEach(dp => {
+      const ts = dp.timestamp || (dp.date ? Math.floor(new Date(dp.date).getTime() / 1000) : null);
+      if (ts) lotEvents.push({ ts, delta: -((dp.basisEUR != null ? dp.basisEUR : 0)) });
+    });
+    lotEvents.sort((a, b) => a.ts - b.ts);
+    const capital = [];
+    let acc = 0, idx = 0;
+    for (let ts = startTs; ts <= endTs; ts += WEEK) {
+      while (idx < lotEvents.length && lotEvents[idx].ts <= ts) { acc += lotEvents[idx].delta; idx++; }
+      const d = new Date(ts * 1000).toISOString().slice(0, 10);
+      capital.push({ d, v: Math.max(0, acc) });
+    }
+    return capital;
+  } catch (_) { return []; }
+}
+
+// Orquestrador com cooldown — chamado pelo botão. Guarda o resultado em state.
+async function rebuildPortfolioHistory(wid, onProgress) {
+  const now = Date.now();
+  state._histMeta = state._histMeta || {};
+  const meta = state._histMeta[wid];
+  if (meta && (now - meta.at) < _HIST_COOLDOWN_MS && meta.curves) {
+    return { ...meta.curves, cached: true, ageMin: Math.round((now - meta.at) / 60000) };
+  }
+  const curves = await _histBuildCurves(wid, onProgress);
+  state._histMeta[wid] = { at: now, curves };
+  // alimentar o valueHistory com a MtM (para o resto da app que lê de lá)
+  if (curves.mtm && curves.mtm.length) {
+    state.valueHistory = state.valueHistory || {};
+    state.valueHistory[wid] = curves.mtm.slice(-400); // teto alargado p/ 3 anos semanal
+  }
+  try { saveState(); } catch (_) {}
+  return { ...curves, cached: false };
+}
+
 // Um ponto por dia (o último valor completo do dia). Máx ~180 pontos (6 meses).
 // INTEGRIDADE: só grava valores COMPLETOS. Durante o carregamento on-chain (paralelo, demora),
 // o total está parcial (só algumas chains entraram) — gravar isso criava uma curva errática
@@ -16166,7 +16417,7 @@ function recordPortfolioValue(wid, eur) {
     } else {
       hist.push({ d: today, v: eur });
     }
-    if (hist.length > 180) hist.splice(0, hist.length - 180);
+    if (hist.length > 400) hist.splice(0, hist.length - 400);
     state.valueHistory[wid] = hist;
   } catch(_){}
 }
@@ -16222,6 +16473,59 @@ function portfolioSparkline(wid, width = 260, height = 56) {
 }
 // Hash estável de string (para IDs de gradiente únicos por carteira).
 function _hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
+
+// Renderer das DUAS curvas sobrepostas: mark-to-market (valor) + capital investido.
+// A área entre elas = lucro/prejuízo não realizado (verde se MtM>capital, vermelho se <).
+// curves = { mtm:[{d,v}], capital:[{d,v}] }. Devolve SVG. '' se < 2 pontos.
+function portfolioDualChart(curves, width = 720, height = 200) {
+  const mtm = (curves && curves.mtm) || [];
+  const cap = (curves && curves.capital) || [];
+  if (mtm.length < 2) return '';
+  const pad = 6;
+  const allVals = mtm.map(p => p.v).concat(cap.map(p => p.v)).filter(v => v != null && isFinite(v));
+  const min = Math.min(...allVals, 0);
+  const max = Math.max(...allVals) || 1;
+  const range = (max - min) || 1;
+  const X = (i, n) => (i / (n - 1)) * width;
+  const Y = (v) => height - ((v - min) / range) * (height - pad * 2) - pad;
+  const toPts = (arr) => arr.map((p, i) => ({ x: X(i, arr.length), y: Y(p.v) }));
+  const smooth = (P) => {
+    if (P.length < 2) return '';
+    let d = `M ${P[0].x.toFixed(1)},${P[0].y.toFixed(1)}`;
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2, t = 0.16;
+      d += ` C ${(p1.x + (p2.x - p0.x) * t).toFixed(1)},${(p1.y + (p2.y - p0.y) * t).toFixed(1)} ${(p2.x - (p3.x - p1.x) * t).toFixed(1)},${(p2.y - (p3.y - p1.y) * t).toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return d;
+  };
+  const mtmPts = toPts(mtm);
+  const mtmPath = smooth(mtmPts);
+  const lastMtm = mtm[mtm.length - 1].v, lastCap = cap.length ? cap[cap.length - 1].v : 0;
+  const inProfit = lastMtm >= lastCap;
+  const mtmCol = inProfit ? 'var(--green, #34D399)' : 'var(--red, #F87171)';
+  const capCol = 'var(--text-dim, #8B8B8B)';
+  const uid = Math.abs(_hashStr(mtm[0].d + mtm.length)).toString(36);
+  // área da MtM (gradiente que esvanece)
+  const mtmArea = `${mtmPath} L ${width},${height} L 0,${height} Z`;
+  // linha do capital (tracejada, sóbria) — só se houver dados
+  let capLine = '';
+  if (cap.length >= 2) {
+    const capPath = smooth(toPts(cap));
+    capLine = `<path d="${capPath}" fill="none" stroke="${capCol}" stroke-width="1.5" stroke-dasharray="5,4" stroke-linejoin="round" opacity="0.7"/>`;
+  }
+  return `
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" style="display:block;overflow:visible">
+      <defs>
+        <linearGradient id="mtmg_${uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${mtmCol}" stop-opacity="0.22"/>
+          <stop offset="100%" stop-color="${mtmCol}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${mtmArea}" fill="url(#mtmg_${uid})" stroke="none"/>
+      ${capLine}
+      <path d="${mtmPath}" fill="none" stroke="${mtmCol}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 1px 4px ${mtmCol})"/>
+    </svg>`;
+}
 
 function renderDashboard(w) {
   // Build unified protocol list
