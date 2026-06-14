@@ -15976,8 +15976,11 @@ async function _hydrateSparklines() {
     window._sparkCache[id] == null &&
     !window._geckoTried.has(id) &&
     !_isGecko404(id) &&  // a CoinGecko já confirmou que não tem este token (404) — não re-tentar
-    /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id) &&
-    !_isStableSym(symById[id])  // stablecoins não precisam (curva plana) e poupam quota
+    /^[a-z0-9-]+:0x[a-fA-F0-9]{40}$/i.test(id)
+    // NOTA: não excluímos stablecoins por nome. Algumas (apxUSD, USDe...) têm variação de preço
+    // real e merecem sparkline. As que são mesmo planas (USDC) recebem dados planos e a guarda de
+    // curva-plana do _renderMiniSpark remove o sparkline automaticamente. Mais correto que excluir
+    // por nome (USD_STABLECOINS é para preço/fiscal, não para esta decisão visual).
   );
   // Limite por carga: a GeckoTerminal tem rate limit apertado. Tentar no máximo N por passagem;
   // os restantes ficam para o próximo render (a cache do Worker entretanto aquece). Evita o muro
