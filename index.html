@@ -14159,6 +14159,63 @@ function _pendlePriceFor(chain, contract) {
   return (typeof v === 'number' && v > 0) ? v : null;
 }
 
+// ── Mercados Pendle: mapa contrato→mercado (p/ nome, expiry, logo) e histórico de implied APY ──
+// O endpoint /v1/markets/all?chainId=N dá todos os mercados (campos pt/yt/sy no formato
+// "{chainId}-{address}"). Mapeamos o contrato de um YT/PT/LP ao seu mercado. Cache por chain.
+let _pendleMarketsByChain = {};   // chainId → { contractLower: marketObj }
+let _pendleMarketsLoading = {};   // chainId → promise
+async function _loadPendleMarkets(chainId) {
+  if (_pendleMarketsByChain[chainId]) return _pendleMarketsByChain[chainId];
+  if (_pendleMarketsLoading[chainId]) return _pendleMarketsLoading[chainId];
+  _pendleMarketsLoading[chainId] = (async () => {
+    const idx = {};
+    try {
+      const r = await fetch(`https://api-v2.pendle.finance/core/v1/markets/all?chainId=${chainId}`);
+      if (r.ok) {
+        const j = await r.json();
+        const markets = j.markets || j.results || [];
+        for (const m of markets) {
+          // indexa por cada um dos contratos do mercado (pt/yt/lp/address), em lowercase
+          for (const f of [m.pt, m.yt, m.lp, m.address]) {
+            if (!f) continue;
+            const addr = String(f).includes('-') ? String(f).split('-').pop() : String(f);
+            idx[addr.toLowerCase()] = m;
+          }
+        }
+      }
+    } catch (_) {}
+    _pendleMarketsByChain[chainId] = idx;
+    _pendleMarketsLoading[chainId] = null;
+    return idx;
+  })();
+  return _pendleMarketsLoading[chainId];
+}
+// Encontra o mercado Pendle de um contrato (YT/PT/LP). Síncrono — assume markets já carregados.
+function _pendleMarketFor(chain, contract) {
+  const cid = (CHAINS[chain] && CHAINS[chain].id);
+  if (!cid || !contract || !_pendleMarketsByChain[cid]) return null;
+  return _pendleMarketsByChain[cid][contract.toLowerCase()] || null;
+}
+// Histórico de implied APY de um mercado (série semanal). Cache + 404-safe. Devolve [{ts, apy}].
+let _pendleApyHist = {};           // marketAddrLower → [{ts, apy}] | null
+async function _loadPendleApyHistory(chainId, marketAddr) {
+  const key = marketAddr.toLowerCase();
+  if (_pendleApyHist[key] !== undefined) return _pendleApyHist[key];
+  try {
+    const r = await fetch(`https://api-v2.pendle.finance/core/v3/${chainId}/markets/${marketAddr}/historical-data?time_frame=week`);
+    if (!r.ok) { _pendleApyHist[key] = null; return null; }
+    const j = await r.json();
+    const series = (j.results || [])
+      .map(p => ({ ts: Math.floor(new Date(p.timestamp).getTime() / 1000), apy: p.impliedApy }))
+      .filter(p => p.ts && typeof p.apy === 'number');
+    _pendleApyHist[key] = series.length ? series : null;
+    return _pendleApyHist[key];
+  } catch (_) { _pendleApyHist[key] = null; return null; }
+}
+window._loadPendleMarkets = _loadPendleMarkets;
+window._pendleMarketFor = _pendleMarketFor;
+window._loadPendleApyHistory = _loadPendleApyHistory;
+
 // É uma posição de YIELD-TOKENIZATION? (PT/YT/SY/LP/PLP com maturidade). Agnóstico ao
 // protocolo: apanha Pendle, Spectra (YT-imxSPECTRA), Napier, Timeless e qualquer outro que
 // use a convenção de tipos PT/YT/SY/LP. A DETEÇÃO é universal; a FONTE DE PREÇO é que é
