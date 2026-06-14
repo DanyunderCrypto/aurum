@@ -3807,6 +3807,12 @@ const I18N = {
     'dash.recordedHistory': '📋 Histórico registado:',
     'dash.taxedOnFiat': 'tributado só na conversão a fiat',
     'dash.collectingCurve': 'A recolher histórico — a curva aparece a partir de amanhã',
+    'hist.rebuild': 'Reconstruir histórico (3 anos)',
+    'hist.refresh': 'Atualizar',
+    'hist.value': 'Valor de mercado',
+    'hist.invested': 'Capital investido',
+    'hist.building': 'A reconstruir histórico de 3 anos…',
+    'hist.done': 'Histórico reconstruído!',
     'dash.addCollateralNow': 'Adiciona colateral ou reduz dívida imediatamente.',
     'dash.collecting24h': 'Recolhendo histórico para mostrar variação 24h…',
     'dash.totalNetWorth': 'Património total',
@@ -4414,6 +4420,12 @@ const I18N = {
     'dash.recordedHistory': '📋 Recorded history:',
     'dash.taxedOnFiat': 'taxed only on conversion to fiat',
     'dash.collectingCurve': 'Collecting history — the curve appears from tomorrow',
+    'hist.rebuild': 'Rebuild history (3 years)',
+    'hist.refresh': 'Refresh',
+    'hist.value': 'Market value',
+    'hist.invested': 'Invested capital',
+    'hist.building': 'Rebuilding 3-year history…',
+    'hist.done': 'History rebuilt!',
     'dash.addCollateralNow': 'Add collateral or reduce debt immediately.',
     'dash.collecting24h': 'Collecting history to show 24h change…',
     'dash.totalNetWorth': 'Total Net Worth',
@@ -16385,10 +16397,17 @@ async function _histBuildCurves(wid, onProgress) {
 // Linha de capital investido: base de custo acumulada (aquisições − devoluções de custo).
 // Usa o motor FIFO (lots com acqTimestamp/basisEURTotal) — a fonte de verdade de custo.
 function _histBuildCapitalCurve(wid, startTs, endTs, WEEK, fxEUR) {
+  // DESLIGADO temporariamente: o cálculo via basisEURTotal de TODOS os lotes conta em duplicado
+  // os swaps (permutas cripto-cripto geram lote+disposal que inflacionam o acumulado → -417k).
+  // A definição correta ("capital de fiat que entrou − que saiu") exige extrair só os eventos
+  // de fiat com fiabilidade — melhoria futura. Por agora devolvemos vazio: o renderer desenha
+  // só a linha mark-to-market (validada e correta), sem a linha de capital.
+  return [];
+}
+function _histBuildCapitalCurve_DISABLED(wid, startTs, endTs, WEEK, fxEUR) {
   try {
     const eng = window.aurumFifoEngine;
     const r = eng.process(state.events || [], { walletId: wid, swapMode: state.swapMode || 'permuta' });
-    // Cada lote: capital "investido" entra na acqTimestamp (basisEURTotal). Disposals reduzem.
     const lotEvents = [];
     (r.lots || []).forEach(l => {
       const ts = l.acqTimestamp || (l.acqDate ? Math.floor(new Date(l.acqDate).getTime() / 1000) : null);
@@ -16592,23 +16611,35 @@ function renderHeroChart(w) {
     return (now - ts) <= cut;
   });
   const view = { mtm: filt(curves.mtm), capital: filt(curves.capital || []) };
+  const hasCapital = view.capital && view.capital.length >= 2;
 
   const lastMtm = curves.mtm[curves.mtm.length - 1].v;
-  const lastCap = (curves.capital && curves.capital.length) ? curves.capital[curves.capital.length - 1].v : 0;
-  const pnl = lastMtm - lastCap;
-  const pnlPct = lastCap > 0 ? (pnl / lastCap * 100) : 0;
-  const pnlCol = pnl >= 0 ? 'var(--green,#34D399)' : 'var(--red,#F87171)';
   const ageMin = meta.at ? Math.round((Date.now() - meta.at) / 60000) : 0;
   const ageStr = ageMin < 60 ? `${ageMin}min` : `${Math.round(ageMin/60)}h`;
+
+  // Métrica do topo: se houver capital → P&L (valor − investido); senão → variação no período visível.
+  let metricHtml;
+  if (hasCapital) {
+    const lastCap = view.capital[view.capital.length - 1].v;
+    const pnl = lastMtm - lastCap, pnlPct = lastCap > 0 ? (pnl / lastCap * 100) : 0;
+    const c = pnl >= 0 ? 'var(--green,#34D399)' : 'var(--red,#F87171)';
+    metricHtml = `<span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:0;border-top:2px dashed var(--text-dim,#8B8B8B);display:inline-block"></span>${t('hist.invested')}</span>
+      <span style="color:${c};font-weight:700">${pnl>=0?'+':''}€${fmt(pnl,0)} (${pnl>=0?'+':''}${pnlPct.toFixed(1)}%)</span>`;
+  } else {
+    const first = view.mtm.length ? view.mtm[0].v : lastMtm;
+    const chg = lastMtm - first, chgPct = first > 0 ? (chg / first * 100) : 0;
+    const c = chg >= 0 ? 'var(--green,#34D399)' : 'var(--red,#F87171)';
+    metricHtml = `<span style="color:${c};font-weight:700">${chg>=0?'+':''}€${fmt(chg,0)} (${chg>=0?'+':''}${chgPct.toFixed(1)}%)</span>`;
+  }
+  const lineCol = lastMtm >= (view.mtm.length ? view.mtm[0].v : lastMtm) ? 'var(--green,#34D399)' : 'var(--red,#F87171)';
 
   const periodBtn = (id, label) => `<button onclick="setHistPeriod('${w.id}','${id}')" style="background:${period===id?'var(--gold,#3B82F6)':'transparent'};color:${period===id?'#fff':'var(--text-dim,#8B8B8B)'};border:1px solid ${period===id?'var(--gold,#3B82F6)':'var(--border,#2a2a2a)'};padding:0.25rem 0.6rem;border-radius:6px;font-size:0.72rem;cursor:pointer;font-family:var(--mono)">${label}</button>`;
 
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem">
       <div style="display:flex;align-items:center;gap:1.2rem;font-size:0.78rem;font-family:var(--mono)">
-        <span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:3px;background:${pnlCol};border-radius:2px;display:inline-block"></span>${t('hist.value')||'Valor de mercado'}</span>
-        <span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:0;border-top:2px dashed var(--text-dim,#8B8B8B);display:inline-block"></span>${t('hist.invested')||'Capital investido'}</span>
-        <span style="color:${pnlCol};font-weight:700">${pnl>=0?'+':''}€${fmt(pnl,0)} (${pnl>=0?'+':''}${pnlPct.toFixed(1)}%)</span>
+        <span style="display:flex;align-items:center;gap:0.4rem"><span style="width:14px;height:3px;background:${lineCol};border-radius:2px;display:inline-block"></span>${t('hist.value')}</span>
+        ${metricHtml}
       </div>
       <div style="display:flex;gap:0.35rem">
         ${periodBtn('1m','1M')}${periodBtn('6m','6M')}${periodBtn('1y','1A')}${periodBtn('all','Tudo')}
@@ -16616,7 +16647,7 @@ function renderHeroChart(w) {
     </div>
     ${portfolioDualChart(view, 1000, 90)}
     <div style="display:flex;justify-content:flex-end;margin-top:0.5rem">
-      <button onclick="rebuildHistoryClick('${w.id}')" style="background:transparent;color:var(--text-dim,#8B8B8B);border:1px solid var(--border,#2a2a2a);padding:0.3rem 0.7rem;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:var(--mono)" title="Atualizado há ${ageStr}">↻ ${t('hist.refresh')||'Atualizar'} <span style="opacity:0.6">(há ${ageStr})</span></button>
+      <button onclick="rebuildHistoryClick('${w.id}')" style="background:transparent;color:var(--text-dim,#8B8B8B);border:1px solid var(--border,#2a2a2a);padding:0.3rem 0.7rem;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:var(--mono)" title="Atualizado há ${ageStr}">↻ ${t('hist.refresh')} <span style="opacity:0.6">(há ${ageStr})</span></button>
     </div>`;
 }
 
