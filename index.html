@@ -9337,28 +9337,23 @@ const fifoEngine = (() => {
       }
     }
 
-    // Limiares conservadores. Não são lei — são gatilhos para SUGERIR validação.
-    const TRADES_INFO = 50;
-    const TRADES_WARN = 150;
-    const VOLUME_WARN = 100000;
-
+    // A Categoria B NÃO se determina por nº de operações nem por volume. A PIV 28122
+    // define-a por critério QUALITATIVO (estrutura empresarial organizada, habitualidade,
+    // prestação de serviços a terceiros, principal fonte de rendimento) e esclarece que
+    // o uso pessoal de bots/software de negociação, sem estrutura empresarial, NÃO altera
+    // o enquadramento. Por isso NÃO há limiares nem níveis: surfamos um aviso EDUCATIVO
+    // nos anos com atividade de alienação/permuta, com as contagens apenas como CONTEXTO
+    // neutro para a auto-avaliação do utilizador (e do seu TOC).
     const flags = [];
     for (const y of Object.values(byYear)) {
       const trades = y.sales + y.swaps;
-      let level = null;
-      if (trades >= TRADES_WARN || y.volumeEUR >= VOLUME_WARN) level = 'warn';
-      else if (trades >= TRADES_INFO) level = 'info';
-      if (!level) continue;
+      if (trades <= 0) continue; // só anos com atividade tributável-relevante
       flags.push({
         fiscalYear: y.fiscalYear,
-        level,
         tradeCount: trades,
         salesCount: y.sales,
         swapsCount: y.swaps,
         volumeEUR: y.volumeEUR,
-        message: level === 'warn'
-          ? `Em ${y.fiscalYear} registaste ${trades} operações (${y.sales} vendas, ${y.swaps} permutas)${y.volumeEUR >= VOLUME_WARN ? ` e ~€${Math.round(y.volumeEUR).toLocaleString('pt-PT')} de volume` : ''}. Um padrão deste tipo PODE ser visto pela AT como atividade habitual (Categoria B), com tributação progressiva até 48% + Segurança Social, em vez de mais-valias (Categoria G). Isto NÃO é uma conclusão — depende de fatores como organização, frequência e se é uma das tuas principais fontes de rendimento. Recomendamos validar o teu enquadramento com um contabilista certificado.`
-          : `Em ${y.fiscalYear} registaste ${trades} operações. Se a tua atividade com cripto for frequente e organizada, vale a pena confirmar com um contabilista se o enquadramento correto é Categoria G (mais-valias) ou Categoria B (atividade habitual).`,
       });
     }
     return flags;
@@ -21298,48 +21293,76 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   </div>`;
 }
 
-// Painel de aviso de Categoria B (atividade habitual). Mostra a flag do ano fiscal
-// selecionado, se existir. É INFORMATIVO: alerta para um padrão que PODE ser visto
-// como atividade habitual pela AT (PIV 28122) e recomenda validação por contabilista.
-// Nunca afirma que É Categoria B — a decisão depende de fatores que a app não vê.
+// Painel EDUCATIVO de Categoria B (atividade habitual). Aparece nos anos com atividade
+// de alienação/permuta. NÃO usa limiares nem níveis de alarme: a Cat B é um critério
+// QUALITATIVO da AT (PIV 28122), não um nº de operações. Explica os 4 critérios reais,
+// esclarece que frequência/volume de uso pessoal NÃO determinam Cat B, mostra as contagens
+// só como contexto neutro, e recomenda validação por contabilista. Nunca afirma que É Cat B.
 function _buildCategoryBPanel(flags, fiscalYear, lang) {
   if (!Array.isArray(flags) || !flags.length) return '';
   const flag = flags.find(f => f.fiscalYear === fiscalYear);
   if (!flag) return '';
-  const isWarn = flag.level === 'warn';
-  const cls = isWarn ? 'alert-warn' : 'alert-info';
-  const icon = isWarn ? '⚠️' : 'ℹ️';
   const en = lang === 'en';
-  const title = isWarn
-    ? (en ? 'Possible Category B (habitual activity)' : 'Possível Categoria B (atividade habitual)')
-    : (en ? 'Frequent activity detected' : 'Atividade frequente detetada');
+  const cite = (typeof fiscalCite === 'function' ? fiscalCite('categoria_B') : '');
 
-  // volume só aparece no texto quando ultrapassa o limiar
-  const volTxt = flag.volumeEUR >= 100000
+  // Volume mostrado apenas como contexto neutro (não é gatilho nem indicador de Cat B).
+  const volTxt = flag.volumeEUR > 0
     ? (en
-        ? ' and ~€' + Math.round(flag.volumeEUR).toLocaleString('en') + ' of volume'
-        : ' e ~€' + Math.round(flag.volumeEUR).toLocaleString('pt-PT') + ' de volume')
+        ? ' and ~€' + Math.round(flag.volumeEUR).toLocaleString('en') + ' in disposal volume'
+        : ' e ~€' + Math.round(flag.volumeEUR).toLocaleString('pt-PT') + ' de volume alienado')
     : '';
 
-  let body;
-  if (isWarn) {
-    body = en
-      ? 'In ' + flag.fiscalYear + ' you recorded <strong>' + flag.tradeCount + ' operations</strong> (' + flag.salesCount + ' sales, ' + flag.swapsCount + ' swaps)' + volTxt + '. A pattern like this <strong>may</strong> be viewed by the Tax Authority as habitual activity (<strong>Category B</strong>), with progressive taxation up to 48% + Social Security, instead of capital gains (Category G). This is <strong>not</strong> a conclusion — it depends on factors like organization, frequency and whether it is one of your main income sources. We recommend validating your tax framing with a certified accountant.'
-      : 'Em ' + flag.fiscalYear + ' registaste <strong>' + flag.tradeCount + ' operações</strong> (' + flag.salesCount + ' vendas, ' + flag.swapsCount + ' permutas)' + volTxt + '. Um padrão deste tipo <strong>pode</strong> ser visto pela AT como atividade habitual (<strong>Categoria B</strong>), com tributação progressiva até 48% + Segurança Social, em vez de mais-valias (Categoria G). Isto <strong>não</strong> é uma conclusão — depende de fatores como organização, frequência e se é uma das tuas principais fontes de rendimento. Recomendamos validar o teu enquadramento com um contabilista certificado.';
-  } else {
-    body = en
-      ? 'In ' + flag.fiscalYear + ' you recorded <strong>' + flag.tradeCount + ' operations</strong>. If your crypto activity is frequent and organized, it is worth confirming with an accountant whether the correct framing is Category G (capital gains) or Category B (habitual activity).'
-      : 'Em ' + flag.fiscalYear + ' registaste <strong>' + flag.tradeCount + ' operações</strong>. Se a tua atividade com cripto for frequente e organizada, vale a pena confirmar com um contabilista se o enquadramento correto é Categoria G (mais-valias) ou Categoria B (atividade habitual).';
-  }
+  const title = en ? 'Category B — habitual activity?' : 'Categoria B — atividade habitual?';
+
+  const intro = en
+    ? 'Most investors fall under <strong>Category G</strong> (capital gains). In some cases the Tax Authority may instead consider crypto activity as <strong>Category B</strong> (habitual/professional activity), taxed at progressive rates and subject to Social Security.'
+    : 'A maioria dos investidores enquadra-se na <strong>Categoria G</strong> (mais-valias). Em certos casos, a AT pode considerar a atividade com cripto como <strong>Categoria B</strong> (atividade habitual/profissional), tributada por taxas progressivas e sujeita a Segurança Social.';
+
+  const criteriaIntro = en
+    ? 'The Tax Authority decides this by <strong>qualitative</strong> criteria — <em>not</em> by the number of trades or the volume:'
+    : 'A AT decide isto por critérios <strong>qualitativos</strong> — e <em>não</em> pelo número de operações ou volume:';
+
+  const criteria = '<ul style="margin:0.4rem 0 0.4rem 1.1rem;padding:0">'
+    + (en
+        ? '<li>an organized business structure;</li>'
+          + '<li>habitual character (regular, ongoing activity);</li>'
+          + '<li>providing services to third parties;</li>'
+          + '<li>being one of your main sources of income.</li>'
+        : '<li>estrutura empresarial organizada;</li>'
+          + '<li>caráter de habitualidade (atividade regular e continuada);</li>'
+          + '<li>prestação de serviços a terceiros;</li>'
+          + '<li>ser uma das tuas principais fontes de rendimento.</li>')
+    + '</ul>';
+
+  const reassure = en
+    ? 'Frequency or volume <strong>alone do not</strong> determine Category B. The Tax Authority itself clarifies that using bots or trading software for <strong>personal</strong> purposes, without a business structure, does not change the framing.'
+    : 'A frequência ou o volume, <strong>por si só, não</strong> determinam a Categoria B. A própria AT esclarece que o uso de bots ou software de negociação a título <strong>pessoal</strong>, sem estrutura empresarial, não altera o enquadramento.';
+
+  const context = en
+    ? 'For reference, in ' + flag.fiscalYear + ' you recorded <strong>' + flag.tradeCount + ' operations</strong> (' + flag.salesCount + ' sales, ' + flag.swapsCount + ' swaps)' + volTxt + '. This is only context — by itself it is not an indicator of Category B.'
+    : 'Para referência, em ' + flag.fiscalYear + ' registaste <strong>' + flag.tradeCount + ' operações</strong> (' + flag.salesCount + ' vendas, ' + flag.swapsCount + ' permutas)' + volTxt + '. Isto é apenas contexto — por si só não é indicador de Categoria B.';
+
+  const closing = en
+    ? 'Only you (and your accountant) can assess these criteria. If in doubt, validate your framing with a certified accountant.'
+    : 'Só tu (e o teu contabilista) podem avaliar estes critérios. Em caso de dúvida, valida o teu enquadramento com um contabilista certificado.';
 
   const sourceLabel = en ? 'Source' : 'Fonte';
   const sourceLine = '<div style="margin-top:0.5rem;font-size:0.74rem;opacity:0.85">'
-    + '<strong>' + sourceLabel + ':</strong> ' + (typeof fiscalCite === 'function' ? fiscalCite('categoria_B') : '')
+    + '<strong>' + sourceLabel + ':</strong> ' + cite
     + '</div>';
 
-  return '<div class="alert ' + cls + '" style="margin-bottom:1rem;font-size:0.8rem">'
-    + '<span>' + icon + '</span>'
-    + '<div><strong>' + title + '.</strong> ' + body + sourceLine + '</div>'
+  return '<div class="alert alert-info" style="margin-bottom:1rem;font-size:0.8rem">'
+    + '<span>ℹ️</span>'
+    + '<div>'
+    + '<strong>' + title + '</strong>'
+    + '<p style="margin:0.35rem 0 0">' + intro + '</p>'
+    + '<p style="margin:0.5rem 0 0">' + criteriaIntro + '</p>'
+    + criteria
+    + '<p style="margin:0.35rem 0 0">' + reassure + '</p>'
+    + '<p style="margin:0.5rem 0 0;opacity:0.9">' + context + '</p>'
+    + '<p style="margin:0.5rem 0 0">' + closing + '</p>'
+    + sourceLine
+    + '</div>'
     + '</div>';
 }
 
