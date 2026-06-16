@@ -1,36 +1,20 @@
 // ════════════════════════════════════════════════════════════════
 // AURUM — Fiscal Engine E2E Test Suite
-// Validates FIFO, regime (G/G1), permuta, lending, spam, gas, airdrops
-// against controlled scenarios with known expected outcomes.
-//
-// Run: node test_fiscal_e2e.js
-// The engine is extracted from index.html lines 6115-6862 (the fifoEngine IIFE).
 // ════════════════════════════════════════════════════════════════
-
 const fs = require('fs');
 const path = require('path');
-
-// Extract the engine IIFE from index.html
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const start = html.indexOf('const fifoEngine = (() => {');
 const endMarker = 'window.aurumFifoEngine = fifoEngine;';
 const end = html.indexOf(endMarker);
 if (start < 0 || end < 0) { console.error('Could not locate engine in index.html'); process.exit(1); }
 let engineSrc = html.slice(start, end);
-
-// Evaluate the engine in a sandbox. It only needs standard JS — no DOM, no fetch.
 const fifoEngine = eval(engineSrc + '\nfifoEngine;');
-
-// ── Test helpers ────────────────────────────────────────────────
 let passed = 0, failed = 0;
 const failures = [];
 function approx(a, b, tol = 0.01) { return Math.abs(a - b) <= tol; }
-function assert(cond, msg) {
-  if (cond) { passed++; }
-  else { failed++; failures.push(msg); console.log('  ❌ ' + msg); }
-}
+function assert(cond, msg) { if (cond) { passed++; } else { failed++; failures.push(msg); console.log('  XX ' + msg); } }
 function ts(dateStr) { return Math.floor(new Date(dateStr + 'T12:00:00Z').getTime() / 1000); }
-// Build an event with sensible defaults
 function ev(o) {
   return Object.assign({
     id: Math.random().toString(36).slice(2),
@@ -42,15 +26,9 @@ function ev(o) {
     priceEUR: null, category: 'external',
   }, o);
 }
-function run(name, fn) {
-  console.log('\n▸ ' + name);
-  try { fn(); } catch (e) { failed++; failures.push(name + ': ' + e.message); console.log('  ❌ threw: ' + e.message); }
-}
+function run(name, fn) { console.log('\n> ' + name); try { fn(); } catch (e) { failed++; failures.push(name + ': ' + e.message); console.log('  XX threw: ' + e.message); } }
 
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 1: Simple buy then sell — short-term gain (Anexo G)
-// ════════════════════════════════════════════════════════════════
-run('S1: Buy 1 ETH @€1000, sell @€1500 within 365d → G gain €500', () => {
+run('S1: Buy 1 ETH @1000, sell @1500 within 365d -> G gain 500', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 1, priceEUR: 1000, txType: 'buy',  date: '2024-01-01', timestamp: ts('2024-01-01') }),
     ev({ direction: 'out', asset: 'ETH', amount: 1, priceEUR: 1500, txType: 'sell', date: '2024-06-01', timestamp: ts('2024-06-01') }),
@@ -65,11 +43,7 @@ run('S1: Buy 1 ETH @€1000, sell @€1500 within 365d → G gain €500', () =>
     assert(disp[0].anexoG && approx(disp[0].anexoG.gain, 500), `should be Anexo G (short-term)`);
   }
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 2: Long-term hold > 365d → G1 (exempt, declarative)
-// ════════════════════════════════════════════════════════════════
-run('S2: Buy 1 ETH @€1000, sell @€2000 after 400d → G1 exempt', () => {
+run('S2: Buy 1 ETH @1000, sell @2000 after 400d -> G1 exempt', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 1, priceEUR: 1000, txType: 'buy',  date: '2024-01-01', timestamp: ts('2024-01-01') }),
     ev({ direction: 'out', asset: 'ETH', amount: 1, priceEUR: 2000, txType: 'sell', date: '2025-02-05', timestamp: ts('2025-02-05') }),
@@ -78,15 +52,11 @@ run('S2: Buy 1 ETH @€1000, sell @€2000 after 400d → G1 exempt', () => {
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
   assert(disp.length === 1, `expected 1 disposal, got ${disp.length}`);
   if (disp[0]) {
-    assert(disp[0].anexoG1 && approx(disp[0].anexoG1.gain, 1000), `should be Anexo G1 (long-term), gain ${disp[0].anexoG1 ? disp[0].anexoG1.gain : 'n/a'}`);
+    assert(disp[0].anexoG1 && approx(disp[0].anexoG1.gain, 1000), `should be Anexo G1, gain ${disp[0].anexoG1 ? disp[0].anexoG1.gain : 'n/a'}`);
     assert(!disp[0].anexoG || disp[0].anexoG.gain === 0, `should NOT be in Anexo G`);
   }
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 3: Pre-2023 acquisition → G1 regardless of holding
-// ════════════════════════════════════════════════════════════════
-run('S3: Buy pre-2023, sell 2024 → G1 (Art 220 OE/2023)', () => {
+run('S3: Buy pre-2023, sell 2024 -> G1', () => {
   const events = [
     ev({ direction: 'in',  asset: 'BTC', amount: 1, priceEUR: 5000,  txType: 'buy',  date: '2022-06-01', timestamp: ts('2022-06-01') }),
     ev({ direction: 'out', asset: 'BTC', amount: 1, priceEUR: 30000, txType: 'sell', date: '2024-06-01', timestamp: ts('2024-06-01') }),
@@ -96,10 +66,6 @@ run('S3: Buy pre-2023, sell 2024 → G1 (Art 220 OE/2023)', () => {
   assert(disp.length === 1, `expected 1 disposal`);
   if (disp[0]) assert(disp[0].anexoG1 != null, `pre-2023 acq must be G1`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 4: FIFO order — oldest lot consumed first
-// ════════════════════════════════════════════════════════════════
 run('S4: FIFO consumes oldest lot first', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 1, priceEUR: 1000, txType: 'buy', date: '2024-01-01', timestamp: ts('2024-01-01') }),
@@ -109,17 +75,12 @@ run('S4: FIFO consumes oldest lot first', () => {
   const r = fifoEngine.process(events, { walletId: 'w4' });
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
   assert(disp.length === 1, `expected 1 disposal`);
-  // Should consume the €1000 lot first → basis 1000, gain 800
   if (disp[0]) {
-    assert(approx(disp[0].basisEUR, 1000), `FIFO should use oldest €1000 lot, got basis ${disp[0].basisEUR}`);
+    assert(approx(disp[0].basisEUR, 1000), `FIFO oldest 1000 lot, got basis ${disp[0].basisEUR}`);
     assert(approx(disp[0].gainEUR, 800), `gain should be 800, got ${disp[0].gainEUR}`);
   }
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 5: Crypto↔crypto swap = permuta (NOT a disposal)
-// ════════════════════════════════════════════════════════════════
-run('S5: ETH→USDC swap in permuta mode → no taxable disposal', () => {
+run('S5: ETH->USDC swap permuta -> no taxable disposal', () => {
   const txh = '0xswap1';
   const events = [
     ev({ direction: 'in',  asset: 'ETH',  amount: 1,    priceEUR: 1000, txType: 'buy',  date: '2024-01-01', timestamp: ts('2024-01-01') }),
@@ -130,11 +91,7 @@ run('S5: ETH→USDC swap in permuta mode → no taxable disposal', () => {
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9 && d.kind !== 'airdrop_sale');
   assert(disp.length === 0, `permuta swap should produce 0 disposals, got ${disp.length}`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 6: Aggressive mode — swap IS a disposal
-// ════════════════════════════════════════════════════════════════
-run('S6: Same swap in aggressive mode → disposal with gain €500', () => {
+run('S6: Same swap aggressive -> disposal gain 500', () => {
   const txh = '0xswap2';
   const events = [
     ev({ direction: 'in',  asset: 'ETH',  amount: 1,    priceEUR: 1000, txType: 'buy',  date: '2024-01-01', timestamp: ts('2024-01-01') }),
@@ -145,58 +102,38 @@ run('S6: Same swap in aggressive mode → disposal with gain €500', () => {
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
   assert(disp.length >= 1, `aggressive swap should produce a disposal`);
   const ethDisp = disp.find(d => d.asset === 'ETH');
-  if (ethDisp) assert(approx(ethDisp.gainEUR, 500), `aggressive ETH disposal gain should be 500, got ${ethDisp.gainEUR}`);
+  if (ethDisp) assert(approx(ethDisp.gainEUR, 500), `aggressive ETH disposal gain 500, got ${ethDisp.gainEUR}`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 7: Lending supply/withdraw = NOT alienation, lot preserved
-// ════════════════════════════════════════════════════════════════
-run('S7: Supply ETH to AAVE then withdraw → no disposal, holding period preserved', () => {
+run('S7: Supply ETH to AAVE then withdraw -> no disposal, holding preserved', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 1, priceEUR: 1000, txType: 'buy',  date: '2024-01-01', timestamp: ts('2024-01-01') }),
-    // supply ETH to AAVE (out) + receive aEthWETH receipt (in) same tx
     ev({ direction: 'out', asset: 'ETH',      amount: 1, priceEUR: 1200, txType: 'lending_supply', protocolType: 'lending', protocol: 'aave-v3', date: '2024-02-01', timestamp: ts('2024-02-01'), txHash: '0xsup' }),
     ev({ direction: 'in',  asset: 'aEthWETH', amount: 1, priceEUR: 1200, txType: 'receive',         protocolType: 'lending', protocol: 'aave-v3', date: '2024-02-01', timestamp: ts('2024-02-01'), txHash: '0xsup' }),
-    // sell ETH later (real disposal). If lot preserved from 2024-01-01, holding < 365d → G
     ev({ direction: 'out', asset: 'ETH', amount: 1, priceEUR: 1600, txType: 'sell', date: '2024-09-01', timestamp: ts('2024-09-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w7' });
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
-  // The supply must NOT be a disposal. Only the final sale counts.
   assert(disp.length === 1, `only the final sale is a disposal, got ${disp.length}`);
   if (disp[0]) {
-    assert(approx(disp[0].basisEUR, 1000), `basis must be original €1000 (preserved through lending), got ${disp[0].basisEUR}`);
+    assert(approx(disp[0].basisEUR, 1000), `basis preserved 1000, got ${disp[0].basisEUR}`);
     assert(approx(disp[0].gainEUR, 600), `gain should be 600, got ${disp[0].gainEUR}`);
   }
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 8: Spam token (unicode homoglyph) → skipped
-// ════════════════════════════════════════════════════════════════
-run('S8: Cyrillic UЅDС spam token → skip (not in FIFO)', () => {
+run('S8: Cyrillic spam token -> skip', () => {
   const events = [
-    ev({ direction: 'in',  asset: 'UЅDС', amount: 1000, priceEUR: null, txType: 'receive', assetContract: '0xscam', date: '2024-05-01', timestamp: ts('2024-05-01') }),
-    ev({ direction: 'out', asset: 'UЅDС', amount: 1000, priceEUR: null, txType: 'send',    assetContract: '0xscam', date: '2024-05-02', timestamp: ts('2024-05-02') }),
+    ev({ direction: 'in',  asset: 'U\u0405D\u0421', amount: 1000, priceEUR: null, txType: 'receive', assetContract: '0xscam', date: '2024-05-01', timestamp: ts('2024-05-01') }),
+    ev({ direction: 'out', asset: 'U\u0405D\u0421', amount: 1000, priceEUR: null, txType: 'send',    assetContract: '0xscam', date: '2024-05-02', timestamp: ts('2024-05-02') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w8' });
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
   assert(disp.length === 0, `spam token should produce no disposals, got ${disp.length}`);
-  // And classifyEvent should mark it skip
-  assert(fifoEngine.isSpamToken(events[0]) === true, `UЅDС must be detected as spam`);
+  assert(fifoEngine.isSpamToken(events[0]) === true, `must be detected as spam`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 9: Legit USDT0 (₮ symbol) → NOT spam
-// ════════════════════════════════════════════════════════════════
-run('S9: USD₮0 (legit Tether omnichain) → NOT flagged as spam', () => {
-  const e = ev({ asset: 'USD₮0', assetContract: '0x102d758f688a4c1c5a80b116bd945d4455460282', chain: 'base' });
-  assert(fifoEngine.isSpamToken(e) === false, `USD₮0 must NOT be spam (legit token)`);
+run('S9: USD-T0 legit -> NOT spam', () => {
+  const e = ev({ asset: 'USD\u20AE0', assetContract: '0x102d758f688a4c1c5a80b116bd945d4455460282', chain: 'base' });
+  assert(fifoEngine.isSpamToken(e) === false, `USD-T0 must NOT be spam`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 10: Gas/dust micro-ETH outflow → not a disposal
-// ════════════════════════════════════════════════════════════════
-run('S10: Tiny ETH outflow (0.0001) with no lot → skipped silently', () => {
+run('S10: Tiny ETH outflow no lot -> skipped', () => {
   const events = [
     ev({ direction: 'out', asset: 'ETH', amount: 0.0001, priceEUR: 2000, txType: 'send', date: '2024-05-01', timestamp: ts('2024-05-01') }),
   ];
@@ -204,11 +141,7 @@ run('S10: Tiny ETH outflow (0.0001) with no lot → skipped silently', () => {
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
   assert(disp.length === 0, `gas/dust ETH should not be a disposal, got ${disp.length}`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 11: Disposal with no acquisition lot → no phantom gain
-// ════════════════════════════════════════════════════════════════
-run('S11: Sell token never acquired → no fictitious gain, warning instead', () => {
+run('S11: Sell token never acquired -> no fictitious gain', () => {
   const events = [
     ev({ direction: 'out', asset: 'WBTC', amount: 1, priceEUR: 50000, txType: 'sell', date: '2024-05-01', timestamp: ts('2024-05-01') }),
   ];
@@ -218,10 +151,6 @@ run('S11: Sell token never acquired → no fictitious gain, warning instead', ()
   const warned = (r.warnings || []).some(w => w.type === 'disposal_no_basis_lot');
   assert(warned, `should emit disposal_no_basis_lot warning`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 12: Partial FIFO — sell more than one lot covers
-// ════════════════════════════════════════════════════════════════
 run('S12: Partial lot consumption across two lots', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 1, priceEUR: 1000, txType: 'buy', date: '2024-01-01', timestamp: ts('2024-01-01') }),
@@ -230,35 +159,23 @@ run('S12: Partial lot consumption across two lots', () => {
   ];
   const r = fifoEngine.process(events, { walletId: 'w12' });
   const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
-  // 1.5 ETH sold: 1 from €1000 lot + 0.5 from €1200 lot = basis 1600, proceeds 2250, gain 650
   const totalBasis = disp.reduce((s, d) => s + d.basisEUR, 0);
   const totalGain = disp.reduce((s, d) => s + d.gainEUR, 0);
   assert(approx(totalBasis, 1600, 1), `basis should be ~1600, got ${totalBasis}`);
   assert(approx(totalGain, 650, 1), `gain should be ~650, got ${totalGain}`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 13: Airdrop received → zero-cost lot, NOT Category E income
-// (OCC parecer PT28627: not taxed on receipt)
-// ════════════════════════════════════════════════════════════════
-run('S13: Airdrop received → zero basis lot, no Anexo E income', () => {
+run('S13: Airdrop received -> zero basis lot, no Anexo E', () => {
   const events = [
     ev({ direction: 'in', asset: 'ARB', amount: 1000, priceEUR: 1.2, txType: 'airdrop', date: '2024-03-01', timestamp: ts('2024-03-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w13' });
-  // Should NOT create a Category E reward entry
   const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
-  assert(anexoE === 0, `airdrop must NOT be Cat. E income, got €${anexoE}`);
-  // Should open a lot at basis 0
+  assert(anexoE === 0, `airdrop must NOT be Cat. E income, got ${anexoE}`);
   const arbLot = (r.lots || []).find(l => l.asset === 'ARB');
   assert(arbLot != null, `airdrop should open a lot`);
-  if (arbLot) assert(approx(arbLot.basisEURPerUnit || arbLot.basisPerUnit || 0, 0), `airdrop lot basis must be €0`);
+  if (arbLot) assert(approx(arbLot.basisEURPerUnit || arbLot.basisPerUnit || 0, 0), `airdrop lot basis must be 0`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 14: Airdrop sold to FIAT → full proceeds taxed as gain
-// ════════════════════════════════════════════════════════════════
-run('S14: Airdrop (basis 0) sold to EUR → entire proceeds is the gain', () => {
+run('S14: Airdrop sold to FIAT -> full proceeds taxed', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ARB', amount: 1000, priceEUR: 1.0, txType: 'airdrop', date: '2024-03-01', timestamp: ts('2024-03-01') }),
     ev({ direction: 'out', asset: 'ARB', amount: 1000, priceEUR: 1.5, txType: 'sell',    date: '2024-09-01', timestamp: ts('2024-09-01') }),
@@ -268,83 +185,184 @@ run('S14: Airdrop (basis 0) sold to EUR → entire proceeds is the gain', () => 
   assert(disp.length === 1, `expected 1 disposal`);
   if (disp[0]) {
     assert(approx(disp[0].basisEUR, 0), `airdrop basis must be 0, got ${disp[0].basisEUR}`);
-    assert(approx(disp[0].gainEUR, 1500), `gain should be full proceeds €1500, got ${disp[0].gainEUR}`);
+    assert(approx(disp[0].gainEUR, 1500), `gain should be full proceeds 1500, got ${disp[0].gainEUR}`);
   }
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 15: Staking reward paid in FIAT → Category E income at receipt
-// (AT informação vinculativa: 28% on receipt when paid in fiat)
-// ════════════════════════════════════════════════════════════════
-run('S15: Staking reward in EUR → Category E income at receipt', () => {
+run('S15: Staking reward in EUR -> Category E income at receipt', () => {
   const events = [
     ev({ direction: 'in', asset: 'EUR', amount: 500, priceEUR: 1, txType: 'staking_reward', date: '2024-04-01', timestamp: ts('2024-04-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w15' });
   const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
-  assert(approx(anexoE, 500), `fiat staking reward must be Cat. E income €500, got €${anexoE}`);
+  assert(approx(anexoE, 500), `fiat staking reward must be Cat. E income 500, got ${anexoE}`);
 });
-
-// ════════════════════════════════════════════════════════════════
-// SCENARIO 16: Staking reward paid in CRYPTO → deferred (not Cat E now)
-// ════════════════════════════════════════════════════════════════
-run('S16: Staking reward in crypto → deferred, zero-cost lot, no Cat E', () => {
+run('S16: Staking reward in CRYPTO -> deferred', () => {
   const events = [
     ev({ direction: 'in', asset: 'ETH', amount: 0.5, priceEUR: 2000, txType: 'staking_reward', date: '2024-04-01', timestamp: ts('2024-04-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w16' });
   const anexoE = (r.summary && r.summary.byYear && r.summary.byYear[2024]) ? r.summary.byYear[2024].anexoE.totalEUR : 0;
-  assert(anexoE === 0, `crypto staking reward must NOT be Cat. E at receipt, got €${anexoE}`);
+  assert(anexoE === 0, `crypto staking reward must NOT be Cat. E, got ${anexoE}`);
   const ethLot = (r.lots || []).find(l => l.asset === 'ETH');
   assert(ethLot != null, `should open a lot for the crypto reward`);
 });
-
-run('S17: Disposal of qty exceeding indexed lots → proceeds scaled to matched fraction (no phantom gain)', () => {
-  // Acquired only 0.01 ETH (basis €20), but sells 1.0 ETH for €2000 (rest entered un-indexed).
-  // Without scaling: gain = €2000 − €20 = €1980 phantom. With scaling: only the 0.01 matched
-  // fraction is taxed → proceeds €20, basis €20, gain ≈ €0.
+run('S17: Disposal exceeding indexed lots -> proceeds scaled (no phantom gain)', () => {
   const events = [
     ev({ direction: 'in',  asset: 'ETH', amount: 0.01, priceEUR: 2000, date: '2024-01-01', timestamp: ts('2024-01-01') }),
     ev({ direction: 'out', asset: 'ETH', amount: 1.0,  priceEUR: 2000, date: '2024-06-01', timestamp: ts('2024-06-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w17' });
   const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
-  // Without scaling the phantom gain would be ~€1980 (proceeds €2000 − basis €20). Scaling to
-  // the matched 1% fraction must cut it by ~99%. We assert the gain is a small fraction of the
-  // un-scaled proceeds, proving the phantom gain is prevented.
-  assert(totalGain < 50, `partial-basis disposal must not invent a large gain (un-scaled would be ~€1980), got €${totalGain.toFixed(2)}`);
+  assert(totalGain < 50, `partial-basis disposal must not invent a large gain, got ${totalGain.toFixed(2)}`);
 });
-
-run('S18: Stablecoin out without fiat off-ramp → not taxed (AT Nov 2025), lot consumed', () => {
-  // Acquire 5000 USDC at €0.70/unit, later send it out (transfer/bridge, not a fiat sale).
-  // The EUR/USD drift (0.70→0.86) must NOT be taxed as a gain — it's not an off-ramp.
+run('S18: Stablecoin out without fiat off-ramp -> not taxed', () => {
   const events = [
     ev({ direction: 'in',  asset: 'USDC', amount: 5000, priceEUR: 0.70, date: '2024-01-01', timestamp: ts('2024-01-01') }),
     ev({ direction: 'out', asset: 'USDC', amount: 5000, priceEUR: 0.86, date: '2024-06-01', timestamp: ts('2024-06-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w18' });
   const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
-  assert(totalGain === 0, `stablecoin transfer must not be taxed, got €${totalGain.toFixed(2)}`);
+  assert(totalGain === 0, `stablecoin transfer must not be taxed, got ${totalGain.toFixed(2)}`);
 });
-
-run('S18b: Stablecoin out explicitly marked as fiat sale → IS taxed', () => {
-  // Same drift, but user/explicitly marked as a real sale → the gain IS realized.
+run('S18b: Stablecoin out explicitly marked as fiat sale -> IS taxed', () => {
   const events = [
     ev({ direction: 'in',  asset: 'USDC', amount: 5000, priceEUR: 0.70, date: '2024-01-01', timestamp: ts('2024-01-01') }),
     ev({ direction: 'out', asset: 'USDC', amount: 5000, priceEUR: 0.86, txType: 'sell', date: '2024-06-01', timestamp: ts('2024-06-01') }),
   ];
   const r = fifoEngine.process(events, { walletId: 'w18b' });
   const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
-  assert(totalGain > 100, `explicit fiat sale should realize the FX gain, got €${totalGain.toFixed(2)}`);
+  assert(totalGain > 100, `explicit fiat sale should realize the FX gain, got ${totalGain.toFixed(2)}`);
 });
 
-// ── Summary ──────────────────────────────────────────────────────
-console.log('\n' + '═'.repeat(60));
+run('S19: On-chain isolated OUT of SOL/token -> NOT taxed (transfer, not sale)', () => {
+  const events = [
+    ev({ direction: 'in',  asset: 'SOL', chain: 'solana', amount: 10, priceEUR: 50, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'SOL', chain: 'solana', amount: 10, priceEUR: 150, txType: 'transfer_out', _source: 'solana-onchain', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w19' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain === 0, `on-chain isolated out should NOT be taxed, got gain ${totalGain.toFixed(2)}`);
+});
+
+run('S19b: CEX sell to FIAT (EUR) -> IS taxed (real fiat sale)', () => {
+  // Venda REAL a fiat: SOL → EUR numa exchange. Aqui sim tributa.
+  const events = [
+    ev({ direction: 'in',  asset: 'SOL', chain: 'solana', amount: 10, priceEUR: 50, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'SOL', chain: 'solana', amount: 10, priceEUR: 150, type: 'sell', txType: 'sell', source: 'cex_import', priceNote: 'cex_fiat', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w19b' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain > 500, `CEX sale to fiat should realize the gain (~1000), got ${totalGain.toFixed(2)}`);
+});
+
+run('S19c: CEX crypto-to-crypto trade (SOL->BTC) -> NOT taxed (permuta, FIFO resets)', () => {
+  // Troca cripto-cripto DENTRO da exchange (sem fiat) → permuta, NÃO tributa.
+  // O parser de CEX marca isto como side='swap' (txType:'swap'), não 'sell'.
+  const events = [
+    ev({ direction: 'in',  asset: 'SOL', chain: 'solana', amount: 10, priceEUR: 50, date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    // Permuta SOL→BTC: dois legs swap no mesmo txHash
+    ev({ direction: 'out', asset: 'SOL', chain: 'solana', amount: 10, type: 'swap', txType: 'swap', txHash: 'cexswap1', source: 'cex_import', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+    ev({ direction: 'in',  asset: 'BTC', chain: 'bitcoin', amount: 0.05, type: 'swap', txType: 'swap', txHash: 'cexswap1', source: 'cex_import', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w19c' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain === 0, `crypto-to-crypto trade in CEX should NOT be taxed (permuta), got ${totalGain.toFixed(2)}`);
+});
+
+run('S20: Multi-leg swap (2 outs -> 1 in) carries basis of ALL out legs', () => {
+  const events = [
+    ev({ direction: 'in', asset: 'ETH',  chain: 'eth', amount: 1,    priceEUR: 2000, txType: 'buy', date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'in', asset: 'USDC', chain: 'eth', amount: 1000, priceEUR: 1,    txType: 'buy', date: '2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction: 'out', asset: 'ETH',  chain: 'eth', amount: 1,    type:'swap', txType:'swap', txHash:'ml1', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+    ev({ direction: 'out', asset: 'USDC', chain: 'eth', amount: 1000, type:'swap', txType:'swap', txHash:'ml1', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+    ev({ direction: 'in',  asset: 'WBTC', chain: 'eth', amount: 0.05, priceEUR: 60000, type:'swap', txType:'swap', txHash:'ml1', date: '2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'w20' });
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain === 0, `multi-leg permuta should not be taxed, got ${totalGain.toFixed(2)}`);
+  const wbtcLot = (r.lots || []).find(l => l.asset === 'WBTC');
+  assert(wbtcLot, 'WBTC lot should exist');
+  const wbtcBasis = wbtcLot.basisEURPerUnit * 0.05;
+  assert(Math.abs(wbtcBasis - 3000) < 1, `WBTC basis should be 3000 (2000 ETH + 1000 USDC), got ${wbtcBasis.toFixed(2)}`);
+});
+run('S21: Categoria B — atividade alta (200 swaps) -> entrada neutra (sem nível)', () => {
+  const events = [ ev({ direction:'in', asset:'ETH', amount:1000, priceEUR:1, txType:'buy', date:'2024-01-01', timestamp: ts('2024-01-01') }) ];
+  for (let i = 0; i < 200; i++) {
+    events.push(ev({ direction:'out', asset:'ETH',  amount:1, type:'swap', txType:'swap', txHash:'sw'+i, date:'2024-02-01', timestamp: ts('2024-02-01') }));
+    events.push(ev({ direction:'in',  asset:'USDC', amount:1, type:'swap', txType:'swap', txHash:'sw'+i, date:'2024-02-01', timestamp: ts('2024-02-01') }));
+  }
+  const r = fifoEngine.process(events, { walletId: 'wB1', swapMode: 'permuta' });
+  const flags = r.summary.categoryBFlags || [];
+  const f = flags.find(f => f.fiscalYear === 2024);
+  assert(f != null, `expected an educational Cat B entry for 2024, got ${flags.length} entries`);
+  assert(f && f.level === undefined, `entry must be neutral (no warn/info level), got level=${f ? f.level : 'n/a'}`);
+  assert(f && f.swapsCount >= 1, `should record swap activity as neutral context, got ${f ? f.swapsCount : 'n/a'}`);
+});
+
+run('S22: Categoria B — atividade moderada (70 swaps) -> entrada neutra (sem nível)', () => {
+  const events = [ ev({ direction:'in', asset:'ETH', amount:1000, priceEUR:1, txType:'buy', date:'2024-01-01', timestamp: ts('2024-01-01') }) ];
+  for (let i = 0; i < 70; i++) {
+    events.push(ev({ direction:'out', asset:'ETH',  amount:1, type:'swap', txType:'swap', txHash:'sw'+i, date:'2024-02-01', timestamp: ts('2024-02-01') }));
+    events.push(ev({ direction:'in',  asset:'USDC', amount:1, type:'swap', txType:'swap', txHash:'sw'+i, date:'2024-02-01', timestamp: ts('2024-02-01') }));
+  }
+  const r = fifoEngine.process(events, { walletId: 'wB2', swapMode: 'permuta' });
+  const flags = r.summary.categoryBFlags || [];
+  const f2024 = flags.find(f => f.fiscalYear === 2024);
+  assert(f2024 != null, `expected an educational Cat B entry for 2024`);
+  assert(f2024 && f2024.level === undefined, `entry must be neutral (no level), got ${f2024 ? f2024.level : 'none'}`);
+});
+
+run('S23: Categoria B — só aquisições, sem alienações/permutas -> sem entrada', () => {
+  const events = [
+    ev({ direction:'in', asset:'ETH', amount:1, priceEUR:1000, txType:'buy', date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'in', asset:'BTC', amount:1, priceEUR:5000, txType:'buy', date:'2024-03-01', timestamp: ts('2024-03-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wB3' });
+  const flags = r.summary.categoryBFlags || [];
+  assert(flags.length === 0, `a year with only acquisitions (no disposals/swaps) should have no Cat B entry, got ${flags.length}`);
+});
+
+run('S24: Categoria B — venda de volume alto -> entrada neutra, volume como contexto', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:100, priceEUR:2000, txType:'buy',  date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:100, priceEUR:2000, txType:'sell', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wB4' });
+  const flags = r.summary.categoryBFlags || [];
+  const f = flags.find(f => f.fiscalYear === 2024);
+  assert(f != null, `expected an educational Cat B entry for the year with a large sale`);
+  assert(f && f.level === undefined, `entry must be neutral (no warn), got ${f ? f.level : 'none'}`);
+  assert(f && f.volumeEUR >= 100000, `volume should be recorded as neutral context, got ${f ? f.volumeEUR : 'n/a'}`);
+  assert(f && f.salesCount >= 1, `sale should be counted, got ${f ? f.salesCount : 'n/a'}`);
+});
+
+run('S25: Card DEBIT spend (taxTreatment disposal) -> real mais-valia via FIFO', () => {
+  // simula o evento sintético que _cardSpendsToEvents gera para um gasto de débito:
+  // comprei 1 ETH @1000, gastei-o no cartão (débito) quando valia 1500 -> ganho 500 (Cat G)
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',  date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'sale', date:'2024-06-01', timestamp: ts('2024-06-01'), source:'card_spend', userOverride:{txType:'sale'} }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wcard1' });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 1, `expected 1 disposal, got ${disp.length}`);
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.anexoG.gain, 500), `expected Anexo G gain 500, got ${yr ? yr.anexoG.gain : 'none'}`);
+});
+
+run('S26: Card spend on asset held >365d -> Anexo G1 (isento)', () => {
+  // gasto de débito mas o ativo foi detido >365 dias -> isento (G1), não G
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',  date:'2023-01-01', timestamp: ts('2023-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'sale', date:'2024-06-01', timestamp: ts('2024-06-01'), source:'card_spend', userOverride:{txType:'sale'} }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wcard2' });
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.anexoG.gain, 0), `expected Anexo G gain 0 (exempt), got ${yr ? yr.anexoG.gain : 'none'}`);
+  assert(yr && yr.anexoG1.gain > 0, `expected Anexo G1 gain > 0 (exempt held >365d), got ${yr ? yr.anexoG1.gain : 'none'}`);
+});
+
+console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
-if (failed > 0) {
-  console.log('\nFailures:');
-  failures.forEach(f => console.log('  · ' + f));
-  process.exit(1);
-} else {
-  console.log('✅ ALL FISCAL E2E TESTS PASSED');
-}
+if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }
+else { console.log('ALL FISCAL E2E TESTS PASSED'); }
