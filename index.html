@@ -21859,7 +21859,7 @@ function renderFiscal(w) {
           <li>${t('fiscalPanel.stablecoinConversion')}</li>
         </ul>
         <div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border-soft);font-size:0.76rem">
-          <strong>${lang === 'en' ? 'Official sources' : 'Fontes oficiais'}:</strong>
+          <strong>${(state.lang||'pt') === 'en' ? 'Official sources' : 'Fontes oficiais'}:</strong>
           ${legalLink('cirs')} · ${legalLink('lei24D')} · ${legalLink('piv28122')}
         </div>
         ${t('fiscalPanel.disclaimer')}
