@@ -17878,6 +17878,24 @@ function renderCards(w) {
     taxTreatment: sp.taxTreatment,
     status: sp.status,
   }));
+  // Incluir os lotes de cashback como linhas próprias: o cashback é um RECEBIMENTO
+  // (não está atado a um gasto). Mostra a data, o valor EUR (já com a cotação correta)
+  // e o token/quantidade recebidos. Resolve a coluna "Cashback —" que estava sempre vazia.
+  rewardLots.forEach(l => {
+    txs.push({
+      id: l.id,
+      date: l.acqDate,
+      desc: `Cashback${l.qty ? ' · ' + (+l.qty).toLocaleString('pt-PT', { maximumFractionDigits: 6 }) + ' ' + (l.asset || '') : ''}`,
+      amount: 0,                 // não é um gasto
+      cashback: +l.eur || 0,     // valor EUR do cashback (cotação corrigida)
+      category: 'Cashback',
+      cardId: l.cardId || activeCardId,
+      walletId: l.walletId,
+      taxTreatment: 'reward_new_lot',
+      status: 'CLEARED',
+      _isCashback: true,
+    });
+  });
   const topCats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const walletImports = state.imports.filter(i=>i.walletId===w.id&&(activeCardId==='all'||i.cardId===activeCardId));
 
@@ -17971,7 +17989,7 @@ function renderCards(w) {
               <td><span class="badge badge-muted" style="background:${iss?.bg||'var(--bg2)'};color:${iss?.text||'#fff'};border:none;font-size:0.58rem">${card?.name||'—'}</span></td>
               <td style="font-size:0.82rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.desc||''}">${t.desc||'—'}</td>
               <td style="font-size:0.8rem">${catEmoji(t.category)} ${t.category||'—'}</td>
-              <td class="mono blue">€${fmt(t.amount)}</td>
+              <td class="mono blue">${t._isCashback ? '—' : '€'+fmt(t.amount)}</td>
               <td class="mono green">${t.cashback?'€'+fmt(t.cashback):'—'}</td>
               <td style="font-size:0.78rem;color:var(--muted)">${t.note||'—'}</td>
               <td><button class="btn btn-danger btn-xs" onclick="deleteTx('${t.id}')">✕</button></td>
@@ -25521,9 +25539,20 @@ function confirmTaxAwareImport() {
       // Asset: ether.fi cashbacks come in WETH usually
       // The description often has the asset, or we look at original currency
       const asset = (tx.description || tx.originalCurrency || card.primaryAsset || 'WETH').toUpperCase();
-      const usdAmount = Math.abs(tx.amount || 0);
-      // Token amount in 'original amount' field if present
-      const tokenQty = Math.abs(tx.originalAmount || tx.amount || 0);
+      // BUG FIX: o campo `amount` do cashback EtherFi é a QUANTIDADE DE TOKEN (ex: 0.01 ETH),
+      // não um valor em USD. Antes tratávamos a quantidade como se fossem dólares, o que dava
+      // um valor ~3000x errado (0.01 "USD" em vez de 0.01 ETH × ~€2900 = ~€29).
+      // Correção: a quantidade é o token; o valor USD = quantidade × cotação do token.
+      const tokenQty = Math.abs(+tx.originalAmount || +tx.amount || 0);
+      // stablecoins de fiat (EUR/USD) já vêm em valor fiat; cripto precisa de cotação
+      const FIAT_LIKE = ['EUR','EURE','EURC','USD','USDC','USDT','PYUSD','DAI'];
+      let usdAmount;
+      if (FIAT_LIKE.includes(asset)) {
+        usdAmount = tokenQty;                          // já é valor (stable/fiat)
+      } else {
+        const unitUsd = (typeof getUsdPrice === 'function') ? (getUsdPrice(asset) || 0) : 0;
+        usdAmount = unitUsd > 0 ? tokenQty * unitUsd : tokenQty;  // qty × cotação; fallback: qty crua
+      }
 
       const key = `${dateStr}|${asset}`;
       if (!groups[key]) {
@@ -25571,6 +25600,7 @@ function confirmTaxAwareImport() {
         return;
       }
 
+      const unitUsdLot = (typeof getUsdPrice === 'function') ? (getUsdPrice(g.asset) || 0) : 0;
       const lot = {
         id: genId(),
         walletId: w.id,
@@ -25579,7 +25609,7 @@ function confirmTaxAwareImport() {
         chain: card.network || 'multi',
         proto: 'ether.fi cashback',
         asset: g.asset,
-        qty: g.qty || (g.usd / 3500),  // rough fallback if no qty
+        qty: g.qty || (unitUsdLot > 0 ? (g.usd / unitUsdLot) : 0),  // fallback via cotação real (não número mágico)
         eur: g.eur,
         price: g.qty > 0 ? (g.usd / g.qty) : 0,
         origin: 'reward',  // distinguishes from fiat_purchase
