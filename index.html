@@ -1088,6 +1088,11 @@ td.muted  { color:var(--muted); }
 .alert-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.4); }
 .alert-success { background: rgba(52,211,153,0.08); border-color: var(--mint); }
 
+/* Links para fontes legais oficiais (Portal das Finanças / Diário da República) */
+.legal-link { color: var(--gold); text-decoration: none; border-bottom: 1px dotted var(--gold); font-weight: 500; transition: opacity .15s; white-space: nowrap; }
+.legal-link:hover { opacity: 0.75; border-bottom-style: solid; }
+.legal-link::after { content: ' ↗'; font-size: 0.85em; opacity: 0.6; }
+
 /* ══════════════════════════════════════════════════
    MODALS
 ══════════════════════════════════════════════════ */
@@ -4704,6 +4709,54 @@ const MORPHO_FN_ID_TO_PARAMS = '0x861c0fb1';
 // também resolve o CORS. Deixa PROXY_BASE = '' para voltar ao método direto.
 const PROXY_BASE = 'https://aurum-proxy.cryptounderground4.workers.dev';
 function _proxyActive() { return !!PROXY_BASE; }
+
+// ════════════════════════════════════════════════════════════════════════
+// FONTES LEGAIS OFICIAIS (Portal das Finanças + Diário da República)
+// Fonte única de verdade para todas as referências fiscais da app. Cada
+// afirmação fiscal deve apontar para a fonte oficial — transparência total.
+// Se a AT atualizar uma lei/informação, muda-se AQUI e propaga a toda a app.
+// ════════════════════════════════════════════════════════════════════════
+const LEGAL_REFS = {
+  // Código do IRS (texto consolidado, Portal das Finanças)
+  cirs:        { label: 'CIRS (Código do IRS)', url: 'https://info.portaldasfinancas.gov.pt/pt/informacao_fiscal/codigos_tributarios/Cod_download/Documents/CIRS.pdf' },
+  // Lei 24-D/2022 (OE 2023) — introduziu o regime cripto. Diário da República.
+  lei24D:      { label: 'Lei n.º 24-D/2022 (OE 2023)', url: 'https://diariodarepublica.pt/dr/detalhe/lei/24-d-2022-205557192' },
+  // Informação vinculativa PIV 28122 — enquadramento de criptoativos (compra, staking, permuta, MEV bots)
+  piv28122:    { label: 'Informação Vinculativa PIV 28122 (AT)', url: 'https://info.portaldasfinancas.gov.pt/pt/informacao_fiscal/informacoes_vinculativas/rendimento/cirs/Documents/PIV_28122.pdf' },
+  // Arquivo de informações vinculativas da AT
+  ivArquivo:   { label: 'Arquivo de Informações Vinculativas (AT)', url: 'https://info.portaldasfinancas.gov.pt/pt/informacao_fiscal/informacoes_vinculativas/Pages/default.aspx' },
+};
+
+// Mapeia cada conceito fiscal → referência oficial + artigo exato do CIRS.
+// 'ref' aponta a uma entrada de LEGAL_REFS; 'art' é o artigo/nº a citar.
+const FISCAL_CITATIONS = {
+  mais_valias_G:    { art: 'Art. 10.º n.º 1 al. k) CIRS',  ref: 'cirs',     note: 'Mais-valias da alienação onerosa de criptoativos (Categoria G).' },
+  rendimentos_E:    { art: 'Art. 5.º n.º 2 al. u) CIRS',   ref: 'cirs',     note: 'Remuneração de operações com criptoativos (Categoria E, rendimentos de capitais).' },
+  staking_diferido: { art: 'Art. 5.º n.º 11 CIRS',         ref: 'piv28122', note: 'Recompensas de staking pagas em criptoativos: tributadas como mais-valia só na alienação dos criptoativos recebidos (confirmado pela AT na PIV 28122).' },
+  permuta:          { art: 'Art. 10.º n.º 20 CIRS',        ref: 'piv28122', note: 'Permuta cripto-cripto não tributa nesse momento; o ativo recebido herda o valor de aquisição do entregue.' },
+  isencao_365:      { art: 'Art. 10.º n.º 19 CIRS',        ref: 'cirs',     note: 'Exclusão de tributação de ganhos (e perdas) de criptoativos detidos ≥365 dias.' },
+  regime_pre2023:   { art: 'Art. 220.º Lei 24-D/2022',     ref: 'lei24D',   note: 'Regime transitório: o período de detenção de criptoativos adquiridos antes de 2023-01-01 conta para os 365 dias.' },
+  categoria_B:      { art: 'Art. 4.º n.º 1 al. o) CIRS',   ref: 'piv28122', note: 'Atividade habitual/empresarial (Categoria B): emissão, mineração, validação, ou estrutura empresarial organizada com habitualidade e serviços a terceiros.' },
+  nfts_excluidos:   { art: 'Art. 10.º n.º 18 CIRS',        ref: 'cirs',     note: 'NFTs (criptoativos únicos e não fungíveis) excluídos do conceito de criptoativo para efeitos fiscais.' },
+  requisito_geo:    { art: 'Art. 10.º n.º 21 CIRS',        ref: 'cirs',     note: 'Isenção/não tributação só se aplica a operações com contraparte na UE/EEE ou Estado com convenção de troca de informação fiscal.' },
+};
+
+// Gera um link HTML para uma fonte legal. Uso: legalLink('piv28122') ou legalLink('cirs', 'Art. 10.º').
+function legalLink(refKey, customLabel) {
+  const r = LEGAL_REFS[refKey];
+  if (!r) return customLabel || '';
+  const label = customLabel || r.label;
+  return `<a href="${r.url}" target="_blank" rel="noopener noreferrer" class="legal-link">${label}</a>`;
+}
+
+// Gera uma citação fiscal completa: "<artigo> (<link para fonte oficial>)".
+// Uso: fiscalCite('permuta') → "Art. 10.º n.º 20 CIRS (Informação Vinculativa PIV 28122 (AT))" com link.
+function fiscalCite(conceptKey) {
+  const c = FISCAL_CITATIONS[conceptKey];
+  if (!c) return '';
+  return `${c.art} · ${legalLink(c.ref)}`;
+}
+
 
 // Constrói o URL de RPC por rede. Com proxy: <proxy>/rpc/<subdominio>. Sem proxy:
 // <subdominio>.g.alchemy.com/v2/<key> (método direto, fallback).
@@ -9234,7 +9287,81 @@ const fifoEngine = (() => {
       });
     }
 
+    // ── Avaliação de Categoria B (atividade habitual) ──────────────────────
+    // A AT (informação vinculativa PIV 28122) enquadra em Cat B quando há "estrutura
+    // empresarial organizada, frequência, prestação de serviços a terceiros, ou a
+    // atividade é uma das principais fontes de rendimento". A lei NÃO fixa um número;
+    // a AT analisa caso a caso. Por isso isto é um AVISO INFORMATIVO, nunca um cálculo:
+    // sinalizamos um padrão que MERECE validação por um contabilista, sem afirmar Cat B.
+    // O que conseguimos medir on-chain: frequência e volume de operações por ano fiscal.
+    summary.categoryBFlags = _assessCategoryB(disposals, events);
+
     return { lots, disposals, rewards, warnings, summary, undatedCount: _undated.length, undatedEvents: _undated };
+  }
+
+  // Avalia, por ano fiscal, se o padrão de atividade merece um aviso de Categoria B.
+  // Devolve um array de flags { fiscalYear, level, tradeCount, volumeEUR, message }.
+  // level: 'info' (frequência moderada) | 'warn' (frequência/volume alto → validar TOC).
+  // NUNCA conclui que É Cat B — apenas que o padrão pode justificar essa análise.
+  function _assessCategoryB(disposals, events) {
+    // Conta operações por ano: vendas a fiat (disposals 'sale'/'pay') + permutas (swaps).
+    // Permutas não tributam, mas CONTAM para aferir habitualidade/frequência de trading.
+    const byYear = {};
+    const ensure = y => (byYear[y] = byYear[y] || { fiscalYear: y, sales: 0, swaps: 0, volumeEUR: 0 });
+
+    for (const d of disposals) {
+      if (!d.fiscalYear) continue;
+      const y = ensure(d.fiscalYear);
+      if (d.kind === 'sale' || d.kind === 'pay') { y.sales++; y.volumeEUR += Math.abs(d.proceedsEUR || 0); }
+      else if (d.kind === 'swap_sell') { y.swaps++; y.volumeEUR += Math.abs(d.proceedsEUR || 0); }
+    }
+    // Contar swaps a partir dos eventos originais (em modo permuta não há disposal swap_sell).
+    // Conta cada perna de saída de um swap UMA vez, por ano fiscal.
+    if (Array.isArray(events)) {
+      const seenSwapTx = new Set();
+      for (const ev of events) {
+        const tx = (ev.txType || ev.type || '').toLowerCase();
+        if (tx !== 'swap') continue;
+        const dir = (ev.direction || '').toLowerCase();
+        // contar só a perna de saída (out) de cada swap, evitando dupla contagem in+out
+        if (dir === 'in') continue;
+        const key = (ev.txHash || ev.id || '') + ':' + (ev.asset || '');
+        if (seenSwapTx.has(key)) continue;
+        seenSwapTx.add(key);
+        const ts = _safeEventTs(ev);
+        const date = ev.date || _safeDateStr(ts);
+        const yr = date ? parseInt(date.slice(0, 4), 10) : null;
+        if (!yr) continue;
+        // só conta se ainda não foi contado como disposal swap_sell (modo permuta)
+        ensure(yr).swaps++;
+      }
+    }
+
+    // Limiares conservadores. Não são lei — são gatilhos para SUGERIR validação.
+    const TRADES_INFO = 50;
+    const TRADES_WARN = 150;
+    const VOLUME_WARN = 100000;
+
+    const flags = [];
+    for (const y of Object.values(byYear)) {
+      const trades = y.sales + y.swaps;
+      let level = null;
+      if (trades >= TRADES_WARN || y.volumeEUR >= VOLUME_WARN) level = 'warn';
+      else if (trades >= TRADES_INFO) level = 'info';
+      if (!level) continue;
+      flags.push({
+        fiscalYear: y.fiscalYear,
+        level,
+        tradeCount: trades,
+        salesCount: y.sales,
+        swapsCount: y.swaps,
+        volumeEUR: y.volumeEUR,
+        message: level === 'warn'
+          ? `Em ${y.fiscalYear} registaste ${trades} operações (${y.sales} vendas, ${y.swaps} permutas)${y.volumeEUR >= VOLUME_WARN ? ` e ~€${Math.round(y.volumeEUR).toLocaleString('pt-PT')} de volume` : ''}. Um padrão deste tipo PODE ser visto pela AT como atividade habitual (Categoria B), com tributação progressiva até 48% + Segurança Social, em vez de mais-valias (Categoria G). Isto NÃO é uma conclusão — depende de fatores como organização, frequência e se é uma das tuas principais fontes de rendimento. Recomendamos validar o teu enquadramento com um contabilista certificado.`
+          : `Em ${y.fiscalYear} registaste ${trades} operações. Se a tua atividade com cripto for frequente e organizada, vale a pena confirmar com um contabilista se o enquadramento correto é Categoria G (mais-valias) ou Categoria B (atividade habitual).`,
+      });
+    }
+    return flags;
   }
 
   // ── Aggregation helpers ───────────────────────────────────
@@ -21003,10 +21130,54 @@ function _buildIntegrityPanel(warnings, undatedCount, lang, walletId) {
   </div>`;
 }
 
+// Painel de aviso de Categoria B (atividade habitual). Mostra a flag do ano fiscal
+// selecionado, se existir. É INFORMATIVO: alerta para um padrão que PODE ser visto
+// como atividade habitual pela AT (PIV 28122) e recomenda validação por contabilista.
+// Nunca afirma que É Categoria B — a decisão depende de fatores que a app não vê.
+function _buildCategoryBPanel(flags, fiscalYear, lang) {
+  if (!Array.isArray(flags) || !flags.length) return '';
+  const flag = flags.find(f => f.fiscalYear === fiscalYear);
+  if (!flag) return '';
+  const isWarn = flag.level === 'warn';
+  const cls = isWarn ? 'alert-warn' : 'alert-info';
+  const icon = isWarn ? '⚠️' : 'ℹ️';
+  const en = lang === 'en';
+  const title = isWarn
+    ? (en ? 'Possible Category B (habitual activity)' : 'Possível Categoria B (atividade habitual)')
+    : (en ? 'Frequent activity detected' : 'Atividade frequente detetada');
+
+  // volume só aparece no texto quando ultrapassa o limiar
+  const volTxt = flag.volumeEUR >= 100000
+    ? (en
+        ? ' and ~€' + Math.round(flag.volumeEUR).toLocaleString('en') + ' of volume'
+        : ' e ~€' + Math.round(flag.volumeEUR).toLocaleString('pt-PT') + ' de volume')
+    : '';
+
+  let body;
+  if (isWarn) {
+    body = en
+      ? 'In ' + flag.fiscalYear + ' you recorded <strong>' + flag.tradeCount + ' operations</strong> (' + flag.salesCount + ' sales, ' + flag.swapsCount + ' swaps)' + volTxt + '. A pattern like this <strong>may</strong> be viewed by the Tax Authority as habitual activity (<strong>Category B</strong>), with progressive taxation up to 48% + Social Security, instead of capital gains (Category G). This is <strong>not</strong> a conclusion — it depends on factors like organization, frequency and whether it is one of your main income sources. We recommend validating your tax framing with a certified accountant.'
+      : 'Em ' + flag.fiscalYear + ' registaste <strong>' + flag.tradeCount + ' operações</strong> (' + flag.salesCount + ' vendas, ' + flag.swapsCount + ' permutas)' + volTxt + '. Um padrão deste tipo <strong>pode</strong> ser visto pela AT como atividade habitual (<strong>Categoria B</strong>), com tributação progressiva até 48% + Segurança Social, em vez de mais-valias (Categoria G). Isto <strong>não</strong> é uma conclusão — depende de fatores como organização, frequência e se é uma das tuas principais fontes de rendimento. Recomendamos validar o teu enquadramento com um contabilista certificado.';
+  } else {
+    body = en
+      ? 'In ' + flag.fiscalYear + ' you recorded <strong>' + flag.tradeCount + ' operations</strong>. If your crypto activity is frequent and organized, it is worth confirming with an accountant whether the correct framing is Category G (capital gains) or Category B (habitual activity).'
+      : 'Em ' + flag.fiscalYear + ' registaste <strong>' + flag.tradeCount + ' operações</strong>. Se a tua atividade com cripto for frequente e organizada, vale a pena confirmar com um contabilista se o enquadramento correto é Categoria G (mais-valias) ou Categoria B (atividade habitual).';
+  }
+
+  const sourceLabel = en ? 'Source' : 'Fonte';
+  const sourceLine = '<div style="margin-top:0.5rem;font-size:0.74rem;opacity:0.85">'
+    + '<strong>' + sourceLabel + ':</strong> ' + (typeof fiscalCite === 'function' ? fiscalCite('categoria_B') : '')
+    + '</div>';
+
+  return '<div class="alert ' + cls + '" style="margin-bottom:1rem;font-size:0.8rem">'
+    + '<span>' + icon + '</span>'
+    + '<div><strong>' + title + '.</strong> ' + body + sourceLine + '</div>'
+    + '</div>';
+}
+
 // Builds the fiscal-report Summary bar (Koinly-style): transaction-count "pills" + the tax
-// settings actually used for the calculation. Gives the user a one-glance overview and full
-// transparency about HOW the numbers were produced (FIFO, consolidation, the PT crypto→crypto
-// rule). Counts are derived from the year's events + disposals — no engine change needed.
+// settings actually used for the calculation. Counts are derived from the year's events +
+// disposals — no engine change needed.
 function _buildFiscalSummaryBar(events, disposals, fiscalYear, lang) {
   const t2 = (en, pt) => (lang === 'en' ? en : pt);
   const yStart = new Date(`${fiscalYear}-01-01T00:00:00Z`).getTime() / 1000;
@@ -21317,6 +21488,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
         })()}
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
+
+        ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
 
         ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
 
@@ -21685,6 +21858,10 @@ function renderFiscal(w) {
           <li>${t('fiscalPanel.airdropsStaking')}</li>
           <li>${t('fiscalPanel.stablecoinConversion')}</li>
         </ul>
+        <div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border-soft);font-size:0.76rem">
+          <strong>${lang === 'en' ? 'Official sources' : 'Fontes oficiais'}:</strong>
+          ${legalLink('cirs')} · ${legalLink('lei24D')} · ${legalLink('piv28122')}
+        </div>
         ${t('fiscalPanel.disclaimer')}
       </div>
     </div>
@@ -26136,9 +26313,9 @@ function exportFiscalReport() {
 </div>
 
 <div class="note">
-  <strong>Interpretação fiscal:</strong> Lei 24-D/2022, Art. 10º CIRS<br>
-  • Permuta cripto-cripto não é alienação (Art. 10º nº 6 c)<br>
-  • Cashback em cripto = aquisição gratuita; basis = €EUR à data; tributação só na alienação futura<br>
+  <strong>Interpretação fiscal:</strong> ${legalLink('lei24D')} · ${legalLink('cirs')}<br>
+  • Permuta cripto-cripto não é alienação (${fiscalCite('permuta')})<br>
+  • Cashback em cripto = aquisição gratuita; basis = €EUR à data; tributação só na alienação futura (${fiscalCite('staking_diferido')})<br>
   • Gastos com capital emprestado DeFi não são alienação<br>
   • FIFO obrigatório por wallet
 </div>
@@ -26514,12 +26691,14 @@ ${realDisp.length === 0 ? '<p class="muted">Sem alienações tributáveis neste 
 
 <h2>5. Metodologia</h2>
 <div class="note" style="line-height:1.7">
-  <strong>Interpretação fiscal:</strong> Lei 24-D/2022, Art. 10º CIRS.<br>
+  <strong>Interpretação fiscal:</strong> ${legalLink('lei24D')} · ${legalLink('cirs')}<br>
   • <strong>FIFO</strong> por wallet — o lote mais antigo é alienado primeiro.<br>
-  • <strong>Permuta cripto↔cripto</strong> (Art. 10º nº 6 c) não é alienação; o novo ativo herda data e valor de aquisição.<br>
-  • <strong>≥365 dias</strong> de detenção → Anexo G1 (isento, declarativo). <strong>&lt;365 dias</strong> → Anexo G (28%).<br>
-  • <strong>Aquisição pré-2023</strong> → regime transitório Art. 220 OE/2023 → G1.<br>
+  • <strong>Permuta cripto↔cripto</strong> (${fiscalCite('permuta')}) não é alienação; o novo ativo herda data e valor de aquisição.<br>
+  • <strong>≥365 dias</strong> de detenção → Anexo G1 (isento, declarativo, ${fiscalCite('isencao_365')}). <strong>&lt;365 dias</strong> → Anexo G (28%).<br>
+  • <strong>Aquisição pré-2023</strong> → regime transitório ${fiscalCite('regime_pre2023')} → G1.<br>
+  • <strong>Staking pago em cripto</strong> → diferido; tributa como mais-valia só na alienação (${fiscalCite('staking_diferido')}).<br>
   • <strong>Lending</strong> (supply/withdraw a AAVE/Morpho/etc.) não é alienação — preserva o subjacente.<br>
+  • <strong>NFTs excluídos</strong> (${fiscalCite('nfts_excluidos')}).<br>
   • <strong>Gas/dust</strong> de ativo nativo não é alienação tributável.<br>
   • <strong>Preços:</strong> stablecoins por paridade; restantes via DefiLlama (por contrato) + ECB; tokens sem cobertura via derivação on-chain do próprio swap.
 </div>
