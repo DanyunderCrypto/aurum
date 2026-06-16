@@ -12031,7 +12031,7 @@ function _cardSpendsToEvents(w) {
   const out = [];
   for (const s of state.cardSpends) {
     if (s.walletId !== w.id) continue;
-    if (s.taxTreatment !== 'disposal') continue;   // só débito com cripto próprio é alienação
+    if (_effectiveCardTreatment(s) !== 'disposal') continue;   // só débito (ou marcado pelo user) é alienação
     if (!s.date) continue;
     const asset = (s.assetSold || 'USDC').toUpperCase();
     // proceeds em EUR: chargedAmount já é o valor da compra; converter USD→EUR se preciso
@@ -12061,6 +12061,18 @@ function _cardSpendsToEvents(w) {
     });
   }
   return out;
+}
+
+// Determina o tratamento fiscal EFETIVO de um gasto de cartão.
+// O override manual do utilizador (s.userTaxOverride) tem prioridade sobre o classificador
+// automático. Resolve o modo MISTO: gastos que o classificador deixou 'unknown'/'pending'
+// passam a 'disposal' (débito) ou 'loan_spend' (crédito) conforme o utilizador marcou.
+// Valores possíveis de userTaxOverride: 'debit' (→disposal), 'credit' (→loan_spend).
+function _effectiveCardTreatment(s) {
+  if (!s) return 'ignored';
+  if (s.userTaxOverride === 'debit')  return 'disposal';    // gasto com cripto própria → Cat G
+  if (s.userTaxOverride === 'credit') return 'loan_spend';  // gasto com crédito → não aliena
+  return s.taxTreatment || 'unknown';                       // sem override: o do classificador
 }
 
 function _eventsForWallet(w) {
@@ -17703,6 +17715,116 @@ function renderProtoDetail(proto, chain, w) {
 // ══════════════════════════════════════════════════════════
 // CARDS TAB
 // ══════════════════════════════════════════════════════════
+// Painel de revisão de gastos de cartão que precisam de classificação manual (modo MISTO).
+// Resolve o PONTO 1 do diagnóstico: cartões híbridos (ex: EtherFi Cash) misturam gastos
+// pagos com saldo próprio (débito → alienação Cat. G) e gastos pagos por crédito (não aliena).
+// A blockchain não revela qual foi qual, por isso damos ao utilizador o controlo: lista os
+// gastos por classificar e deixa marcá-los como débito ou crédito, individualmente ou em massa.
+function _buildCardReviewPanel(w) {
+  if (!w || !Array.isArray(state.cardSpends)) return '';
+  const lang = state.lang || 'pt';
+  const en = lang === 'en';
+  // gastos desta wallet que precisam de revisão: sem override e marcados needsReview
+  // (ou cujo tratamento ficou 'unknown' por o cartão ser misto).
+  const pending = state.cardSpends.filter(s =>
+    s.walletId === w.id &&
+    !s.userTaxOverride &&
+    (s.needsReview || s.taxTreatment === 'unknown')
+  );
+  if (!pending.length) return '';
+
+  const fmtEur = v => '€' + (Math.abs(+v || 0)).toLocaleString(en ? 'en' : 'pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rows = pending.slice(0, 200).map(s => {
+    const amt = s.chargedCurrency === 'USD' ? (Math.abs(+s.chargedAmount || 0) * (live.eurRate || 0.92)) : Math.abs(+s.chargedAmount || 0);
+    return `<tr data-spend="${s.id}">
+      <td style="padding:0.5rem 0.6rem"><input type="checkbox" class="card-review-cb" value="${s.id}" onchange="_updateCardReviewSelection()"></td>
+      <td style="padding:0.5rem 0.6rem;font-family:var(--mono);font-size:0.8rem">${s.date || '—'}</td>
+      <td style="padding:0.5rem 0.6rem;font-size:0.82rem">${(s.merchant || '—').slice(0, 40)}</td>
+      <td style="padding:0.5rem 0.6rem;text-align:right;font-family:var(--mono);font-size:0.82rem">${fmtEur(amt)}</td>
+      <td style="padding:0.5rem 0.6rem;text-align:right;white-space:nowrap">
+        <button class="btn btn-outline btn-xs" onclick="_markCardSpend('${s.id}','debit')" title="${en ? 'Spent own crypto — taxable disposal (Cat G)' : 'Gastou cripto própria — alienação tributável (Cat G)'}">${en ? 'Debit' : 'Débito'}</button>
+        <button class="btn btn-outline btn-xs" onclick="_markCardSpend('${s.id}','credit')" title="${en ? 'Spent borrowed credit — not a disposal' : 'Gastou crédito emprestado — não é alienação'}">${en ? 'Credit' : 'Crédito'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="panel" style="margin-bottom:1.3rem;border-color:var(--gold)">
+    <div class="panel-head">
+      <span class="panel-title">⚖ ${en ? 'Spends to classify (mixed card)' : 'Gastos a classificar (cartão misto)'}</span>
+      <span style="font-size:0.7rem;color:var(--text-muted)">${pending.length} ${en ? 'pending' : 'pendentes'}</span>
+    </div>
+    <div class="panel-body">
+      <div class="alert alert-info" style="font-size:0.8rem;margin-bottom:1rem">
+        <span>ℹ</span>
+        <div>${en
+          ? 'This card mixes spends paid with your own balance (<strong>debit</strong> → taxable disposal, Cat. G) and spends funded by credit (<strong>credit</strong> → not a disposal). The blockchain doesn\'t reveal which is which — mark each spend below. '
+          : 'Este cartão mistura gastos pagos com saldo próprio (<strong>débito</strong> → alienação tributável, Cat. G) e gastos financiados por crédito (<strong>crédito</strong> → não é alienação). A blockchain não revela qual foi qual — marca cada gasto abaixo. '
+        }${fiscalCite('mais_valias_G')}</div>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.8rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.4rem"><input type="checkbox" id="card-review-all" onchange="_toggleAllCardReview(this.checked)"> ${en ? 'Select all' : 'Selecionar todos'}</label>
+        <span style="flex:1"></span>
+        <button class="btn btn-outline btn-sm" id="card-review-bulk-debit" disabled onclick="_markSelectedCardSpends('debit')">${en ? 'Mark selected: Debit' : 'Marcar selecionados: Débito'}</button>
+        <button class="btn btn-outline btn-sm" id="card-review-bulk-credit" disabled onclick="_markSelectedCardSpends('credit')">${en ? 'Mark selected: Credit' : 'Marcar selecionados: Crédito'}</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border-soft);font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">
+            <th style="padding:0.4rem 0.6rem;text-align:left"></th>
+            <th style="padding:0.4rem 0.6rem;text-align:left">${en ? 'Date' : 'Data'}</th>
+            <th style="padding:0.4rem 0.6rem;text-align:left">${en ? 'Merchant' : 'Comerciante'}</th>
+            <th style="padding:0.4rem 0.6rem;text-align:right">${en ? 'Amount' : 'Valor'}</th>
+            <th style="padding:0.4rem 0.6rem;text-align:right">${en ? 'Classify' : 'Classificar'}</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${pending.length > 200 ? `<p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.6rem">${en ? 'Showing first 200.' : 'A mostrar os primeiros 200.'}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+// Marca um gasto individual como débito (disposal) ou crédito (loan_spend) e re-renderiza.
+function _markCardSpend(spendId, kind) {
+  const s = (state.cardSpends || []).find(x => x.id === spendId);
+  if (!s) return;
+  s.userTaxOverride = kind;          // 'debit' | 'credit'
+  s.needsReview = false;
+  saveState();
+  render();
+}
+
+// Marca em massa os gastos selecionados.
+function _markSelectedCardSpends(kind) {
+  const ids = Array.from(document.querySelectorAll('.card-review-cb:checked')).map(cb => cb.value);
+  if (!ids.length) return;
+  const idSet = new Set(ids);
+  let n = 0;
+  for (const s of (state.cardSpends || [])) {
+    if (idSet.has(s.id)) { s.userTaxOverride = kind; s.needsReview = false; n++; }
+  }
+  if (n) { saveState(); render(); }
+}
+
+// Liga/desliga todas as checkboxes do painel de revisão.
+function _toggleAllCardReview(checked) {
+  document.querySelectorAll('.card-review-cb').forEach(cb => { cb.checked = checked; });
+  _updateCardReviewSelection();
+}
+
+// Ativa/desativa os botões de ação em massa conforme há seleção.
+function _updateCardReviewSelection() {
+  const any = document.querySelectorAll('.card-review-cb:checked').length > 0;
+  const bd = document.getElementById('card-review-bulk-debit');
+  const bc = document.getElementById('card-review-bulk-credit');
+  if (bd) bd.disabled = !any;
+  if (bc) bc.disabled = !any;
+}
+window._markCardSpend = _markCardSpend;
+window._markSelectedCardSpends = _markSelectedCardSpends;
+window._toggleAllCardReview = _toggleAllCardReview;
+window._updateCardReviewSelection = _updateCardReviewSelection;
+
 function renderCards(w) {
   const walletCards = state.cards.filter(c=>c.walletId===w.id);
 
@@ -17801,6 +17923,8 @@ function renderCards(w) {
       <div class="stat"><div class="stat-label">${t('cards.activeCards')}</div><div class="stat-value sv-gold">${walletCards.length}</div></div>
       <div class="stat"><div class="stat-label">Imports</div><div class="stat-value sv-muted">${walletImports.length}</div><div class="stat-sub">${t('cards.filesImported')}</div></div>
     </div>
+
+    ${_buildCardReviewPanel(w)}
 
     <div class="two-col" style="margin-bottom:1.3rem">
       <div class="panel">
