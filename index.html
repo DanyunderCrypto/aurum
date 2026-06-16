@@ -17878,24 +17878,6 @@ function renderCards(w) {
     taxTreatment: sp.taxTreatment,
     status: sp.status,
   }));
-  // Incluir os lotes de cashback como linhas próprias: o cashback é um RECEBIMENTO
-  // (não está atado a um gasto). Mostra a data, o valor EUR (já com a cotação correta)
-  // e o token/quantidade recebidos. Resolve a coluna "Cashback —" que estava sempre vazia.
-  rewardLots.forEach(l => {
-    txs.push({
-      id: l.id,
-      date: l.acqDate,
-      desc: `Cashback${l.qty ? ' · ' + (+l.qty).toLocaleString('pt-PT', { maximumFractionDigits: 6 }) + ' ' + (l.asset || '') : ''}`,
-      amount: 0,                 // não é um gasto
-      cashback: +l.eur || 0,     // valor EUR do cashback (cotação corrigida)
-      category: 'Cashback',
-      cardId: l.cardId || activeCardId,
-      walletId: l.walletId,
-      taxTreatment: 'reward_new_lot',
-      status: 'CLEARED',
-      _isCashback: true,
-    });
-  });
   const topCats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const walletImports = state.imports.filter(i=>i.walletId===w.id&&(activeCardId==='all'||i.cardId===activeCardId));
 
@@ -17989,7 +17971,7 @@ function renderCards(w) {
               <td><span class="badge badge-muted" style="background:${iss?.bg||'var(--bg2)'};color:${iss?.text||'#fff'};border:none;font-size:0.58rem">${card?.name||'—'}</span></td>
               <td style="font-size:0.82rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.desc||''}">${t.desc||'—'}</td>
               <td style="font-size:0.8rem">${catEmoji(t.category)} ${t.category||'—'}</td>
-              <td class="mono blue">${t._isCashback ? '—' : '€'+fmt(t.amount)}</td>
+              <td class="mono blue">€${fmt(t.amount)}</td>
               <td class="mono green">${t.cashback?'€'+fmt(t.cashback):'—'}</td>
               <td style="font-size:0.78rem;color:var(--muted)">${t.note||'—'}</td>
               <td><button class="btn btn-danger btn-xs" onclick="deleteTx('${t.id}')">✕</button></td>
@@ -25455,6 +25437,40 @@ function toggleCatDetails(cat) {
 // FASE 6D: Process cashbacks → lots 365d
 // ═══════════════════════════════════════════════════════════
 
+// Deteção robusta do ativo de um cashback, para QUALQUER cartão/emissor (não assume ETH).
+// O símbolo pode vir em vários campos e formatos: às vezes é o símbolo limpo ('ETH'),
+// às vezes vem em texto ('Cashback in ETH', 'Reward WETH'), às vezes só na descrição.
+// Estratégia: testar os campos por ordem de fiabilidade e extrair um símbolo reconhecível.
+function _detectCashbackAsset(tx, card) {
+  // símbolos de token comuns que reconhecemos (cobre os cashbacks dos principais cartões)
+  const KNOWN = ['ETH','WETH','WBTC','BTC','CBBTC','GNO','CRO','NEXO','SOL','MATIC','POL','BNB',
+    'USDC','USDT','DAI','EURE','EURC','PYUSD','USDE','SUSDE','GHO','OP','ARB','AVAX','LINK',
+    'AAVE','UNI','LDO','RPL','STETH','WSTETH','WEETH','EETH','CBETH','RETH'];
+  const candidates = [
+    tx.originalCurrency,        // o mais fiável: a moeda original da transação
+    tx.currency,
+    tx.asset,
+    tx.description,             // pode ser "Cashback in ETH" ou só "ETH"
+    card && card.primaryAsset,  // ativo principal do cartão (último recurso)
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const up = String(c).toUpperCase().trim();
+    // match exato
+    if (KNOWN.includes(up)) return up;
+    // símbolo embebido em texto: procura uma palavra que seja um símbolo conhecido
+    const words = up.split(/[^A-Z0-9]+/).filter(Boolean);
+    for (const wd of words) {
+      if (KNOWN.includes(wd)) return wd;
+    }
+  }
+  // nada reconhecido: devolve o primeiro campo não-vazio (será marcado para revisão de preço)
+  for (const c of candidates) {
+    if (c) return String(c).toUpperCase().trim().split(/[^A-Z0-9]+/).filter(Boolean)[0] || 'UNKNOWN';
+  }
+  return 'UNKNOWN';
+}
+
 function confirmTaxAwareImport() {
   const batch = window._taxAwareBatch;
   const cardId = window._taxAwareCardId;
@@ -25536,22 +25552,31 @@ function confirmTaxAwareImport() {
       }
       if (!dateStr) return;
 
-      // Asset: ether.fi cashbacks come in WETH usually
-      // The description often has the asset, or we look at original currency
-      const asset = (tx.description || tx.originalCurrency || card.primaryAsset || 'WETH').toUpperCase();
-      // BUG FIX: o campo `amount` do cashback EtherFi é a QUANTIDADE DE TOKEN (ex: 0.01 ETH),
-      // não um valor em USD. Antes tratávamos a quantidade como se fossem dólares, o que dava
-      // um valor ~3000x errado (0.01 "USD" em vez de 0.01 ETH × ~€2900 = ~€29).
-      // Correção: a quantidade é o token; o valor USD = quantidade × cotação do token.
+      // Deteção robusta do ativo do cashback — funciona para QUALQUER cartão/moeda,
+      // não assume ETH. Tenta extrair um símbolo de token reconhecível de vários campos.
+      const asset = _detectCashbackAsset(tx, card);
+      // O campo de quantidade é a QUANTIDADE DE TOKEN (ex: 0.01 ETH, 5 GNO, 12 USDC),
+      // não um valor em fiat. O valor = quantidade × cotação do token.
       const tokenQty = Math.abs(+tx.originalAmount || +tx.amount || 0);
-      // stablecoins de fiat (EUR/USD) já vêm em valor fiat; cripto precisa de cotação
-      const FIAT_LIKE = ['EUR','EURE','EURC','USD','USDC','USDT','PYUSD','DAI'];
-      let usdAmount;
-      if (FIAT_LIKE.includes(asset)) {
-        usdAmount = tokenQty;                          // já é valor (stable/fiat)
+      // Determinar o VALOR EM EUR de cada cashback consoante a moeda de origem:
+      //  - EUR/EURe/EURC → já é EUR, NÃO reconverter (bug anterior: encolhia 0,66€ → 0,57€).
+      //  - USD/stables-USD → converter USD→EUR pela taxa.
+      //  - cripto (ETH, GNO, ...) → valor = qty × cotação USD, depois USD→EUR.
+      const EUR_LIKE = ['EUR','EURE','EURC'];
+      const USD_LIKE = ['USD','USDC','USDT','PYUSD','DAI','GUSD','USDP','TUSD','FDUSD','USDE','SUSDE','GHO'];
+      const eurRate = live.eurRate || 0.92;   // USD→EUR
+      let eurValue = 0, _needsPriceReview = false;
+      if (EUR_LIKE.includes(asset)) {
+        eurValue = tokenQty;                          // já está em EUR
+      } else if (USD_LIKE.includes(asset)) {
+        eurValue = tokenQty * eurRate;                // USD→EUR
       } else {
         const unitUsd = (typeof getUsdPrice === 'function') ? (getUsdPrice(asset) || 0) : 0;
-        usdAmount = unitUsd > 0 ? tokenQty * unitUsd : tokenQty;  // qty × cotação; fallback: qty crua
+        if (unitUsd > 0) {
+          eurValue = tokenQty * unitUsd * eurRate;    // cripto: qty × cotaçãoUSD × (USD→EUR)
+        } else {
+          eurValue = 0; _needsPriceReview = true;     // sem cotação → marcar p/ revisão
+        }
       }
 
       const key = `${dateStr}|${asset}`;
@@ -25560,22 +25585,17 @@ function confirmTaxAwareImport() {
           date: dateStr,
           asset,
           qty: 0,
-          usd: 0,
           eur: 0,
           count: 0,
           txhashes: [],
           _isInline: tx.type === 'inline_cashback',
+          _needsPriceReview: false,
         };
       }
       const g = groups[key];
+      if (_needsPriceReview) g._needsPriceReview = true;
       g.count++;
-      g.usd += usdAmount;
-      // For EUR conversion, use live.eurRate if available (current rate)
-      // Better: each row may have its own ratio. For now use the global rate.
-      const eurRate = live.eurRate || 0.92;
-      g.eur += usdAmount * eurRate;
-      // For qty: if asset is WETH/ETH, we can derive from USD using ETH price
-      // But the Excel may have separate "original amount" in the token
+      g.eur += eurValue;
       g.qty += tokenQty;
       if (tx.txhash) g.txhashes.push(tx.txhash);
     });
@@ -25600,22 +25620,22 @@ function confirmTaxAwareImport() {
         return;
       }
 
-      const unitUsdLot = (typeof getUsdPrice === 'function') ? (getUsdPrice(g.asset) || 0) : 0;
       const lot = {
         id: genId(),
         walletId: w.id,
         acqDate: g.date,
         depDate: g.date,
         chain: card.network || 'multi',
-        proto: 'ether.fi cashback',
+        proto: `${ISSUER_ADAPTERS[issuerId]?.name || issuerId} cashback`,
         asset: g.asset,
-        qty: g.qty || (unitUsdLot > 0 ? (g.usd / unitUsdLot) : 0),  // fallback via cotação real (não número mágico)
-        eur: g.eur,
-        price: g.qty > 0 ? (g.usd / g.qty) : 0,
+        qty: g.qty || 0,                                  // quantidade de token recebida
+        eur: g.eur,                                       // valor EUR (já convertido corretamente)
+        price: g.qty > 0 ? (g.eur / g.qty) : 0,           // preço EUR por unidade
         origin: 'reward',  // distinguishes from fiat_purchase
         originDetails: { type: g._isInline ? 'inline_cashback' : 'cashback', issuer: issuerId, count: g.count },
         txhash: g.txhashes[0] || '',
-        notes: `Cashback ${ISSUER_ADAPTERS[issuerId]?.name || issuerId}${g.count > 1 ? ` (${g.count} agrupados)` : ''}`,
+        needsPriceReview: !!g._needsPriceReview,   // token sem cotação → valor a confirmar pelo utilizador
+        notes: `Cashback ${ISSUER_ADAPTERS[issuerId]?.name || issuerId}${g.count > 1 ? ` (${g.count} agrupados)` : ''}${g._needsPriceReview ? ' — valor a confirmar (sem cotação)' : ''}`,
       };
       state.collateral.push(lot);
       results.cashbackLots++;
