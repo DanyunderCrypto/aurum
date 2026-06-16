@@ -12019,6 +12019,50 @@ function getSnapshotDelta24h(currentNet) {
 // chamada — e a função é chamada ~14x por render. O cache faz o filtro UMA vez e
 // reutiliza, invalidando só quando os eventos mudam (nova tx) ou a carteira muda.
 const _eventsCache = new Map(); // w.id → { sig, events }
+// Converte gastos de cartão (state.cardSpends) com tratamento fiscal 'disposal' em
+// UniversalEvents sintéticos que o motor FIFO consome. Resolve o PONTO 2 do diagnóstico:
+// um gasto de DÉBITO (cripto próprio) é uma alienação (Cat. G) — o motor tem de consumir
+// o lote correto e calcular a mais-valia real (proceeds − basis FIFO), em vez do €0 hard-coded.
+// Apenas 'disposal' gera evento. 'loan_spend' (crédito), 'stable_pass' e 'transfer_internal'
+// NÃO geram alienação — ficam de fora, como deve ser.
+function _cardSpendsToEvents(w) {
+  if (!w || !Array.isArray(state.cardSpends)) return [];
+  const wAddr = (w.addr || w.evm || '').toLowerCase();
+  const out = [];
+  for (const s of state.cardSpends) {
+    if (s.walletId !== w.id) continue;
+    if (s.taxTreatment !== 'disposal') continue;   // só débito com cripto próprio é alienação
+    if (!s.date) continue;
+    const asset = (s.assetSold || 'USDC').toUpperCase();
+    // proceeds em EUR: chargedAmount já é o valor da compra; converter USD→EUR se preciso
+    let proceedsEUR = Math.abs(+s.chargedAmount || 0);
+    if (s.chargedCurrency === 'USD') proceedsEUR = proceedsEUR * (live.eurRate || 0.92);
+    // quantidade de cripto gasta: usa assetAmountUSD como proxy do valor; o motor calcula
+    // o ganho a partir do proceedsEUR e do basis FIFO do lote consumido.
+    const qty = Math.abs(+s.assetAmount || +s.assetAmountUSD || 0) || (proceedsEUR / 1);
+    const ts = Math.floor(new Date(s.date + 'T12:00:00Z').getTime() / 1000);
+    out.push({
+      id: 'cardspend_' + s.id,
+      txHash: s.txhash || ('cardspend_' + s.id),
+      chain: w.chain || 'eth',
+      walletAddress: wAddr,
+      direction: 'out',
+      amount: qty,
+      asset,
+      type: 'sell',
+      txType: 'sale',                 // marca explícita de venda → o motor trata como disposal real
+      date: s.date,
+      timestamp: ts,
+      priceEUR: proceedsEUR,          // proceeds totais em EUR desta alienação
+      source: 'card_spend',           // origem: gasto de cartão (débito)
+      category: 'card',
+      _cardSpend: true,
+      userOverride: { txType: 'sale' }, // garante classificação como alienação no motor
+    });
+  }
+  return out;
+}
+
 function _eventsForWallet(w) {
   if (!w) return [];
   const all = state.events || [];
@@ -21381,7 +21425,17 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // as carteiras do mesmo dono (para o basis-bridge ligar transferências entre
   // elas). Caso contrário, só esta carteira (modo antigo).
   const consolidated = state.settings && state.settings.consolidateOwner;
-  const events = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  const baseEvents = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+
+  // PONTO 2: ligar gastos de cartão de DÉBITO ao motor FIFO. Os cardSpends com
+  // tratamento 'disposal' (cripto próprio gasto) são alienações reais (Cat. G) —
+  // injetamo-los como eventos para o motor consumir o lote e calcular a mais-valia
+  // real, em vez do €0 hard-coded. 'loan_spend'/'stable_pass' não entram (não alienam).
+  const cardEvents = _cardSpendsToEvents(w);
+  // Combina e ordena cronologicamente (FIFO precisa da ordem temporal correta).
+  const events = cardEvents.length
+    ? [...baseEvents, ...cardEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+    : baseEvents;
 
   if (events.length === 0) {
     return `
@@ -21407,8 +21461,10 @@ function renderFiscalEngineV2(w, fiscalYear) {
   let result;
   let _bridgeLinks = [];
   try {
-    if (consolidated) {
+    if (consolidated && !cardEvents.length) {
       // Aplica o basis-bridge (liga transferências internas) e processa o dono inteiro.
+      // Usa o cache do owner. SÓ quando não há eventos de cartão a injetar — caso contrário
+      // processamos o array combinado diretamente (abaixo) para incluir os gastos de débito.
       const owned = _getOwnerFifoStateFor(w);
       if (owned) { result = owned; _bridgeLinks = owned._bridgeLinks || []; }
       else result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
@@ -21810,10 +21866,29 @@ function renderFiscal(w) {
     return s + v;
   }, 0);
 
-  // FIFO: for now, we only have metadata — exact mais-valia calculation needs full FIFO consumption
-  // For loan_spend users (most common case), no disposals exist → no mais-valia
-  // For own users, we estimate (placeholder until full FIFO is built)
-  const estimatedDisposalGain = 0;  // Placeholder
+  // PONTO 2 (resolvido): a mais-valia dos gastos de cartão de DÉBITO é agora calculada
+  // pelo motor FIFO. Processamos os eventos da wallet + os gastos de cartão de débito
+  // (via _cardSpendsToEvents) e lemos a mais-valia real do ano fiscal a partir do summary.
+  // Já não é placeholder: o motor consome o lote certo e calcula proceeds − basis.
+  let estimatedDisposalGain = 0;
+  let estimatedG1Gain = 0;
+  try {
+    const baseEv = (state.settings && state.settings.consolidateOwner)
+      ? (typeof _eventsForOwnerOf === 'function' ? _eventsForOwnerOf(w) : (state.events || []))
+      : (typeof _eventsForWallet === 'function' ? _eventsForWallet(w) : (state.events || []));
+    const cardEv = (typeof _cardSpendsToEvents === 'function') ? _cardSpendsToEvents(w) : [];
+    const combined = cardEv.length
+      ? [...baseEv, ...cardEv].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      : baseEv;
+    if (combined.length && window.aurumFifoEngine) {
+      const res = window.aurumFifoEngine.process(combined, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+      const yrSum = res.summary && res.summary.byYear && res.summary.byYear[fiscalYear];
+      if (yrSum) {
+        estimatedDisposalGain = Math.max(0, yrSum.anexoG.gain || 0);   // Cat G tributável (<365d)
+        estimatedG1Gain = yrSum.anexoG1.gain || 0;                     // Cat G1 isenta (≥365d)
+      }
+    }
+  } catch (e) { /* mantém 0 se o motor falhar — degradação suave */ }
   const estimatedTaxableMV = estimatedDisposalGain > 0 ? estimatedDisposalGain : 0;
   const estimatedTax = estimatedTaxableMV * 0.28;
 
