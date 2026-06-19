@@ -19309,6 +19309,93 @@ function _toggleWalletSource(walletId) {
 // Painel "Onde declarar" — separa a parte tributável por FONTE (Anexo J Q9.4A estrangeiro vs
 // Anexo G Q18A nacional) e mostra o isento (Anexo G1 Q7). Lê summary.byYear[ano].bySource.
 // Inclui o flag opt-in para marcar carteiras/CEX como fonte nacional (default estrangeira).
+// Herói do relatório fiscal — a "resposta primeiro": imposto estimado em destaque,
+// donut de composição (permutas/isento/tributável, dados reais das alienações do ano),
+// chips de onde declarar (J/G/G1) e barra de completude (datas em falta). Camada 1 do redesign.
+function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear, lang) {
+  const en = (lang === 'en');
+  const t = (pt, eng) => en ? eng : pt;
+  const eur = (n) => '€' + fmt(n || 0);
+  const tax = (yr && yr.taxEstimateEUR) || 0;
+  const jGain = (yr && yr.bySource && yr.bySource.foreign && yr.bySource.foreign.taxableGain) || 0;
+  const nGain = (yr && yr.bySource && yr.bySource.national && yr.bySource.national.taxableGain) || 0;
+  const g1Gain = (yr && yr.anexoG1 && yr.anexoG1.gain) || 0;
+
+  // Composição do donut a partir das alienações do ano (dados reais).
+  let permutaVol = 0, taxableProc = 0, exemptProc = 0;
+  (dispsInYear || []).forEach(d => {
+    if (d.kind === 'swap_sell') permutaVol += Math.abs(d.proceedsEUR || 0);
+    taxableProc += (d.anexoG && d.anexoG.proceeds) || 0;
+    exemptProc += (d.anexoG1 && d.anexoG1.proceeds) || 0;
+  });
+  const segs = [
+    { val: permutaVol, color: 'var(--text-muted)', label: t('Permutas', 'Swaps') },
+    { val: exemptProc, color: 'var(--green)', label: t('Isento ≥365d', 'Exempt ≥365d') },
+    { val: taxableProc, color: 'var(--gold)', label: t('Tributável', 'Taxable') },
+  ].filter(s => s.val > 0.005);
+  const totalComp = segs.reduce((s, x) => s + x.val, 0);
+  const C = 263.89;
+  let rot = -90, circles = '', legend = '';
+  if (totalComp > 0) {
+    segs.forEach(s => {
+      const pct = s.val / totalComp;
+      circles += `<circle cx="60" cy="60" r="42" fill="none" stroke="${s.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(pct * C).toFixed(1)} ${C}" transform="rotate(${rot.toFixed(1)} 60 60)"/>`;
+      legend += `<span style="display:flex;align-items:center;gap:6px;color:var(--text-muted)"><span style="width:9px;height:9px;border-radius:2px;background:${s.color}"></span> ${s.label} · ${Math.round(pct * 100)}%</span>`;
+      rot += pct * 360;
+    });
+  } else {
+    circles = '<circle cx="60" cy="60" r="42" fill="none" stroke="var(--border)" stroke-width="12"/>';
+    legend = `<span style="color:var(--text-muted)">${t('Sem movimentos no ano', 'No movements this year')}</span>`;
+  }
+  const centerLabel = tax > 0.005 ? '€' + fmt(tax, 0) : '€0';
+
+  const dated = Math.max(0, (totalEvents || 0) - (undatedCount || 0));
+  const pct = (totalEvents > 0) ? Math.round((dated / totalEvents) * 100) : 100;
+  const hasIssues = (undatedCount || 0) > 0;
+  const zeroTax = tax <= 0.005;
+
+  const statusLine = zeroTax
+    ? `<div style="display:inline-flex;align-items:center;gap:6px;font-size:0.74rem;color:var(--green);margin-bottom:0.9rem"><span>✓</span> ${t('Sem imposto a pagar — permutas não tributadas', 'No tax due — swaps are not taxable')}</div>`
+    : `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.9rem">${t('sobre mais-valia tributável <365d', 'on taxable gain <365d')}</div>`;
+
+  return `
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1.2rem 1.3rem;margin-bottom:1.2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${t('Declaração', 'Filing')} ${fiscalYear}</span>
+      ${hasIssues ? '' : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;color:var(--green);background:rgba(52,211,153,0.12);padding:3px 9px;border-radius:8px"><span>✓</span> ${t('verificado', 'verified')}</span>`}
+    </div>
+    <div style="display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:3px">${t('Imposto estimado', 'Estimated tax')}</div>
+        <div style="font-family:var(--mono);font-size:2.2rem;font-weight:500;line-height:1;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:var(--text);margin-bottom:8px">${eur(tax)}</div>
+        ${statusLine}
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <span style="font-size:0.72rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:5px 11px;border-radius:8px">Anexo J · ${eur(jGain)}</span>
+          ${nGain > 0.005 ? `<span style="font-size:0.72rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:5px 11px;border-radius:8px">Anexo G · ${eur(nGain)}</span>` : ''}
+          <span style="font-size:0.72rem;color:var(--text-muted);background:var(--bg3);padding:5px 11px;border-radius:8px">Anexo G1 · ${eur(g1Gain)}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
+          ${circles}
+          <text x="60" y="56" text-anchor="middle" style="font-family:var(--mono);font-size:1.05rem;font-weight:500;fill:var(--text)">${centerLabel}</text>
+          <text x="60" y="73" text-anchor="middle" style="font-size:0.6rem;fill:var(--text-muted)">${t('a pagar', 'to pay')}</text>
+        </svg>
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:0.68rem">${legend}</div>
+      </div>
+    </div>
+    <div style="margin-top:1.1rem;padding-top:0.9rem;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:0.72rem;color:var(--text-muted)">${t('Declaração', 'Filing')} ${pct}% ${t('pronta', 'ready')}</span>
+        ${hasIssues ? `<span style="font-size:0.72rem;font-weight:600;color:var(--amber)">${undatedCount} ${t('a rever', 'to review')}</span>` : `<span style="font-size:0.72rem;color:var(--green)">${t('tudo verificado', 'all verified')}</span>`}
+      </div>
+      <div style="height:7px;background:var(--bg3);border-radius:99px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${hasIssues ? 'var(--gold)' : 'var(--green)'};border-radius:99px"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function _buildSourceSplitPanel(summary, fiscalYear, lang) {
   const en = (lang === 'en');
   const t = (pt, eng) => en ? eng : pt;
@@ -22083,6 +22170,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
         <span style="font-size:0.7rem;color:var(--text-muted)">FIFO · ${disposals.length} alienações · ${lots.length} lots · ${rewards.length} rewards</span>
       </div>
       <div class="panel-body">
+
+        ${_buildFiscalHero(yr, dispsInYear, undatedCount, events.length, fiscalYear, lang)}
 
         ${(() => {
           // Report-type selector (Koinly-style "Pick a report type"). Filters which sections
