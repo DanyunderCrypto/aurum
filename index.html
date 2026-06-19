@@ -8932,6 +8932,49 @@ const fifoEngine = (() => {
       };
     }
 
+    // Consome FIFO ao nível do ATIVO, em TODAS as chains (oldest-first global). Usado para
+    // liquidações marcadas manualmente: o utilizador afirma "perdi X de Y" e o basis deve vir
+    // dos seus lotes desse ativo onde quer que estejam (BTC em bitcoin/base, cbBTC, etc.), em
+    // vez de exigir a chain interna exata. NÃO usar em vendas normais (essas são por chain).
+    function _consumeFifoAnyChain(asset, qty, disposalTimestamp) {
+      const assetUp = (asset || '').toUpperCase();
+      const allLots = [];
+      for (const queue of lotsMap.values()) {
+        for (const lot of queue) {
+          if (lot.qtyRemaining > 1e-12 && (lot.asset || '').toUpperCase() === assetUp) allLots.push(lot);
+        }
+      }
+      allLots.sort((a, b) => (a.acqTimestamp || 0) - (b.acqTimestamp || 0)); // FIFO global do ativo
+      let remaining = qty;
+      let totalBasis = 0;
+      const consumed = [];
+      for (const lot of allLots) {
+        if (remaining <= 1e-12) break;
+        const take = Math.min(lot.qtyRemaining, remaining);
+        const basisPortion = take * lot.basisEURPerUnit;
+        consumed.push({
+          lotId: lot.lotId,
+          qtyTaken: take,
+          basisEUR: basisPortion,
+          basisEURPerUnit: lot.basisEURPerUnit,
+          acqTimestamp: lot.acqTimestamp,
+          acqDate: lot.acqDate,
+          source: lot.source,
+          holdingDays: Math.floor((disposalTimestamp - lot.acqTimestamp) / 86400),
+          regime: _regime(lot.acqTimestamp, disposalTimestamp),
+        });
+        lot.qtyRemaining -= take;
+        totalBasis += basisPortion;
+        remaining -= take;
+      }
+      return {
+        lotsConsumed: consumed,
+        totalBasis,
+        qtyFulfilled: qty - remaining,
+        qtyShortfall: remaining,
+      };
+    }
+
     // Helper: record a disposal
     function _recordDisposal(event, qty, proceedsEUR, consumeResult, kind = 'sale') {
       // Guard: a disposal must actually dispose of something. If no lots were consumed
@@ -9260,7 +9303,8 @@ const fifoEngine = (() => {
           // permuta. Damos as duas e o utilizador valida com TOC.
           const ts = _safeEventTs(e) ?? 0;
           if (liqInterp === 'disposal') {
-            const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
+            // basis ao nível do ativo (todas as chains) — liquidação manual é asset-level
+            const consumeOut = _consumeFifoAnyChain(e.asset, e.amount, ts);
             let proceeds = eventPriceEURTotal ?? 0;
             if (consumeOut.qtyFulfilled <= 1e-12 && proceeds <= 0.01) {
               warnings.push({
@@ -9277,8 +9321,8 @@ const fifoEngine = (() => {
             }
             _recordDisposal(e, consumeOut.qtyFulfilled || e.amount, proceeds, consumeOut, 'liquidation');
           } else {
-            // permuta (default): consome o lot, NÃO tributa
-            _consumeFifo(e.asset, e.chain, e.amount, ts);
+            // permuta (default): consome o lot (asset-level), NÃO tributa
+            _consumeFifoAnyChain(e.asset, e.amount, ts);
             onchainTransferOutCount++;
             warnings.push({
               type: 'liquidation_permuta',
@@ -19236,7 +19280,20 @@ function _buildManualLiqPanel(w, fiscalYear, events) {
     let c = null;
     try { c = window.aurumFifoEngine.compareLiquidationReadings(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' }); } catch (_) {}
     if (c) {
-      compareBlock = `
+      const liqDisps = (c.alienacao.disposals || []).filter(d => d.kind === 'liquidation');
+      const noBasis = liqs.length > 0 && liqDisps.length === 0;
+      const readingLine = `<div style="font-size:0.74rem;color:var(--muted);margin-top:8px">${t('Leitura aplicada ao relatório', 'Reading applied to the report')}: <strong style="color:var(--gold)">${alt ? t('Alienação forçada', 'Forced disposal') : t('Tratamento padrão (permuta)', 'Standard treatment (permuta)')}</strong></div>`;
+      const toggleBtn = `<button class="btn" onclick="_toggleLiqReading()" style="font-size:0.8rem;margin-top:8px">${alt ? t('← Voltar ao tratamento padrão', '← Back to standard treatment') : t('Aplicar leitura alternativa (alienação) →', 'Apply alternative reading (disposal) →')}</button>`;
+      if (noBasis) {
+        compareBlock = `
+      <div style="margin:0.8rem 0;padding:0.8rem 0.9rem;border:1px solid var(--amber);border-radius:12px">
+        <div style="font-size:0.82rem;color:var(--amber);font-weight:600;margin-bottom:4px">⚠ ${t('Sem custo de aquisição para calcular', 'No acquisition cost to compute')}</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.5">${t('Não encontrámos lotes de aquisição de <strong>' + (liqs[0].asset || '') + '</strong> no teu histórico, por isso a mais-valia da alienação fica a €0. Confirma que esse ativo foi indexado (tab Histórico + Price Oracle) e que o símbolo bate certo.', 'No acquisition lots for <strong>' + (liqs[0].asset || '') + '</strong> were found in your history, so the disposal gain is €0. Make sure that asset is indexed (History tab + Price Oracle) and the symbol matches.')}</div>
+        ${readingLine}
+        ${toggleBtn}
+      </div>`;
+      } else {
+        compareBlock = `
       <div style="margin:0.8rem 0;padding:0.8rem 0.9rem;border:1px solid var(--border);border-radius:12px">
         <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px">${t('Impacto fiscal da liquidação', 'Liquidation tax impact')}</div>
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
@@ -19244,9 +19301,10 @@ function _buildManualLiqPanel(w, fiscalYear, events) {
           <span style="color:var(--muted)">vs</span>
           <span style="font-size:0.86rem">${t('Alienação', 'Disposal')}: <strong>${fmtE(c.deltaTaxableGainG)}</strong> ${t('de mais-valia Cat G', 'Cat G gain')} (~${fmtE(c.deltaIndicativeTax28)} ${t('imposto', 'tax')})</span>
         </div>
-        <div style="font-size:0.74rem;color:var(--muted);margin-top:8px">${t('Leitura aplicada ao relatório', 'Reading applied to the report')}: <strong style="color:var(--gold)">${alt ? t('Alienação forçada', 'Forced disposal') : t('Tratamento padrão (permuta)', 'Standard treatment (permuta)')}</strong></div>
-        <button class="btn" onclick="_toggleLiqReading()" style="font-size:0.8rem;margin-top:8px">${alt ? t('← Voltar ao tratamento padrão', '← Back to standard treatment') : t('Aplicar leitura alternativa (alienação) →', 'Apply alternative reading (disposal) →')}</button>
+        ${readingLine}
+        ${toggleBtn}
       </div>`;
+      }
     }
   }
 
