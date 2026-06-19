@@ -362,6 +362,67 @@ run('S26: Card spend on asset held >365d -> Anexo G1 (isento)', () => {
   assert(yr && yr.anexoG1.gain > 0, `expected Anexo G1 gain > 0 (exempt held >365d), got ${yr ? yr.anexoG1.gain : 'none'}`);
 });
 
+run('S27: Liquidação — leitura permuta (default) -> NÃO tributa', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',         date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wliq1' }); // sem greyAreas -> default permuta
+  const totalGain = (r.disposals || []).reduce((s, d) => s + (d.gainEUR || 0), 0);
+  assert(totalGain === 0, `liquidação permuta não deve tributar, got gain ${totalGain.toFixed(2)}`);
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 0, `permuta -> 0 disposals, got ${disp.length}`);
+});
+
+run('S28: Liquidação — leitura alienação -> Cat G ganho 500', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',         date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wliq2', greyAreas: { liquidation: 'disposal' } });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 1, `alienação -> 1 disposal, got ${disp.length}`);
+  if (disp[0]) {
+    assert(disp[0].kind === 'liquidation', `kind deve ser 'liquidation', got ${disp[0].kind}`);
+    assert(approx(disp[0].gainEUR, 500), `ganho deve ser 500, got ${disp[0].gainEUR}`);
+  }
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.anexoG.gain, 500), `Anexo G ganho 500, got ${yr ? yr.anexoG.gain : 'none'}`);
+});
+
+run('S29: Liquidação alienação de ativo detido >365d -> Anexo G1 (isento)', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',         date:'2023-01-01', timestamp: ts('2023-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wliq3', greyAreas: { liquidation: 'disposal' } });
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.anexoG.gain, 0), `Anexo G ganho 0 (isento), got ${yr ? yr.anexoG.gain : 'none'}`);
+  assert(yr && yr.anexoG1.gain > 0, `Anexo G1 ganho > 0 (isento >365d), got ${yr ? yr.anexoG1.gain : 'none'}`);
+});
+
+run('S30: Liquidação forçada NÃO conta como atividade habitual (Cat B)', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',         date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wliq4', greyAreas: { liquidation: 'disposal' } });
+  const flags = r.summary.categoryBFlags || [];
+  assert(flags.length === 0, `uma liquidação forçada não é trading habitual -> sem entrada Cat B, got ${flags.length}`);
+});
+
+run('S31: compareLiquidationReadings -> devolve as duas leituras com o delta certo', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',         date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const c = fifoEngine.compareLiquidationReadings(events, { walletId: 'wcmp' });
+  assert(approx(c.permuta.taxableGainG, 0), `permuta -> 0 ganho tributável, got ${c.permuta.taxableGainG}`);
+  assert(approx(c.alienacao.taxableGainG, 500), `alienação -> 500 ganho tributável, got ${c.alienacao.taxableGainG}`);
+  assert(approx(c.deltaTaxableGainG, 500), `delta ganho deve ser 500, got ${c.deltaTaxableGainG}`);
+  assert(approx(c.deltaIndicativeTax28, 140), `delta imposto indicativo ~140 (500*0.28), got ${c.deltaIndicativeTax28}`);
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
 if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }

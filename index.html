@@ -8647,6 +8647,13 @@ const fifoEngine = (() => {
     // Swaps: each side tagged separately (in=buy, out=sell)
     if (tx === 'swap') return dir === 'in' ? 'swap_buy' : 'swap_sell';
 
+    // Liquidação de colateral (ZONA CINZENTA). Só a perna de SAÍDA do colateral nos interessa
+    // (a perna da dívida é lending → 'skip'). O tratamento permuta vs alienação é decidido no
+    // corpo do process via liqInterp — aqui só a marcamos como classe própria.
+    if (tx === 'liquidation' || event.greyArea === 'liquidation') {
+      return dir === 'out' ? 'liquidation_out' : 'skip';
+    }
+
     // ── Genuine Category E income (rare in DeFi) ──
     // Per OCC parecer PT28627, true Cat. E is e.g. dividends in asset-backed-tokens that
     // confer a residual interest in an entity (equity instruments, IFRS9/NCRF27). These
@@ -8734,12 +8741,18 @@ const fifoEngine = (() => {
 
   // ── Main processor ──────────────────────────────────────
   // events: array of UniversalEvents (already enriched with priceEUR)
-  // opts: { walletId, swapMode: 'permuta'|'aggressive' }  defaults: permuta
-  //   permuta: crypto↔crypto swaps carry basis (default — defensible per Art. 10 nº 6 c)
-  //   aggressive: each swap is dispose + acquire (rebatable interpretation)
+  // opts: { walletId, swapMode: 'permuta'|'aggressive', greyAreas: { liquidation: 'permuta'|'disposal' } }
+  //   swapMode permuta: crypto↔crypto swaps carry basis (default — defensible per Art. 10 nº 6 c)
+  //   swapMode aggressive: each swap is dispose + acquire (rebatable interpretation)
+  //   greyAreas.liquidation: how to read a collateral liquidation (ZONA CINZENTA).
+  //     'permuta'  → default, leitura PT: colateral cripto→dívida cripto = permuta (Art. 10 nº20),
+  //                  não tributa nesse momento (consome o lot, sem mais-valia).
+  //     'disposal' → leitura alternativa: alienação forçada → Cat G sobre (valor liquidação − basis).
   function process(events, opts = {}) {
     const walletId = opts.walletId || 'default';
     const swapMode = opts.swapMode || 'permuta';
+    const greyAreas = opts.greyAreas || {};
+    const liqInterp = greyAreas.liquidation || 'permuta';
 
     // ── CAMADA 1: segregar eventos SEM data válida ──────────────────────────
     // Um evento sem timestamp utilizável não pode entrar no FIFO nem na regra dos
@@ -9236,6 +9249,46 @@ const fifoEngine = (() => {
             message: `Saída on-chain de ${e.amount} ${e.asset} tratada como transferência (não venda a fiat). Reclassifica se foi venda real.`,
           });
         }
+        else if (klass === 'liquidation_out') {
+          // LIQUIDAÇÃO DE COLATERAL — ZONA CINZENTA. Duas leituras, escolhidas via liqInterp:
+          //  • 'permuta' (DEFAULT, leitura PT): colateral cripto → dívida cripto = permuta
+          //    (Art. 10 nº20 CIRS). NÃO tributa nesse momento. Consome o lot (FIFO consistente),
+          //    sem mais-valia — exatamente como uma saída on-chain.
+          //  • 'disposal' (ALTERNATIVA): alienação forçada → Cat G sobre (valor na liquidação −
+          //    custo de aquisição FIFO), com regra dos 365d (G vs G1) a aplicar normalmente.
+          // A doutrina internacional (EUA) trata sempre como disposal; a leitura PT defende
+          // permuta. Damos as duas e o utilizador valida com TOC.
+          const ts = _safeEventTs(e) ?? 0;
+          if (liqInterp === 'disposal') {
+            const consumeOut = _consumeFifo(e.asset, e.chain, e.amount, ts);
+            let proceeds = eventPriceEURTotal ?? 0;
+            if (consumeOut.qtyFulfilled <= 1e-12 && proceeds <= 0.01) {
+              warnings.push({
+                type: 'liquidation_no_basis',
+                eventId: e.id || e.txHash,
+                asset: e.asset,
+                chain: e.chain,
+                message: `Liquidação de ${e.amount} ${e.asset} sem lote nem valor — ignorada (evita ganho fictício).`,
+              });
+              continue;
+            }
+            if (consumeOut.qtyFulfilled > 1e-12 && e.amount > 0 && consumeOut.qtyFulfilled < e.amount * 0.999) {
+              proceeds = proceeds * (consumeOut.qtyFulfilled / e.amount);
+            }
+            _recordDisposal(e, consumeOut.qtyFulfilled || e.amount, proceeds, consumeOut, 'liquidation');
+          } else {
+            // permuta (default): consome o lot, NÃO tributa
+            _consumeFifo(e.asset, e.chain, e.amount, ts);
+            onchainTransferOutCount++;
+            warnings.push({
+              type: 'liquidation_permuta',
+              eventId: e.id || e.txHash,
+              asset: e.asset,
+              chain: e.chain,
+              message: `Liquidação de ${e.amount} ${e.asset} tratada como permuta (leitura PT, Art. 10 nº20) — não tributada neste momento. Vê a leitura alternativa (alienação) e valida com TOC.`,
+            });
+          }
+        }
         else if (klass === 'swap_sell') {
           // Swap OUT leg processed individually (in/out legs landed in different txHashes,
           // so the atomic swap branch above didn't catch them).
@@ -9436,8 +9489,32 @@ const fifoEngine = (() => {
       .sort((a, b) => a.daysUntilExempt - b.daysUntilExempt);
   }
 
+  // ── ZONAS CINZENTAS: comparar as duas leituras de uma liquidação ──────────
+  // Corre o motor duas vezes (permuta vs alienação) e devolve os totais que diferem,
+  // para a UI mostrar lado a lado. NÃO recomenda — informa e calcula os dois cenários.
+  // O imposto indicativo usa 28% (taxa autónoma); a UI DEVE avisar que perdas compensam,
+  // que existe opção de englobamento, e que se deve validar com TOC.
+  function compareLiquidationReadings(events, opts = {}) {
+    const mk = (interp) => process(events, Object.assign({}, opts, {
+      greyAreas: Object.assign({}, opts.greyAreas, { liquidation: interp }),
+    }));
+    const permuta = mk('permuta');
+    const alienacao = mk('disposal');
+    const taxableG = (r) => Object.values((r.summary && r.summary.byYear) || {})
+      .reduce((s, y) => s + ((y.anexoG && y.anexoG.gain) || 0), 0);
+    const gP = taxableG(permuta);
+    const gA = taxableG(alienacao);
+    return {
+      permuta:   { summary: permuta.summary,   disposals: permuta.disposals,   taxableGainG: gP, indicativeTax28: Math.max(0, gP) * 0.28 },
+      alienacao: { summary: alienacao.summary, disposals: alienacao.disposals, taxableGainG: gA, indicativeTax28: Math.max(0, gA) * 0.28 },
+      deltaTaxableGainG: gA - gP,
+      deltaIndicativeTax28: (Math.max(0, gA) * 0.28) - (Math.max(0, gP) * 0.28),
+    };
+  }
+
   return {
     process,
+    compareLiquidationReadings,
     classifyEvent,
     isLendingMovement: _isLendingMovement,
     isProtocolReceiptToken: _isProtocolReceiptToken,
