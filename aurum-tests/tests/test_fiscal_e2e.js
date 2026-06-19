@@ -423,6 +423,54 @@ run('S31: compareLiquidationReadings -> devolve as duas leituras com o delta cer
   assert(approx(c.deltaIndicativeTax28, 140), `delta imposto indicativo ~140 (500*0.28), got ${c.deltaIndicativeTax28}`);
 });
 
+run('S32: Liquidação manual casa basis ao nível do ativo (cross-chain)', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', chain:'eth',      amount:1, priceEUR:1000, txType:'buy',         date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', chain:'arbitrum', amount:1, priceEUR:1500, txType:'liquidation', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wliq5', greyAreas: { liquidation: 'disposal' } });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 1, `cross-chain liquidation deve achar o lote ETH (eth) e criar 1 disposal, got ${disp.length}`);
+  if (disp[0]) assert(approx(disp[0].gainEUR, 500), `ganho 500 (basis do lote eth), got ${disp[0].gainEUR}`);
+});
+
+run('S33: Alienação tem fiscalSource foreign por defeito -> Anexo J Q9.4A', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',  date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'sell', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wsrc1' });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp[0] && disp[0].fiscalSource === 'foreign', `default deve ser foreign, got ${disp[0] && disp[0].fiscalSource}`);
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.bySource.foreign.taxableGain, 500), `foreign taxableGain 500 (Anexo J), got ${yr ? yr.bySource.foreign.taxableGain : 'none'}`);
+  assert(yr && approx(yr.bySource.national.taxableGain, 0), `national deve ser 0, got ${yr ? yr.bySource.national.taxableGain : 'none'}`);
+});
+
+run('S34: Evento marcado fiscalSource national -> Anexo G Q18A', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',  date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:1500, txType:'sell', date:'2024-06-01', timestamp: ts('2024-06-01'), fiscalSource:'national' }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wsrc2' });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp[0] && disp[0].fiscalSource === 'national', `deve ser national, got ${disp[0] && disp[0].fiscalSource}`);
+  const yr = r.summary.byYear[2024];
+  assert(yr && approx(yr.bySource.national.taxableGain, 500), `national taxableGain 500 (Anexo G), got ${yr ? yr.bySource.national.taxableGain : 'none'}`);
+  assert(yr && approx(yr.bySource.foreign.taxableGain, 0), `foreign deve ser 0, got ${yr ? yr.bySource.foreign.taxableGain : 'none'}`);
+});
+
+run('S35: Isento ≥365d NÃO entra no split de fonte (vai a Anexo G1 Q7)', () => {
+  const events = [
+    ev({ direction:'in',  asset:'ETH', amount:1, priceEUR:1000, txType:'buy',  date:'2023-01-01', timestamp: ts('2023-01-01') }),
+    ev({ direction:'out', asset:'ETH', amount:1, priceEUR:2000, txType:'sell', date:'2024-06-01', timestamp: ts('2024-06-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wsrc3' });
+  const yr = r.summary.byYear[2024];
+  assert(yr && yr.anexoG1.gain > 0, `isento deve ir a G1, got ${yr ? yr.anexoG1.gain : 'none'}`);
+  assert(yr && approx(yr.bySource.foreign.taxableGain, 0) && approx(yr.bySource.national.taxableGain, 0), `split de fonte deve ficar a 0 (é isento)`);
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
 if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }

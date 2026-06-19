@@ -9021,9 +9021,13 @@ const fifoEngine = (() => {
         proceedsEURPerUnit: qty > 0 ? proceedsEUR / qty : 0,
         basisEUR: consumeResult.totalBasis,
         gainEUR: proceedsEUR - consumeResult.totalBasis,
-        // Split by regime
+        // Split by regime (período de detenção): anexoG = tributável <365d, anexoG1 = isento ≥365d
         anexoG:  { qty: qtyG,  proceeds: proceedsG,  basis: basisG,  gain: gainG  },
         anexoG1: { qty: qtyG1, proceeds: proceedsG1, basis: basisG1, gain: gainG1 },
+        // Fonte (dimensão ORTOGONAL ao período): 'foreign' (default — Anexo J Q9.4A) vs
+        // 'national' (NIF PT — Anexo G Q18A). O isento (anexoG1) vai sempre a G1 Q7, seja qual
+        // for a fonte. A maioria do DeFi/cripto é estrangeira, daí o default 'foreign'.
+        fiscalSource: (event.fiscalSource === 'national') ? 'national' : 'foreign',
         lotsConsumed: consumeResult.lotsConsumed,
         disposalTimestamp: ts,
         disposalDate: date,
@@ -9466,6 +9470,11 @@ const fifoEngine = (() => {
         anexoG:  { qty: 0, proceeds: 0, basis: 0, gain: 0, count: 0 },
         anexoG1: { qty: 0, proceeds: 0, basis: 0, gain: 0, count: 0 },
         anexoE:  { totalEUR: 0, byKind: {}, count: 0 },
+        // Fonte da parte TRIBUTÁVEL (<365d): foreign → Anexo J Q9.4A · national → Anexo G Q18A.
+        bySource: {
+          foreign:  { taxableGain: 0, taxableProceeds: 0, taxableBasis: 0, count: 0 },
+          national: { taxableGain: 0, taxableProceeds: 0, taxableBasis: 0, count: 0 },
+        },
         taxEstimateEUR: 0,
       };
       return byYear[y];
@@ -9478,6 +9487,13 @@ const fifoEngine = (() => {
       y.anexoG.basis    += d.anexoG.basis;
       y.anexoG.gain     += d.anexoG.gain;
       if (d.anexoG.qty > 0) y.anexoG.count++;
+      // Fonte: divide a parte TRIBUTÁVEL (anexoG) em estrangeira (Anexo J Q9.4A) vs nacional
+      // (Anexo G Q18A). O isento (anexoG1) vai a G1 Q7 seja qual for a fonte.
+      const _src = (d.fiscalSource === 'national') ? 'national' : 'foreign';
+      y.bySource[_src].taxableGain     += d.anexoG.gain;
+      y.bySource[_src].taxableProceeds += d.anexoG.proceeds;
+      y.bySource[_src].taxableBasis    += d.anexoG.basis;
+      if (d.anexoG.qty > 0) y.bySource[_src].count++;
       y.anexoG1.qty      += d.anexoG1.qty;
       y.anexoG1.proceeds += d.anexoG1.proceeds;
       y.anexoG1.basis    += d.anexoG1.basis;
@@ -19267,6 +19283,82 @@ function _toggleLiqReading() {
 // Painel do relatório: liquidações marcadas + leitura padrão (permuta) vs alternativa (alienação).
 // O impacto mostrado é o DELTA (puro efeito da liquidação) via compareLiquidationReadings — isolado
 // e honesto (os totais absolutos incluiriam tudo). NÃO recomenda; informa e calcula as duas.
+// Tag eventos com a fonte fiscal da sua carteira (nacional vs estrangeira). Só faz trabalho
+// quando há carteiras marcadas como 'national' (caso raro) — caso comum (tudo estrangeiro)
+// devolve o array intacto, custo zero. NÃO muta state.events (faz cópias rasas só dos tagged).
+function _tagEventsWithSource(events) {
+  const nat = new Set((state.wallets || [])
+    .filter(w => w && w.fiscalSource === 'national')
+    .map(w => (w.addr || w.evm || '').toLowerCase())
+    .filter(Boolean));
+  if (!nat.size) return events;
+  return events.map(e => nat.has((e.walletAddress || '').toLowerCase())
+    ? Object.assign({}, e, { fiscalSource: 'national' })
+    : e);
+}
+
+// Alterna a fonte fiscal de uma carteira (nacional ↔ estrangeira). Default estrangeira.
+function _toggleWalletSource(walletId) {
+  const w = (state.wallets || []).find(x => x.id === walletId);
+  if (!w) return;
+  w.fiscalSource = (w.fiscalSource === 'national') ? 'foreign' : 'national';
+  saveState();
+  render();
+}
+
+// Painel "Onde declarar" — separa a parte tributável por FONTE (Anexo J Q9.4A estrangeiro vs
+// Anexo G Q18A nacional) e mostra o isento (Anexo G1 Q7). Lê summary.byYear[ano].bySource.
+// Inclui o flag opt-in para marcar carteiras/CEX como fonte nacional (default estrangeira).
+function _buildSourceSplitPanel(summary, fiscalYear, lang) {
+  const en = (lang === 'en');
+  const t = (pt, eng) => en ? eng : pt;
+  const yr = (summary && summary.byYear && summary.byYear[fiscalYear]) || null;
+  const bs = (yr && yr.bySource) || { foreign: { taxableGain: 0, count: 0 }, national: { taxableGain: 0, count: 0 } };
+  const exemptGain = (yr && yr.anexoG1 && yr.anexoG1.gain) || 0;
+  const exemptCount = (yr && yr.anexoG1 && yr.anexoG1.count) || 0;
+  const fmtE = (n) => '€' + (Math.round((n || 0) * 100) / 100).toLocaleString('pt-PT');
+  const fGain = bs.foreign.taxableGain || 0, nGain = bs.national.taxableGain || 0;
+  const hasNational = nGain !== 0 || (bs.national.count || 0) > 0;
+
+  const card = (label, quad, val, accent, sub) => `
+    <div style="border:${accent ? '2px solid var(--gold)' : '1px solid var(--border)'};border-radius:12px;padding:0.8rem 0.9rem;flex:1;min-width:160px">
+      <div style="font-size:0.7rem;color:${accent ? 'var(--gold)' : 'var(--muted)'};font-weight:700;letter-spacing:0.03em;margin-bottom:6px">${label}</div>
+      <div style="font-weight:600;font-size:0.82rem;margin-bottom:2px">${quad}</div>
+      <div style="font-size:1.12rem;font-weight:700;margin:4px 0">${fmtE(val)}</div>
+      <div style="font-size:0.72rem;color:var(--muted)">${sub}</div>
+    </div>`;
+
+  const wallets = (state.wallets || []).filter(w => w && (w.addr || w.evm || w.sol || w.bitcoinAddress || w.bitcoinXpub));
+  const walletList = wallets.map(w => {
+    const nat = w.fiscalSource === 'national';
+    const name = w.label || w.name || ((w.addr || w.evm || '') + '').slice(0, 12) + '…';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.8rem;padding:6px 8px;border:1px solid var(--border);border-radius:8px;margin-bottom:4px">
+      <span>${name} ${w.kind === 'cex' ? '<span style="color:var(--muted)">(CEX)</span>' : ''}</span>
+      <button class="btn" onclick="_toggleWalletSource('${w.id}')" style="font-size:0.72rem;padding:2px 8px">${nat ? t('Nacional (NIF PT)', 'National (PT NIF)') : t('Estrangeira', 'Foreign')}</button>
+    </div>`;
+  }).join('');
+
+  return `
+  <div style="margin-bottom:1rem;border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;background:var(--bg2)">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9rem;margin-bottom:0.5rem">
+      <span style="color:var(--gold)">📑</span> ${t('Onde declarar — por fonte', 'Where to declare — by source')} · ${fiscalYear}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${card(t('ESTRANGEIRO', 'FOREIGN'), 'Anexo J · Q9.4A', fGain, true, t('mais-valia tributável <365d', 'taxable gain <365d'))}
+      ${hasNational ? card(t('NACIONAL (NIF PT)', 'NATIONAL (PT NIF)'), 'Anexo G · Q18A', nGain, false, t('mais-valia tributável <365d', 'taxable gain <365d')) : ''}
+      ${card(t('ISENTO ≥365d', 'EXEMPT ≥365d'), 'Anexo G1 · Q7', exemptGain, false, t('declarativo, isento', 'declarative, exempt'))}
+    </div>
+    <div style="margin-top:10px;font-size:0.76rem;color:var(--text-muted);line-height:1.5;padding:8px 10px;background:rgba(59,130,246,0.08);border-radius:8px">
+      ${t('A maioria do cripto/DeFi é <strong>fonte estrangeira → Anexo J</strong>. Declarar fonte estrangeira no Anexo G (em vez do J) é um erro formal. Marca abaixo as carteiras/contas de fonte <strong>nacional</strong> (entidade com NIF PT) — o resto fica estrangeiro por defeito.', 'Most crypto/DeFi is <strong>foreign source → Anexo J</strong>. Declaring foreign source in Anexo G (instead of J) is a formal error. Mark below the wallets/accounts that are <strong>national</strong> source (PT NIF entity) — the rest stays foreign by default.')}
+    </div>
+    <details style="margin-top:0.6rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <summary style="padding:0.6rem 0.8rem;cursor:pointer;font-size:0.84rem;font-weight:600">${t('Marcar fontes nacionais (carteiras/CEX)', 'Mark national sources (wallets/CEX)')}</summary>
+      <div style="padding:0.8rem">${walletList || ('<div style="font-size:0.78rem;color:var(--muted)">' + t('Sem carteiras.', 'No wallets.') + '</div>')}</div>
+    </details>
+    <div style="margin-top:8px;font-size:0.7rem;color:var(--muted)">${t('Nota: o país da contraparte (Anexo J) e o requisito geográfico da isenção (UE/EEE) confirmam-se com o teu TOC. Não é aconselhamento fiscal.', 'Note: the counterparty country (Anexo J) and the exemption geographic requirement (EU/EEA) are confirmed with your accountant. Not tax advice.')}</div>
+  </div>`;
+}
+
 function _buildManualLiqPanel(w, fiscalYear, events) {
   const en = (state.lang === 'en');
   const t = (pt, eng) => en ? eng : pt;
@@ -21888,7 +21980,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // as carteiras do mesmo dono (para o basis-bridge ligar transferências entre
   // elas). Caso contrário, só esta carteira (modo antigo).
   const consolidated = state.settings && state.settings.consolidateOwner;
-  const baseEvents = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  const baseEvents = _tagEventsWithSource(consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w));
 
   // PONTO 2: ligar gastos de cartão de DÉBITO ao motor FIFO. Os cardSpends com
   // tratamento 'disposal' (cripto próprio gasto) são alienações reais (Cat. G) —
@@ -22016,6 +22108,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
         ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
+        ${_buildSourceSplitPanel(summary, fiscalYear, lang)}
         ${_buildManualLiqPanel(w, fiscalYear, events)}
 
         ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
@@ -27028,7 +27121,7 @@ function exportReportByType(type) {
   const t2 = (en, pt) => (lang === 'en' ? en : pt);
   const fiscalYear = state.fiscalYear || new Date().getFullYear();
   const consolidated = state.settings && state.settings.consolidateOwner;
-  const baseEvents = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  const baseEvents = _tagEventsWithSource(consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w));
   // Inclui liquidações marcadas + honra a leitura ativa (permuta vs alienação) no export.
   const liqEvents = (typeof _manualLiquidationsToEvents === 'function') ? _manualLiquidationsToEvents(w) : [];
   const events = liqEvents.length ? [...baseEvents, ...liqEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)) : baseEvents;
@@ -27122,7 +27215,7 @@ function exportAuditReport() {
   if (!window.aurumFifoEngine) { toast('Engine indisponível', 'warn'); return; }
 
   const fiscalYear = state.fiscalYear || new Date().getFullYear();
-  const baseEvents = _eventsForWallet(w);
+  const baseEvents = _tagEventsWithSource(_eventsForWallet(w));
   const liqEvents = (typeof _manualLiquidationsToEvents === 'function') ? _manualLiquidationsToEvents(w) : [];
   const events = liqEvents.length ? [...baseEvents, ...liqEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)) : baseEvents;
   const eng = window.aurumFifoEngine;
