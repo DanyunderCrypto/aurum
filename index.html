@@ -12135,6 +12135,44 @@ function _cardSpendsToEvents(w) {
   return out;
 }
 
+// Converte liquidações marcadas manualmente (state.manualLiquidations) em UniversalEvents
+// com txType:'liquidation'. ZONA CINZENTA: o motor lê a interpretação via greyAreas.liquidation
+// — permuta (default, €0 agora) vs disposal (alienação forçada → Cat G). Mesma arquitetura do
+// _cardSpendsToEvents. priceEUR é PER-UNIDADE (o motor faz total = priceEUR × amount).
+function _manualLiquidationsToEvents(w) {
+  if (!w || !Array.isArray(state.manualLiquidations)) return [];
+  const wAddr = (w.addr || w.evm || '').toLowerCase();
+  const out = [];
+  for (const L of state.manualLiquidations) {
+    if (L.walletId && L.walletId !== w.id) continue;   // null = aplica ao dono consolidado
+    if (!L.date || !L.asset) continue;
+    const qty = Math.abs(+L.qty || 0);
+    if (qty <= 0) continue;
+    const totalEUR = Math.abs(+L.valueEUR || 0);
+    const perUnit = qty > 0 ? totalEUR / qty : 0;       // PER-UNIDADE
+    const ts = Math.floor(new Date(L.date + 'T12:00:00Z').getTime() / 1000);
+    out.push({
+      id: 'manualliq_' + L.id,
+      txHash: L.txhash || ('manualliq_' + L.id),
+      chain: L.chain || w.chain || 'eth',
+      walletAddress: wAddr,
+      direction: 'out',
+      amount: qty,
+      asset: (L.asset || '').toUpperCase(),
+      type: 'liquidation',
+      txType: 'liquidation',
+      greyArea: 'liquidation',
+      date: L.date,
+      timestamp: ts,
+      priceEUR: perUnit,
+      source: 'manual_liquidation',
+      category: 'liquidation',
+      _manualLiquidation: true,
+    });
+  }
+  return out;
+}
+
 // Determina o tratamento fiscal EFETIVO de um gasto de cartão.
 // O override manual do utilizador (s.userTaxOverride) tem prioridade sobre o classificador
 // automático. Resolve o modo MISTO: gastos que o classificador deixou 'unknown'/'pending'
@@ -19149,6 +19187,106 @@ function _buildLiqFiscalPanel(sp, liqPrice) {
   </div>`;
 }
 
+// ── Flag manual de liquidação (ZONA CINZENTA) — handlers ──────────────────
+function _addManualLiquidation() {
+  const g = (id) => (document.getElementById(id)?.value || '').trim();
+  const asset = g('mliq_asset').toUpperCase();
+  const qty = parseFloat(g('mliq_qty'));
+  const date = g('mliq_date');
+  const valueEUR = parseFloat(g('mliq_value'));
+  const chain = (g('mliq_chain') || 'eth').toLowerCase();
+  const en = (state.lang === 'en');
+  if (!asset || !(qty > 0) || !date || !(valueEUR >= 0)) {
+    alert(en ? 'Fill in asset, quantity, date and value.' : 'Preenche ativo, quantidade, data e valor.');
+    return;
+  }
+  state.manualLiquidations = state.manualLiquidations || [];
+  state.manualLiquidations.push({
+    id: 'L' + Date.now().toString(36),
+    asset, qty, date, valueEUR, chain,
+    walletId: null,            // null = aplica ao relatório do dono consolidado
+    createdAt: Date.now(),
+  });
+  saveState();
+  render();
+}
+function _removeManualLiquidation(id) {
+  state.manualLiquidations = (state.manualLiquidations || []).filter(L => L.id !== id);
+  saveState();
+  render();
+}
+function _toggleLiqReading() {
+  state._liqAltReading = !state._liqAltReading;   // view-only: alterna a leitura aplicada ao relatório
+  render();
+}
+
+// Painel do relatório: liquidações marcadas + leitura padrão (permuta) vs alternativa (alienação).
+// O impacto mostrado é o DELTA (puro efeito da liquidação) via compareLiquidationReadings — isolado
+// e honesto (os totais absolutos incluiriam tudo). NÃO recomenda; informa e calcula as duas.
+function _buildManualLiqPanel(w, fiscalYear, events) {
+  const en = (state.lang === 'en');
+  const t = (pt, eng) => en ? eng : pt;
+  const cite = (typeof fiscalCite === 'function' ? fiscalCite('permuta') : '');
+  const liqs = Array.isArray(state.manualLiquidations) ? state.manualLiquidations : [];
+  const alt = !!state._liqAltReading;
+  const fmtE = (n) => '€' + (Math.round((n || 0) * 100) / 100).toLocaleString('pt-PT');
+
+  let compareBlock = '';
+  if (liqs.length && window.aurumFifoEngine && typeof window.aurumFifoEngine.compareLiquidationReadings === 'function') {
+    let c = null;
+    try { c = window.aurumFifoEngine.compareLiquidationReadings(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' }); } catch (_) {}
+    if (c) {
+      compareBlock = `
+      <div style="margin:0.8rem 0;padding:0.8rem 0.9rem;border:1px solid var(--border);border-radius:12px">
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px">${t('Impacto fiscal da liquidação', 'Liquidation tax impact')}</div>
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <span style="font-size:0.86rem">${t('Permuta', 'Crypto-to-crypto')}: <strong style="color:var(--green)">€0</strong></span>
+          <span style="color:var(--muted)">vs</span>
+          <span style="font-size:0.86rem">${t('Alienação', 'Disposal')}: <strong>${fmtE(c.deltaTaxableGainG)}</strong> ${t('de mais-valia Cat G', 'Cat G gain')} (~${fmtE(c.deltaIndicativeTax28)} ${t('imposto', 'tax')})</span>
+        </div>
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:8px">${t('Leitura aplicada ao relatório', 'Reading applied to the report')}: <strong style="color:var(--gold)">${alt ? t('Alienação forçada', 'Forced disposal') : t('Tratamento padrão (permuta)', 'Standard treatment (permuta)')}</strong></div>
+        <button class="btn" onclick="_toggleLiqReading()" style="font-size:0.8rem;margin-top:8px">${alt ? t('← Voltar ao tratamento padrão', '← Back to standard treatment') : t('Aplicar leitura alternativa (alienação) →', 'Apply alternative reading (disposal) →')}</button>
+      </div>`;
+    }
+  }
+
+  const listBlock = liqs.length ? `
+    <div style="margin:0.6rem 0">
+      ${liqs.map(L => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.8rem;padding:6px 8px;border:1px solid var(--border);border-radius:8px;margin-bottom:4px">
+        <span>${L.date} · <strong>${L.qty} ${L.asset}</strong> (${L.chain}) · €${(+L.valueEUR || 0).toLocaleString('pt-PT')}</span>
+        <button class="btn" onclick="_removeManualLiquidation('${L.id}')" style="font-size:0.72rem;padding:2px 8px">${t('Remover', 'Remove')}</button>
+      </div>`).join('')}
+    </div>` : '';
+
+  const inp = 'style="width:100%;padding:0.45rem 0.6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.82rem"';
+  const formBlock = `
+    <details style="margin-top:0.6rem;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <summary style="padding:0.6rem 0.8rem;cursor:pointer;font-size:0.84rem;font-weight:600">${t('+ Marcar uma liquidação', '+ Mark a liquidation')}</summary>
+      <div style="padding:0.8rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+        <div><label style="font-size:0.72rem;color:var(--text-muted)">${t('Ativo', 'Asset')}</label><input id="mliq_asset" placeholder="ETH" ${inp}></div>
+        <div><label style="font-size:0.72rem;color:var(--text-muted)">${t('Quantidade', 'Quantity')}</label><input id="mliq_qty" type="number" step="any" placeholder="1.5" ${inp}></div>
+        <div><label style="font-size:0.72rem;color:var(--text-muted)">${t('Data', 'Date')}</label><input id="mliq_date" type="date" ${inp}></div>
+        <div><label style="font-size:0.72rem;color:var(--text-muted)">${t('Valor na liquidação (€)', 'Value at liquidation (€)')}</label><input id="mliq_value" type="number" step="any" placeholder="5000" ${inp}></div>
+        <div><label style="font-size:0.72rem;color:var(--text-muted)">${t('Chain', 'Chain')}</label><input id="mliq_chain" placeholder="eth" ${inp}></div>
+      </div>
+      <div style="padding:0 0.8rem 0.8rem"><button class="btn btn-gold" onclick="_addManualLiquidation()" style="font-size:0.82rem">${t('Adicionar liquidação', 'Add liquidation')}</button></div>
+    </details>`;
+
+  return `
+  <div style="margin-bottom:1rem;border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;background:var(--bg2)">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">
+      <span style="color:var(--gold)">⚖</span> ${t('Liquidações (zona cinzenta)', 'Liquidations (grey area)')}
+    </div>
+    <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.2rem">
+      ${t('Uma liquidação de colateral pode ler-se de duas formas: <strong>permuta</strong> (tratamento padrão, Art. 10 nº20 — não tributa agora) ou <strong>alienação forçada</strong> (Cat G sobre o ganho). Calculamos as duas; a decisão é tua e do teu contabilista. Não é aconselhamento fiscal.', 'A collateral liquidation can be read two ways: <strong>crypto-to-crypto</strong> (standard treatment, Art. 10 nº20 — not taxed now) or <strong>forced disposal</strong> (Cat G on the gain). We calculate both; the decision is yours and your accountant\'s. Not tax advice.')}
+    </div>
+    ${compareBlock}
+    ${listBlock}
+    ${formBlock}
+    <div style="margin-top:8px;font-size:0.7rem;color:var(--muted)">${t('Fonte', 'Source')}: ${cite}</div>
+  </div>`;
+}
+
 function updateSimAuto() {
   const sel = document.getElementById('sim_pos');
   const out = document.getElementById('simAutoCards');
@@ -21699,10 +21837,17 @@ function renderFiscalEngineV2(w, fiscalYear) {
   // injetamo-los como eventos para o motor consumir o lote e calcular a mais-valia
   // real, em vez do €0 hard-coded. 'loan_spend'/'stable_pass' não entram (não alienam).
   const cardEvents = _cardSpendsToEvents(w);
+  // Liquidações marcadas manualmente (zona cinzenta) — entram como txType:'liquidation'.
+  // O motor lê a interpretação via greyAreas: permuta (default, €0 agora) vs alienação (Cat G).
+  const liqEvents = (typeof _manualLiquidationsToEvents === 'function') ? _manualLiquidationsToEvents(w) : [];
+  const synthetic = [...cardEvents, ...liqEvents];
   // Combina e ordena cronologicamente (FIFO precisa da ordem temporal correta).
-  const events = cardEvents.length
-    ? [...baseEvents, ...cardEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+  const events = synthetic.length
+    ? [...baseEvents, ...synthetic].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
     : baseEvents;
+  // Leitura da liquidação aplicada ao relatório: 'disposal' só quando o utilizador alterna.
+  const liqReading = state._liqAltReading ? 'disposal' : 'permuta';
+  const _liqProcOpts = { walletId: w.id, swapMode: state.swapMode || 'permuta', greyAreas: { liquidation: liqReading } };
 
   if (events.length === 0) {
     return `
@@ -21728,15 +21873,15 @@ function renderFiscalEngineV2(w, fiscalYear) {
   let result;
   let _bridgeLinks = [];
   try {
-    if (consolidated && !cardEvents.length) {
+    if (consolidated && !synthetic.length && !state._liqAltReading) {
       // Aplica o basis-bridge (liga transferências internas) e processa o dono inteiro.
-      // Usa o cache do owner. SÓ quando não há eventos de cartão a injetar — caso contrário
-      // processamos o array combinado diretamente (abaixo) para incluir os gastos de débito.
+      // Usa o cache do owner. SÓ quando não há eventos sintéticos (cartão/liquidação) nem
+      // leitura alternativa ativa — caso contrário processamos o array combinado diretamente.
       const owned = _getOwnerFifoStateFor(w);
       if (owned) { result = owned; _bridgeLinks = owned._bridgeLinks || []; }
-      else result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+      else result = window.aurumFifoEngine.process(events, _liqProcOpts);
     } else {
-      result = window.aurumFifoEngine.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+      result = window.aurumFifoEngine.process(events, _liqProcOpts);
     }
   } catch (err) {
     errorLogger.error('fifoEngine.process: ' + err.message, { wallet: w.id });
@@ -21813,6 +21958,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
         ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
+        ${_buildManualLiqPanel(w, fiscalYear, events)}
 
         ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
 
@@ -26824,9 +26970,12 @@ function exportReportByType(type) {
   const t2 = (en, pt) => (lang === 'en' ? en : pt);
   const fiscalYear = state.fiscalYear || new Date().getFullYear();
   const consolidated = state.settings && state.settings.consolidateOwner;
-  const events = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  const baseEvents = consolidated ? _eventsForOwnerOf(w) : _eventsForWallet(w);
+  // Inclui liquidações marcadas + honra a leitura ativa (permuta vs alienação) no export.
+  const liqEvents = (typeof _manualLiquidationsToEvents === 'function') ? _manualLiquidationsToEvents(w) : [];
+  const events = liqEvents.length ? [...baseEvents, ...liqEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)) : baseEvents;
   const eng = window.aurumFifoEngine;
-  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta', greyAreas: { liquidation: state._liqAltReading ? 'disposal' : 'permuta' } });
   const disposals = (r.disposals || []).filter(d => d.fiscalYear === fiscalYear);
   const rewards = (r.rewards || []).filter(x => x.fiscalYear === fiscalYear);
   const lots = r.lots || [];
@@ -26915,9 +27064,11 @@ function exportAuditReport() {
   if (!window.aurumFifoEngine) { toast('Engine indisponível', 'warn'); return; }
 
   const fiscalYear = state.fiscalYear || new Date().getFullYear();
-  const events = _eventsForWallet(w);
+  const baseEvents = _eventsForWallet(w);
+  const liqEvents = (typeof _manualLiquidationsToEvents === 'function') ? _manualLiquidationsToEvents(w) : [];
+  const events = liqEvents.length ? [...baseEvents, ...liqEvents].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)) : baseEvents;
   const eng = window.aurumFifoEngine;
-  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta' });
+  const r = eng.process(events, { walletId: w.id, swapMode: state.swapMode || 'permuta', greyAreas: { liquidation: state._liqAltReading ? 'disposal' : 'permuta' } });
   const disposals = r.disposals || [];
   const warnings = r.warnings || [];
   const lots = r.lots || [];
