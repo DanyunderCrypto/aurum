@@ -9285,7 +9285,7 @@ const fifoEngine = (() => {
               eventId: e.id || e.txHash,
               asset: e.asset,
               chain: e.chain,
-              message: `Liquidação de ${e.amount} ${e.asset} tratada como permuta (leitura PT, Art. 10 nº20) — não tributada neste momento. Vê a leitura alternativa (alienação) e valida com TOC.`,
+              message: `Liquidação de ${e.amount} ${e.asset} tratada como permuta (tratamento padrão, Art. 10 nº20) — não tributada neste momento. Vê a leitura alternativa (alienação) e valida com TOC.`,
             });
           }
         }
@@ -19107,6 +19107,48 @@ function renderSimulator(w) {
 function initSimulator() { updateSim(); updateCalc(); }
 
 
+// Painel fiscal do simulador de liquidação (ZONA CINZENTA). Mostra a leitura PADRÃO
+// (permuta → €0 agora, que é certa e não precisa de basis) e a ALTERNATIVA (alienação
+// forçada → Cat G sobre o ganho). O número exato da alternativa depende do custo de
+// aquisição do colateral (basis FIFO por ativo), que o simulador NÃO tem (colateral vem
+// em USD agregado). Por isso a alternativa mostra o enquadramento + o valor na liquidação
+// como base, e remete o número exato para o relatório / marcação de liquidação real.
+// NÃO fabrica números. Tratamento "padrão" = permuta (nome escolhido com o Danyunder).
+function _buildLiqFiscalPanel(sp, liqPrice) {
+  const en = (typeof state !== 'undefined' && state.lang === 'en');
+  const cite = (typeof fiscalCite === 'function' ? fiscalCite('permuta') : '');
+  const t = (pt, eng) => en ? eng : pt;
+  const valTxt = '$' + (typeof fmt === 'function' ? fmt(Math.max(0, liqPrice || 0), 0) : Math.round(Math.max(0, liqPrice || 0)).toLocaleString());
+  return `
+  <div style="margin-top:1rem;border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;background:var(--bg2)">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9rem">
+      <span style="color:var(--gold)">⚖</span> ${t('Impacto fiscal se fores liquidado', 'Tax impact if you get liquidated')}
+    </div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin:0.5rem 0 0.9rem">
+      <span style="font-size:0.82rem;color:var(--text-muted)">${t('Imposto a pagar agora (tratamento padrão):', 'Tax due now (standard treatment):')}</span>
+      <span style="font-size:1.4rem;font-weight:700;color:var(--green)">€0</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+      <div style="border:2px solid var(--gold);border-radius:12px;padding:0.8rem 0.9rem">
+        <div style="font-size:0.7rem;color:var(--gold);font-weight:700;letter-spacing:0.03em;margin-bottom:6px">${t('APLICADA POR DEFEITO', 'APPLIED BY DEFAULT')}</div>
+        <div style="font-weight:600;font-size:0.92rem">${t('Permuta', 'Crypto-to-crypto')}</div>
+        <div style="font-size:1.15rem;font-weight:700;margin:4px 0 6px">€0 <span style="font-size:0.72rem;color:var(--muted);font-weight:400">${t('agora', 'now')}</span></div>
+        <div style="font-size:0.76rem;color:var(--text-muted);line-height:1.5">${t('Colateral cripto → dívida cripto não é venda a fiat. O imposto só surge se converteres para euros.', 'Crypto collateral → crypto debt is not a fiat sale. Tax only arises if you convert to euros.')}</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:0.8rem 0.9rem">
+        <div style="font-size:0.7rem;color:var(--muted);font-weight:700;letter-spacing:0.03em;margin-bottom:6px">${t('ALTERNATIVA · SE APLICÁVEL', 'ALTERNATIVE · IF APPLICABLE')}</div>
+        <div style="font-weight:600;font-size:0.92rem">${t('Alienação forçada', 'Forced disposal')}</div>
+        <div style="font-size:0.82rem;color:var(--text-muted);margin:4px 0 6px">${t('Cat G sobre', 'Cat G on')} <strong>(${valTxt} − ${t('custo de aquisição', 'acquisition cost')})</strong></div>
+        <div style="font-size:0.76rem;color:var(--text-muted);line-height:1.5">${t('O valor exato depende do custo de aquisição do teu colateral. Vê-o no relatório fiscal ou marca a liquidação real.', 'The exact figure depends on your collateral acquisition cost. See it in the tax report or mark the real liquidation.')}</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:0.76rem;color:var(--text-muted);line-height:1.5;padding:8px 10px;background:rgba(59,130,246,0.08);border-radius:8px">
+      ${t('A lei é ambígua aqui. Calculamos as duas leituras para estares coberto — a decisão é tua e do teu contabilista. Não é aconselhamento fiscal.', 'The law is ambiguous here. We calculate both readings so you are covered — the decision is yours and your accountant\'s. Not tax advice.')}
+    </div>
+    <div style="margin-top:8px;font-size:0.7rem;color:var(--muted)">${t('Fonte', 'Source')}: ${cite}</div>
+  </div>`;
+}
+
 function updateSimAuto() {
   const sel = document.getElementById('sim_pos');
   const out = document.getElementById('simAutoCards');
@@ -19169,6 +19211,7 @@ function updateSimAuto() {
         </div>
       </div>
     </div>
+    ${_buildLiqFiscalPanel(sp, liqPrice)}
   `;
 
   // Re-apply stealth on the newly inserted cards
