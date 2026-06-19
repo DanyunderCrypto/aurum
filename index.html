@@ -8784,6 +8784,17 @@ const fifoEngine = (() => {
     let stablecoinTransferCount = 0;
     let onchainTransferOutCount = 0;
     const pendingSwapBasis = new Map();  // txHash → carried basis from swap_sell legs (permuta mode)
+    // Volume de permutas (crypto↔crypto, NÃO tributadas) por ano. Em modo permuta os swaps não
+    // geram disposal, por isso este é o ÚNICO sítio onde o volume fica registado (fonte de verdade
+    // para a composição do relatório). Mede o valor de mercado (EUR) do ativo de saída.
+    const permutaByYear = {};
+    const _recPermuta = (dateStr, eur) => {
+      const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
+      if (!y || !(eur > 0)) return;
+      if (!permutaByYear[y]) permutaByYear[y] = { volEUR: 0, count: 0 };
+      permutaByYear[y].volEUR += eur;
+      permutaByYear[y].count++;
+    };
 
     // Group events by txHash to process swaps atomically
     const eventsByTx = new Map();
@@ -9117,6 +9128,9 @@ const fifoEngine = (() => {
             _openLot(leg, leg.amount, basisPerUnit, 'swap_in', swapOut.asset);
           }
 
+          // Volume da permuta (valor de mercado dos ativos de saída) — não tributado.
+          _recPermuta(swapOut.date, outs.reduce((s, o) => s + (Number(o.priceEUR) || 0) * Math.abs(o.amount || 0), 0));
+
           // Record meta only (no disposal entered)
           if (totalShortfall > 1e-9) {
             warnings.push({
@@ -9355,6 +9369,8 @@ const fifoEngine = (() => {
             // Stash carried basis keyed by txHash so a same-tx buy leg (rare here) could use it
             if (!pendingSwapBasis.has(e.txHash)) pendingSwapBasis.set(e.txHash, 0);
             pendingSwapBasis.set(e.txHash, pendingSwapBasis.get(e.txHash) + consumeOut.totalBasis);
+            // Volume da permuta (valor de mercado do ativo de saída) — não tributado.
+            _recPermuta(e.date, Math.abs(eventPriceEURTotal || 0));
           }
         }
         else if (klass === 'swap_buy') {
@@ -9375,7 +9391,7 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
-    const summary = _buildSummary(disposals, rewards, lots);
+    const summary = _buildSummary(disposals, rewards, lots, permutaByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
     // no cálculo, mas o utilizador tem de saber que existem e podem afetar o relatório).
@@ -9461,7 +9477,7 @@ const fifoEngine = (() => {
   }
 
   // ── Aggregation helpers ───────────────────────────────────
-  function _buildSummary(disposals, rewards, lots) {
+  function _buildSummary(disposals, rewards, lots, permutaByYear) {
     const byYear = {};
 
     const ensureYear = y => {
@@ -9476,6 +9492,9 @@ const fifoEngine = (() => {
           national: { taxableGain: 0, taxableProceeds: 0, taxableBasis: 0, count: 0 },
         },
         taxEstimateEUR: 0,
+        // Volume de permutas (crypto↔crypto, NÃO tributadas) — fonte de verdade do motor.
+        permutaVolumeEUR: 0,
+        permutaCount: 0,
       };
       return byYear[y];
     };
@@ -9507,6 +9526,13 @@ const fifoEngine = (() => {
       y.anexoE.totalEUR += r.fairValueEUR;
       y.anexoE.count++;
       y.anexoE.byKind[r.kind] = (y.anexoE.byKind[r.kind] || 0) + r.fairValueEUR;
+    }
+
+    // Permutas (não tributadas) por ano — fonte de verdade para a composição do relatório.
+    for (const yk of Object.keys(permutaByYear || {})) {
+      const Y = ensureYear(parseInt(yk, 10));
+      Y.permutaVolumeEUR = (permutaByYear[yk].volEUR) || 0;
+      Y.permutaCount = (permutaByYear[yk].count) || 0;
     }
 
     // Tax estimate: 28% on positive G gains; G1 declarative only (assume 0% effective)
@@ -19321,17 +19347,20 @@ function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear
   const nGain = (yr && yr.bySource && yr.bySource.national && yr.bySource.national.taxableGain) || 0;
   const g1Gain = (yr && yr.anexoG1 && yr.anexoG1.gain) || 0;
 
-  // Composição do donut a partir das alienações do ano (dados reais).
-  let permutaVol = 0, taxableProc = 0, exemptProc = 0;
+  // Composição do donut — baldes MUTUAMENTE EXCLUSIVOS por tratamento fiscal:
+  //  • Permutas (crypto↔crypto, não tributadas) — volume do motor (yr.permutaVolumeEUR).
+  //  • Tributável <365d / Isento ≥365d — proceeds das alienações reais (anexoG / anexoG1).
+  // (Em modo agressivo as permutas viram vendas → permutaVol=0 e contam em tributável/isento.)
+  const permutaVol = (yr && yr.permutaVolumeEUR) || 0;
+  let taxableProc = 0, exemptProc = 0;
   (dispsInYear || []).forEach(d => {
-    if (d.kind === 'swap_sell') permutaVol += Math.abs(d.proceedsEUR || 0);
     taxableProc += (d.anexoG && d.anexoG.proceeds) || 0;
     exemptProc += (d.anexoG1 && d.anexoG1.proceeds) || 0;
   });
   const segs = [
-    { val: permutaVol, color: 'var(--text-muted)', label: t('Permutas', 'Swaps') },
+    { val: permutaVol, color: 'var(--text-muted)', label: t('Permutas · não tributadas', 'Swaps · not taxable') },
     { val: exemptProc, color: 'var(--green)', label: t('Isento ≥365d', 'Exempt ≥365d') },
-    { val: taxableProc, color: 'var(--gold)', label: t('Tributável', 'Taxable') },
+    { val: taxableProc, color: 'var(--gold)', label: t('Tributável <365d', 'Taxable <365d') },
   ].filter(s => s.val > 0.005);
   const totalComp = segs.reduce((s, x) => s + x.val, 0);
   const C = 263.89;

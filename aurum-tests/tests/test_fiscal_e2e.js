@@ -471,6 +471,21 @@ run('S35: Isento ≥365d NÃO entra no split de fonte (vai a Anexo G1 Q7)', () =
   assert(yr && approx(yr.bySource.foreign.taxableGain, 0) && approx(yr.bySource.national.taxableGain, 0), `split de fonte deve ficar a 0 (é isento)`);
 });
 
+run('S36: Permuta crypto↔crypto regista volume no motor (não tributado)', () => {
+  const txh = '0xswapvol';
+  const events = [
+    ev({ direction:'in',  asset:'ETH',  amount:1,    priceEUR:1500, txType:'buy',  date:'2024-01-01', timestamp: ts('2024-01-01') }),
+    ev({ direction:'out', asset:'ETH',  amount:1,    priceEUR:2000, txType:'swap', date:'2025-06-01', timestamp: ts('2025-06-01'), txHash: txh }),
+    ev({ direction:'in',  asset:'USDC', amount:2000, priceEUR:1,    txType:'swap', date:'2025-06-01', timestamp: ts('2025-06-01'), txHash: txh }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wpv', swapMode: 'permuta' });
+  const disp = (r.disposals || []).filter(d => d.qtyDisposed > 1e-9);
+  assert(disp.length === 0, `permuta não deve gerar alienação, got ${disp.length}`);
+  const yr = r.summary.byYear[2025];
+  assert(yr && yr.permutaVolumeEUR > 0, `permutaVolumeEUR deve ser > 0, got ${yr ? yr.permutaVolumeEUR : 'none'}`);
+  assert(yr && yr.permutaCount >= 1, `permutaCount deve ser >= 1, got ${yr ? yr.permutaCount : 'none'}`);
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
 if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }
