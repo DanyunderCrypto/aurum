@@ -8644,7 +8644,7 @@ const fifoEngine = (() => {
     // unless user explicitly overrode txType (treats receipts as their underlying asset)
     if (_isProtocolReceiptToken(event.asset) && !event.userOverride?.txType) return 'skip';
     // Spam/scam tokens (unicode homoglyphs, URL names) — never enter FIFO unless user forces
-    if (_isSpamToken(event) && !event.userOverride?.forceFifo && !event.userOverride?.txType) return 'skip';
+    if (_isSpamToken(event) && !event._rescuedAirdrop && !event.userOverride?.forceFifo && !event.userOverride?.txType) return 'skip';
 
     // Respect user reclassification if present
     const tx = event.userOverride?.txType || event.txType;
@@ -8787,6 +8787,32 @@ const fifoEngine = (() => {
       return ta - tb;
     });
 
+    // ── RESGATE DE AIRDROPS GENUÍNOS (anti-falso-spam) ──────────────────────────
+    // Um token recebido que o utilizador DEPOIS vendeu/trocou (leg de saída de um swap,
+    // ou venda) é GENUÍNO — dust de spam nunca é vendido (não tem liquidez nem valor de
+    // mercado). O filtro de spam, sozinho, não distingue um airdrop novo (token obscuro,
+    // muitas vezes sem preço) de lixo. Este sinal — "o utilizador DISPÔS deste token" —
+    // está todo no event stream, sem precisar de uma única chamada RPC. Recolhemos os
+    // tokens dispostos e marcamos as suas entradas E saídas como resgatadas, isentando-as
+    // do filtro de spam: assim o airdrop é detetado (base €0, OCC) e a venda é rastreada.
+    // Deliberadamente NÃO usamos 'send' simples — mover dust para outra carteira não prova
+    // valor; só swap/venda (obteve USDC/ETH em troca) é prova de que o token tinha valor.
+    const _disposedKeys = new Set();
+    const _evKey = (e) => e.assetContract
+      ? `${e.chain}:${(e.assetContract || '').toLowerCase()}`
+      : `sym:${e.chain}:${(e.asset || '').toUpperCase()}`;
+    for (const e of sorted) {
+      const _tx = (e.userOverride?.txType || e.txType || '').toLowerCase();
+      if (e.direction === 'out' && (_tx === 'swap' || _tx === 'sale' || _tx === 'sell')) {
+        _disposedKeys.add(_evKey(e));
+      }
+    }
+    if (_disposedKeys.size) {
+      for (const e of sorted) {
+        if (_disposedKeys.has(_evKey(e))) e._rescuedAirdrop = true;
+      }
+    }
+
     // State containers
     const lotsMap = new Map();      // key → ordered array of {lotId, qtyRemaining, basisEURPerUnit, acqTimestamp, acqDate, source, originEventId}
     const lots = [];                // flat list (history)
@@ -8820,10 +8846,6 @@ const fifoEngine = (() => {
     const STAMP_DUTY_THRESHOLD_EUR = 500;
     const STAMP_DUTY_RATE = 0.10;
     const stampDutyByYear = {};
-    // DIAGNÓSTICO temporário: contar airdrops vistos / com preço / >€500, para perceber porque
-    // o Selo não dispara nos dados reais (spam-filtrados vs sem preço). Remover após confirmar.
-    let _adSeen = 0, _adPriced = 0, _adOver500 = 0, _adSpamSkip = 0;
-    const _adSpamSamples = [];
     const _recStampDuty = (dateStr, eur) => {
       const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
       if (!y || !(eur > 0)) return;
@@ -9200,18 +9222,7 @@ const fifoEngine = (() => {
       // ─── Non-swap events: process each independently ────
       for (const e of txEvents) {
         const klass = classifyEvent(e);
-        if (klass === 'skip') {
-          try {
-            if (e.direction === 'in' && typeof _isSpamToken === 'function' && _isSpamToken(e)) {
-              _adSpamSkip++;
-              if (_adSpamSamples.length < 14) {
-                const _p = (typeof e.priceEUR === 'number' && e.priceEUR > 0) ? e.priceEUR : ((typeof e.priceUSD === 'number' && e.priceUSD > 0) ? e.priceUSD : null);
-                _adSpamSamples.push(`${e.asset || '?'} qty=${(+e.amount || 0)} preço=${_p === null ? 'NÃO' : _p} ${e.assetContract ? ('c=' + String(e.assetContract).slice(0, 10)) : ''}`);
-              }
-            }
-          } catch (_) {}
-          continue;
-        }
+        if (klass === 'skip') continue;
 
         // ── Gas / dust filter ──────────────────────────────
         // Native-asset outflows below a dust threshold are overwhelmingly gas fees or
@@ -9270,7 +9281,6 @@ const fifoEngine = (() => {
           // Imposto do Selo: o valor à receção (que NÃO é base de custo) é registado à parte
           // para avaliar o limiar dos €500 das transmissões gratuitas. Não afeta a base €0.
           _recStampDuty(e.date, eventPriceEURTotal ?? 0);
-          { const _v = eventPriceEURTotal ?? 0; _adSeen++; if (_v > 0) _adPriced++; if (_v > 500) _adOver500++; }
         }
         else if (klass === 'reward') {
           // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
@@ -9444,7 +9454,6 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
-    try { console.warn(`[Selo diag] wallet=${opts && opts.walletId || '?'} · airdrops vistos=${_adSeen} · com preço=${_adPriced} · >€500=${_adOver500} · incoming spam-filtrados=${_adSpamSkip}`); if (_adSpamSamples.length) console.warn('[Selo diag] amostra spam-filtrado (in):\n  ' + _adSpamSamples.join('\n  ')); } catch (_) {}
     const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram

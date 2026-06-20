@@ -517,6 +517,44 @@ run('S38: Airdrop de €500 exatos NÃO excede o limiar (sem Selo)', () => {
   }
 });
 
+run('S39: Airdrop genuíno (recebido sem preço) depois trocado -> detetado como airdrop', () => {
+  const txh = '0xadswap';
+  const events = [
+    ev({ direction:'in',  asset:'ZKAIR', amount:100, priceEUR:null, txType:'receive', assetContract:'0xaaa1', chain:'linea', date:'2026-01-10', timestamp: ts('2026-01-10') }),
+    ev({ direction:'out', asset:'ZKAIR', amount:100, priceEUR:null, txType:'swap',    assetContract:'0xaaa1', chain:'linea', date:'2026-01-12', timestamp: ts('2026-01-12'), txHash: txh }),
+    ev({ direction:'in',  asset:'USDC',  amount:50,  priceEUR:1,    txType:'swap',                            chain:'linea', date:'2026-01-12', timestamp: ts('2026-01-12'), txHash: txh }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wad1', swapMode: 'permuta' });
+  const adLots = (r.lots || []).filter(l => l.asset === 'ZKAIR' && l.source === 'airdrop');
+  assert(adLots.length >= 1, `airdrop ZKAIR deve abrir lote base-0, got ${adLots.length}`);
+  if (adLots[0]) assert(approx(adLots[0].basisEURPerUnit, 0), `airdrop deve ter base €0, got ${adLots[0].basisEURPerUnit}`);
+});
+
+run('S40: Token spam-looking mas VENDIDO é resgatado (deteção via disposição)', () => {
+  const txh = '0xrescue';
+  const spamName = 'Claim now at https://get-reward.io';
+  const probe = ev({ direction:'in', asset:'RWD', assetName:spamName, amount:1000, priceEUR:null, assetContract:'0xbbb2', chain:'base' });
+  assert(fifoEngine.isSpamToken(probe) === true, 'pré-condição: token TEM de ser spam');
+  const events = [
+    ev({ direction:'in',  asset:'RWD',  assetName:spamName, amount:1000, priceEUR:null, txType:'receive', assetContract:'0xbbb2', chain:'base', date:'2026-02-01', timestamp: ts('2026-02-01') }),
+    ev({ direction:'out', asset:'RWD',  assetName:spamName, amount:1000, priceEUR:null, txType:'swap',    assetContract:'0xbbb2', chain:'base', date:'2026-02-03', timestamp: ts('2026-02-03'), txHash: txh }),
+    ev({ direction:'in',  asset:'USDC', amount:80, priceEUR:1, txType:'swap', chain:'base', date:'2026-02-03', timestamp: ts('2026-02-03'), txHash: txh }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wad2', swapMode: 'permuta' });
+  const rwdLots = (r.lots || []).filter(l => l.asset === 'RWD' && l.source === 'airdrop');
+  assert(rwdLots.length >= 1, `spam-token RWD vendido deve ser resgatado como airdrop, got ${rwdLots.length}`);
+});
+
+run('S41: Mesmo token spam NÃO vendido permanece filtrado (sem lote)', () => {
+  const spamName = 'Claim now at https://get-reward.io';
+  const events = [
+    ev({ direction:'in', asset:'RWD', assetName:spamName, amount:1000, priceEUR:null, txType:'receive', assetContract:'0xbbb2', chain:'base', date:'2026-02-01', timestamp: ts('2026-02-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wad3' });
+  const rwdLots = (r.lots || []).filter(l => l.asset === 'RWD');
+  assert(rwdLots.length === 0, `spam RWD não-vendido tem de continuar filtrado, got ${rwdLots.length} lotes`);
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
 if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }
