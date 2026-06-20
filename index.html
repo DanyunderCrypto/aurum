@@ -8810,6 +8810,26 @@ const fifoEngine = (() => {
       permutaByYear[y].count++;
     };
 
+    // ── Imposto do Selo — transmissões gratuitas de criptoativos (airdrops/doações) ──────────
+    // Verba 1.2 da TGIS: 10% sobre o valor à receção, mas SÓ quando a transmissão excede €500
+    // (avaliação POR transmissão, não agregada anualmente). Declara-se na DMIS, FORA do IRS
+    // (Modelo 3). É ZONA CINZENTA: só incide se o airdrop for caracterizado como transmissão
+    // gratuita SEM contrapartida; se for remuneração, vai a Cat E (diferida p/ Cat G na venda,
+    // OCC art. 5.º n.º 11). Registamos o valor à receção apenas para SINALIZAR a exposição —
+    // nunca alteramos a base (€0) nem aconselhamos. O utilizador/contabilista decide a natureza.
+    const STAMP_DUTY_THRESHOLD_EUR = 500;
+    const STAMP_DUTY_RATE = 0.10;
+    const stampDutyByYear = {};
+    const _recStampDuty = (dateStr, eur) => {
+      const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
+      if (!y || !(eur > 0)) return;
+      if (!stampDutyByYear[y]) stampDutyByYear[y] = { grossEUR: 0, count: 0, liableEUR: 0, liableCount: 0 };
+      const b = stampDutyByYear[y];
+      b.grossEUR += eur; b.count++;
+      // Limiar por transmissão: só >€500 é tributável (≤€500 fica isento de Selo).
+      if (eur > STAMP_DUTY_THRESHOLD_EUR) { b.liableEUR += eur; b.liableCount++; }
+    };
+
     // Group events by txHash to process swaps atomically
     const eventsByTx = new Map();
     for (const e of sorted) {
@@ -9232,6 +9252,9 @@ const fifoEngine = (() => {
           // full proceeds when sold to fiat. Open a lot at basis €0. Do NOT record Cat. E.
           // (We deliberately ignore the market value at receipt as cost basis — it stays €0.)
           _openLot(e, e.amount, 0, 'airdrop');
+          // Imposto do Selo: o valor à receção (que NÃO é base de custo) é registado à parte
+          // para avaliar o limiar dos €500 das transmissões gratuitas. Não afeta a base €0.
+          _recStampDuty(e.date, eventPriceEURTotal ?? 0);
         }
         else if (klass === 'reward') {
           // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
@@ -9405,7 +9428,7 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
-    const summary = _buildSummary(disposals, rewards, lots, permutaByYear);
+    const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
     // no cálculo, mas o utilizador tem de saber que existem e podem afetar o relatório).
@@ -9491,7 +9514,7 @@ const fifoEngine = (() => {
   }
 
   // ── Aggregation helpers ───────────────────────────────────
-  function _buildSummary(disposals, rewards, lots, permutaByYear) {
+  function _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear) {
     const byYear = {};
 
     const ensureYear = y => {
@@ -9509,6 +9532,8 @@ const fifoEngine = (() => {
         // Volume de permutas (crypto↔crypto, NÃO tributadas) — fonte de verdade do motor.
         permutaVolumeEUR: 0,
         permutaCount: 0,
+        // Imposto do Selo (transmissões gratuitas > €500): 10% via DMIS, FORA do IRS. Sinalização.
+        stampDuty: { grossEUR: 0, count: 0, liableEUR: 0, liableCount: 0, dueEUR: 0, applies: false },
       };
       return byYear[y];
     };
@@ -9547,6 +9572,20 @@ const fifoEngine = (() => {
       const Y = ensureYear(parseInt(yk, 10));
       Y.permutaVolumeEUR = (permutaByYear[yk].volEUR) || 0;
       Y.permutaCount = (permutaByYear[yk].count) || 0;
+    }
+
+    // Imposto do Selo (transmissões gratuitas > €500) por ano — 10% via DMIS, fora do IRS.
+    // Sinalização de zona cinzenta: dueEUR é a exposição SE os airdrops forem caracterizados
+    // como transmissões gratuitas. grossEUR/count dão o total de airdrops para contexto.
+    for (const yk of Object.keys(stampDutyByYear || {})) {
+      const Y = ensureYear(parseInt(yk, 10));
+      const s = stampDutyByYear[yk];
+      Y.stampDuty.grossEUR = s.grossEUR || 0;
+      Y.stampDuty.count = s.count || 0;
+      Y.stampDuty.liableEUR = s.liableEUR || 0;
+      Y.stampDuty.liableCount = s.liableCount || 0;
+      Y.stampDuty.dueEUR = (s.liableEUR || 0) * 0.10;  // 10% sobre as transmissões > €500
+      Y.stampDuty.applies = (s.liableCount || 0) > 0;
     }
 
     // Tax estimate: 28% on positive G gains; G1 declarative only (assume 0% effective)
@@ -22239,6 +22278,21 @@ function renderFiscalEngineV2(w, fiscalYear) {
         ${_buildFiscalHero(yr, dispsInYear, undatedCount, events.length, fiscalYear, lang)}
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
+
+        ${(yr && yr.stampDuty && yr.stampDuty.applies) ? `
+        <div style="border:1px solid var(--amber);border-radius:14px;background:rgba(251,191,36,0.06);padding:15px 17px;margin-bottom:0.7rem">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:1.05rem">⚠️</span>
+            <span style="font-size:0.95rem;font-weight:600;color:var(--text)">${t2('Stamp Duty — grey area', 'Imposto do Selo — zona cinzenta')}</span>
+          </div>
+          <div style="font-size:0.85rem;color:var(--text-muted);line-height:1.55">
+            ${t2(
+              `You received <strong style="color:var(--text)">${fmt(yr.stampDuty.liableCount, 0)} gratuitous transfer(s)</strong> above €500 (total <strong style="color:var(--text)">€${fmt(yr.stampDuty.liableEUR)}</strong>). If characterised as gratuitous transmissions (donations), there is <strong style="color:var(--amber)">10% Stamp Duty (~€${fmt(yr.stampDuty.dueEUR)})</strong> to declare on the <strong>DMIS</strong> — separate from IRS, by the 20th of the following month. If instead they are remuneration, they fall under Cat. E (deferred to Cat. G on sale). Confirm the nature with your accountant — Taxesly does not advise.`,
+              `Recebeste <strong style="color:var(--text)">${fmt(yr.stampDuty.liableCount, 0)} transmissão(ões) gratuita(s)</strong> acima de €500 (total <strong style="color:var(--text)">€${fmt(yr.stampDuty.liableEUR)}</strong>). Se forem caracterizadas como transmissões gratuitas (doações), há <strong style="color:var(--amber)">10% de Imposto do Selo (~€${fmt(yr.stampDuty.dueEUR)})</strong> a declarar na <strong>DMIS</strong> — separado do IRS, até ao dia 20 do mês seguinte. Se forem remuneração, vão a Cat. E (diferida p/ Cat. G na venda). Confirma a natureza com o teu contabilista — a Taxesly não aconselha.`
+            )}
+          </div>
+        </div>
+        ` : ''}
 
         <details open class="fz-sec">
           ${_secHead(_ic.declare, 'rgba(59,130,246,0.12)', 'var(--gold)', t2('Where to declare', 'Onde declarar'), t2('By source · Annex J / G / G1', 'Por fonte · Anexo J / G / G1'), `<span style="font-size:0.7rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:4px 10px;border-radius:7px">Anexo J</span>`)}

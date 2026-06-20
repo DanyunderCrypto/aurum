@@ -486,6 +486,37 @@ run('S36: Permuta crypto↔crypto regista volume no motor (não tributado)', () 
   assert(yr && yr.permutaCount >= 1, `permutaCount deve ser >= 1, got ${yr ? yr.permutaCount : 'none'}`);
 });
 
+run('S37: Airdrop > €500 sinaliza Imposto do Selo (10% via DMIS)', () => {
+  const events = [
+    ev({ direction:'in', asset:'AAA', amount:1, priceEUR:1000, txType:'airdrop', date:'2026-03-10', timestamp: ts('2026-03-10') }),
+    ev({ direction:'in', asset:'BBB', amount:1, priceEUR:200,  txType:'airdrop', date:'2026-04-02', timestamp: ts('2026-04-02') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wsd' });
+  const sd = r.summary.byYear[2026] && r.summary.byYear[2026].stampDuty;
+  assert(sd, 'stampDuty deve existir em byYear[2026]');
+  if (sd) {
+    assert(sd.count === 2, `2 airdrops registados, got ${sd.count}`);
+    assert(sd.liableCount === 1, `só o >€500 é tributável, got ${sd.liableCount}`);
+    assert(sd.applies === true, `Selo deve aplicar-se`);
+    assert(approx(sd.dueEUR, 100), `Selo = 1000*10% = 100, got ${sd.dueEUR}`);
+    assert(approx(sd.grossEUR, 1200), `bruto = 1200, got ${sd.grossEUR}`);
+  }
+});
+
+run('S38: Airdrop de €500 exatos NÃO excede o limiar (sem Selo)', () => {
+  const events = [
+    ev({ direction:'in', asset:'CCC', amount:1, priceEUR:500, txType:'airdrop', date:'2026-05-01', timestamp: ts('2026-05-01') }),
+  ];
+  const r = fifoEngine.process(events, { walletId: 'wsd2' });
+  const sd = r.summary.byYear[2026] && r.summary.byYear[2026].stampDuty;
+  assert(sd, 'stampDuty deve existir');
+  if (sd) {
+    assert(sd.liableCount === 0, `€500 exato não excede, got ${sd.liableCount}`);
+    assert(sd.applies === false, `Selo NÃO deve aplicar-se a ≤€500`);
+    assert(approx(sd.dueEUR, 0), `sem Selo, got ${sd.dueEUR}`);
+  }
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`RESULT: ${passed} passed, ${failed} failed (${passed + failed} assertions)`);
 if (failed > 0) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }
