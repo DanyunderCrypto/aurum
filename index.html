@@ -44,14 +44,14 @@
 ══════════════════════════════════════════════════ */
 .fz-sec { border:1px solid var(--border); border-radius:14px; background:var(--bg2); margin-bottom:0.7rem; overflow:hidden; transition:border-color .15s ease; }
 .fz-sec:hover { border-color:var(--border2); }
-.fz-sec > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:13px; padding:13px 15px; }
+.fz-sec > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:14px; padding:16px 18px; }
 .fz-sec > summary::-webkit-details-marker { display:none; }
 .fz-sec[open] > summary { border-bottom:1px solid var(--border); }
-.fz-chip { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.fz-chip svg { width:19px; height:19px; }
+.fz-chip { width:42px; height:42px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.fz-chip svg { width:21px; height:21px; }
 .fz-chev { color:var(--text-muted); flex-shrink:0; display:flex; transition:transform .2s ease; }
 .fz-sec[open] > summary .fz-chev { transform:rotate(180deg); }
-.fz-body { padding:14px 15px; }
+.fz-body { padding:16px 18px; }
 
 /* ══════════════════════════════════════════════════
    RESET & VARIABLES
@@ -19391,7 +19391,7 @@ function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear
       <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">${circles}
         <text x="60" y="64" text-anchor="middle" style="font-size:0.62rem;fill:var(--text-muted)">${t('composição', 'composition')}</text>
       </svg>
-      <div style="display:flex;flex-direction:column;gap:4px;font-size:0.68rem">${legend}</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:0.76rem">${legend}</div>
     </div>`;
   } else {
     // Estado "ano limpo": um donut vazio leria como gráfico avariado — um check verde afirma intenção.
@@ -19399,7 +19399,7 @@ function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear
       <div style="width:96px;height:96px;border-radius:50%;background:rgba(52,211,153,0.10);border:2px solid var(--green);display:flex;align-items:center;justify-content:center">
         <span style="font-size:2.4rem;color:var(--green);line-height:1">✓</span>
       </div>
-      <span style="font-size:0.68rem;color:var(--text-muted);max-width:130px;text-align:center">${t('Ano sem matéria coletável', 'No taxable matter this year')}</span>
+      <span style="font-size:0.76rem;color:var(--text-muted);max-width:140px;text-align:center">${t('Ano sem matéria coletável', 'No taxable matter this year')}</span>
     </div>`;
   }
 
@@ -19409,34 +19409,34 @@ function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear
   const zeroTax = tax <= 0.005;
 
   const statusLine = zeroTax
-    ? `<div style="display:inline-flex;align-items:center;gap:6px;font-size:0.74rem;color:var(--green);margin-bottom:0.9rem"><span>✓</span> ${t('Sem imposto a pagar — permutas não tributadas', 'No tax due — swaps are not taxable')}</div>`
-    : `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.9rem">${t('sobre mais-valia tributável <365d', 'on taxable gain <365d')}</div>`;
+    ? `<div style="display:inline-flex;align-items:center;gap:6px;font-size:0.84rem;color:var(--green);margin-bottom:1rem"><span>✓</span> ${t('Sem imposto a pagar — permutas não tributadas', 'No tax due — swaps are not taxable')}</div>`
+    : `<div style="font-size:0.84rem;color:var(--text-muted);margin-bottom:1rem">${t('sobre mais-valia tributável <365d', 'on taxable gain <365d')}</div>`;
 
   return `
-  <div style="background:radial-gradient(120% 100% at 88% 0%, rgba(59,130,246,0.10), transparent 55%), var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1.2rem 1.3rem;margin-bottom:1.2rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${t('Declaração', 'Filing')} ${fiscalYear}</span>
-      ${hasIssues ? '' : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;color:var(--green);background:rgba(52,211,153,0.12);padding:3px 9px;border-radius:8px"><span>✓</span> ${t('verificado', 'verified')}</span>`}
+  <div style="background:radial-gradient(120% 100% at 88% 0%, rgba(59,130,246,0.10), transparent 55%), var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1.5rem 1.6rem;margin-bottom:1.2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem">
+      <span style="font-size:0.98rem;font-weight:600;color:var(--text)">${t('Declaração', 'Filing')} ${fiscalYear}</span>
+      ${hasIssues ? '' : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;color:var(--green);background:rgba(52,211,153,0.12);padding:4px 10px;border-radius:8px"><span>✓</span> ${t('verificado', 'verified')}</span>`}
     </div>
-    <div style="display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap">
+    <div style="display:flex;gap:1.6rem;align-items:center;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:3px">${t('Imposto estimado', 'Estimated tax')}</div>
-        <div style="font-family:var(--mono);font-size:2.2rem;font-weight:500;line-height:1;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:var(--text);margin-bottom:8px">${eur(tax)}</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px">${t('Imposto estimado', 'Estimated tax')}</div>
+        <div style="font-family:var(--mono);font-size:2.6rem;font-weight:500;line-height:1;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:var(--text);margin-bottom:10px">${eur(tax)}</div>
         ${statusLine}
-        <div style="display:flex;gap:7px;flex-wrap:wrap">
-          <span style="font-size:0.72rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:5px 11px;border-radius:8px">Anexo J · ${eur(jGain)}</span>
-          ${nGain > 0.005 ? `<span style="font-size:0.72rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:5px 11px;border-radius:8px">Anexo G · ${eur(nGain)}</span>` : ''}
-          <span style="font-size:0.72rem;color:var(--text-muted);background:var(--bg3);padding:5px 11px;border-radius:8px">Anexo G1 · ${eur(g1Gain)}</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:0.82rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:6px 13px;border-radius:9px">Anexo J · ${eur(jGain)}</span>
+          ${nGain > 0.005 ? `<span style="font-size:0.82rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:6px 13px;border-radius:9px">Anexo G · ${eur(nGain)}</span>` : ''}
+          <span style="font-size:0.82rem;color:var(--text-muted);background:var(--bg3);padding:6px 13px;border-radius:9px">Anexo G1 · ${eur(g1Gain)}</span>
         </div>
       </div>
       ${donutBlock}
     </div>
-    <div style="margin-top:1.1rem;padding-top:0.9rem;border-top:1px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:0.72rem;color:var(--text-muted)">${t('Declaração', 'Filing')} ${pct}% ${t('pronta', 'ready')}</span>
-        ${hasIssues ? `<span onclick="resolveMissingDatesUI()" style="font-size:0.72rem;font-weight:600;color:var(--amber);cursor:pointer">${undatedCount} ${t('a rever', 'to review')} →</span>` : `<span style="font-size:0.72rem;color:var(--green)">${t('tudo verificado', 'all verified')}</span>`}
+    <div style="margin-top:1.3rem;padding-top:1.1rem;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:0.82rem;color:var(--text-muted)">${t('Declaração', 'Filing')} ${pct}% ${t('pronta', 'ready')}</span>
+        ${hasIssues ? `<span onclick="resolveMissingDatesUI()" style="font-size:0.82rem;font-weight:600;color:var(--amber);cursor:pointer">${undatedCount} ${t('a rever', 'to review')} →</span>` : `<span style="font-size:0.82rem;color:var(--green)">${t('tudo verificado', 'all verified')}</span>`}
       </div>
-      <div style="height:7px;background:var(--bg3);border-radius:99px;overflow:hidden">
+      <div style="height:8px;background:var(--bg3);border-radius:99px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${hasIssues ? 'var(--amber)' : 'var(--green)'};border-radius:99px"></div>
       </div>
     </div>
@@ -22205,10 +22205,9 @@ function renderFiscalEngineV2(w, fiscalYear) {
   try { window['_cexSends_' + w.id] = (typeof aurumDetectCexSends === 'function') ? aurumDetectCexSends(events) : []; } catch (_) { window['_cexSends_' + w.id] = []; }
   try { window['_unmatched_' + w.id] = (typeof aurumUnmatchedTransfers === 'function') ? aurumUnmatchedTransfers(events) : []; } catch (_) { window['_unmatched_' + w.id] = []; }
   const rt = window._fiscalReportType || 'complete';
-  const showGains = rt === 'complete' || rt === 'gains';
-  const showIncome = rt === 'complete' || rt === 'income';
-  const showEoy = rt === 'complete' || rt === 'eoy';
-  const showMaturity = rt === 'complete' || rt === 'maturity';
+  // On-screen: o detalhe (atrás de "Ver detalhe completo") mostra SEMPRE tudo. O tipo de
+  // relatório (rt) passou a controlar apenas o EXPORT, não a filtrar o ecrã.
+  const showGains = true, showIncome = true, showEoy = true, showMaturity = true;
 
   // ── Cartões de secção desenhados (line icons inline + cabeçalho rico) ──────
   const _ic = {
@@ -22221,8 +22220,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
     <summary>
       <span class="fz-chip" style="background:${chipBg};color:${chipColor}">${icon}</span>
       <span style="flex:1;min-width:0">
-        <span style="display:block;font-size:0.86rem;font-weight:600;color:var(--text)">${title}</span>
-        <span style="display:block;font-size:0.72rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</span>
+        <span style="display:block;font-size:0.95rem;font-weight:600;color:var(--text)">${title}</span>
+        <span style="display:block;font-size:0.8rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</span>
       </span>
       ${rightHtml || ''}
       <span class="fz-chev">${_chev}</span>
@@ -22240,27 +22239,6 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
-        ${(() => {
-          // Report-type selector (Koinly-style "Pick a report type"). Filters which sections
-          // show: complete (all) or a focused view. Default 'complete'. The full FIFO calc always
-          // runs; this only controls presentation.
-          const rt = window._fiscalReportType || 'complete';
-          const opts = [
-            ['complete', t2('Complete report', 'Relatório completo')],
-            ['gains',    t2('Capital gains (G/G1)', 'Mais-valias (G/G1)')],
-            ['income',   t2('Income (Annex E)', 'Rendimentos (Anexo E)')],
-            ['eoy',      t2('End-of-year holdings', 'Saldos a 31 de Dezembro')],
-            ['maturity', t2('Asset maturity (365d)', 'Maturidade dos ativos (365d)')],
-          ];
-          return `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.1rem;flex-wrap:wrap">
-            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">${t2('Report type', 'Tipo de relatório')}</label>
-            <select onchange="window._fiscalReportType=this.value; if(typeof render==='function') render();" style="background:var(--bg1);color:var(--text);border:1px solid var(--border2);border-radius:6px;padding:0.35rem 0.6rem;font-size:0.8rem;cursor:pointer">
-              ${opts.map(([v, label]) => `<option value="${v}" ${rt === v ? 'selected' : ''}>${label}</option>`).join('')}
-            </select>
-            ${rt !== 'complete' ? `<button class="btn btn-outline btn-sm" onclick="exportReportByType('${rt}')" title="${t2('Print or save this report as PDF', 'Imprimir ou guardar este relatório em PDF')}">🖨 ${t2('Print this report', 'Imprimir este relatório')}</button>` : ''}
-          </div>`;
-        })()}
-
         <details open class="fz-sec">
           ${_secHead(_ic.declare, 'rgba(59,130,246,0.12)', 'var(--gold)', t2('Where to declare', 'Onde declarar'), t2('By source · Annex J / G / G1', 'Por fonte · Anexo J / G / G1'), `<span style="font-size:0.7rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:4px 10px;border-radius:7px">Anexo J</span>`)}
           <div class="fz-body">
@@ -22270,8 +22248,8 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
         ${renderTaxLossHarvest(w)}
 
-        <details ${(window._fiscalReportType || 'complete') === 'complete' ? '' : 'open'} class="fz-sec">
-          ${_secHead(_ic.detail, 'var(--bg3)', 'var(--text-muted)', t2('Detail', 'Detalhe'), t2('Lots, transactions and balances', 'Lotes, transações e saldos'), `<span style="font-size:0.72rem;color:var(--text-muted)">${fmt(disposals.length, 0)} ${t2('disposals', 'alienações')}</span>`)}
+        <details class="fz-sec">
+          ${_secHead(_ic.detail, 'var(--bg3)', 'var(--text-muted)', t2('View full detail', 'Ver detalhe completo'), t2('Lots, transactions, balances and maturity', 'Lotes, transações, saldos e maturidade'), `<span style="font-size:0.78rem;color:var(--text-muted)">${fmt(disposals.length, 0)} ${t2('disposals', 'alienações')}</span>`)}
           <div class="fz-body">
 
         ${_buildManualLiqPanel(w, fiscalYear, events)}
@@ -22543,6 +22521,21 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
           </div>
         </details>
+
+        <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;margin:1rem 0 0.7rem;padding:1rem 1.1rem;border:1px solid var(--border);border-radius:14px;background:var(--bg2)">
+          <div style="flex:1;min-width:170px">
+            <div style="font-size:0.92rem;font-weight:600;color:var(--text)">${t2('Export report', 'Exportar relatório')}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted)">${t2('Choose what to export', 'Escolhe o que exportar')}</div>
+          </div>
+          <select id="fzExportType" style="background:var(--bg1);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:0.5rem 0.7rem;font-size:0.85rem;cursor:pointer">
+            <option value="complete">${t2('Complete report', 'Relatório completo')}</option>
+            <option value="gains">${t2('Capital gains (G/G1/J)', 'Mais-valias (G/G1/J)')}</option>
+            <option value="income">${t2('Income (Annex E/J)', 'Rendimentos (Anexo E/J)')}</option>
+            <option value="eoy">${t2('End-of-year holdings', 'Saldos a 31 de Dezembro')}</option>
+            <option value="maturity">${t2('Asset maturity', 'Maturidade dos ativos')}</option>
+          </select>
+          <button class="btn btn-gold" onclick="exportReportByType(document.getElementById('fzExportType').value)" style="font-size:0.85rem">${t2('Export', 'Exportar')}</button>
+        </div>
 
         <details class="fz-sec">
           ${_secHead(_ic.law, 'var(--bg3)', 'var(--text-muted)', t2('Legal framework', 'Enquadramento legal'), t2('Category B · AT citations', 'Categoria B · citações AT'), '')}
