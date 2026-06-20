@@ -22227,6 +22227,7 @@ function renderFiscalEngineV2(w, fiscalYear) {
       <span class="fz-chev">${_chev}</span>
     </summary>`;
 
+  try {
   return `
     <div class="panel" style="margin-bottom:1.3rem;border-color:var(--gold)">
       <div class="panel-head">
@@ -22547,6 +22548,23 @@ function renderFiscalEngineV2(w, fiscalYear) {
       </div>
     </div>
   `;
+  } catch (_err) {
+    try { errorLogger.error('fiscal v2 RENDER: ' + _err.message, { wallet: w.id, stack: String(_err.stack || '').split('\n').slice(0, 5).join(' | ') }); } catch (_) {}
+    return `
+      <div class="panel" style="margin-bottom:1.3rem;border-color:var(--red,#e34)">
+        <div class="panel-head"><span class="panel-title">${t('fiscal.engineV2')} — erro no render</span></div>
+        <div class="panel-body">
+          <div class="alert alert-warn" style="font-size:0.82rem">
+            <span>⚠</span>
+            <div>
+              <strong>Render do relatório falhou:</strong> <code>${((_err && _err.message) || _err)}</code>
+              <div style="margin-top:0.5rem;font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);white-space:pre-wrap">${String((_err && _err.stack) || '').split('\n').slice(0, 6).join('\n').replace(/</g, '&lt;')}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 }
 
 function renderFiscal(w) {
