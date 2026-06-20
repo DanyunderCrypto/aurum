@@ -40,6 +40,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 /* ══════════════════════════════════════════════════
+   FISCAL REPORT — designed section cards (redesign)
+══════════════════════════════════════════════════ */
+.fz-sec { border:1px solid var(--border); border-radius:14px; background:var(--bg2); margin-bottom:0.7rem; overflow:hidden; transition:border-color .15s ease; }
+.fz-sec:hover { border-color:var(--border2); }
+.fz-sec > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:13px; padding:13px 15px; }
+.fz-sec > summary::-webkit-details-marker { display:none; }
+.fz-sec[open] > summary { border-bottom:1px solid var(--border); }
+.fz-chip { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.fz-chip svg { width:19px; height:19px; }
+.fz-chev { color:var(--text-muted); flex-shrink:0; display:flex; transition:transform .2s ease; }
+.fz-sec[open] > summary .fz-chev { transform:rotate(180deg); }
+.fz-body { padding:14px 15px; }
+
+/* ══════════════════════════════════════════════════
    RESET & VARIABLES
 ══════════════════════════════════════════════════ */
 :root {
@@ -19399,7 +19413,7 @@ function _buildFiscalHero(yr, dispsInYear, undatedCount, totalEvents, fiscalYear
     : `<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.9rem">${t('sobre mais-valia tributável <365d', 'on taxable gain <365d')}</div>`;
 
   return `
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1.2rem 1.3rem;margin-bottom:1.2rem">
+  <div style="background:radial-gradient(120% 100% at 88% 0%, rgba(59,130,246,0.10), transparent 55%), var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1.2rem 1.3rem;margin-bottom:1.2rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${t('Declaração', 'Filing')} ${fiscalYear}</span>
       ${hasIssues ? '' : `<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.68rem;color:var(--green);background:rgba(52,211,153,0.12);padding:3px 9px;border-radius:8px"><span>✓</span> ${t('verificado', 'verified')}</span>`}
@@ -22196,6 +22210,24 @@ function renderFiscalEngineV2(w, fiscalYear) {
   const showEoy = rt === 'complete' || rt === 'eoy';
   const showMaturity = rt === 'complete' || rt === 'maturity';
 
+  // ── Cartões de secção desenhados (line icons inline + cabeçalho rico) ──────
+  const _ic = {
+    declare: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>',
+    detail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg>',
+    law: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  };
+  const _chev = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  const _secHead = (icon, chipBg, chipColor, title, preview, rightHtml) => `
+    <summary>
+      <span class="fz-chip" style="background:${chipBg};color:${chipColor}">${icon}</span>
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-size:0.86rem;font-weight:600;color:var(--text)">${title}</span>
+        <span style="display:block;font-size:0.72rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</span>
+      </span>
+      ${rightHtml || ''}
+      <span class="fz-chev">${_chev}</span>
+    </summary>`;
+
   return `
     <div class="panel" style="margin-bottom:1.3rem;border-color:var(--gold)">
       <div class="panel-head">
@@ -22229,16 +22261,18 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </div>`;
         })()}
 
-        <details open style="margin-bottom:1rem">
-          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">📑 ${t2('Where to declare', 'Onde declarar')}</summary>
-          <div style="margin-top:0.6rem">
+        <details open class="fz-sec">
+          ${_secHead(_ic.declare, 'rgba(59,130,246,0.12)', 'var(--gold)', t2('Where to declare', 'Onde declarar'), t2('By source · Annex J / G / G1', 'Por fonte · Anexo J / G / G1'), `<span style="font-size:0.7rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:4px 10px;border-radius:7px">Anexo J</span>`)}
+          <div class="fz-body">
             ${_buildSourceSplitPanel(summary, fiscalYear, lang)}
           </div>
         </details>
 
-        <details ${(window._fiscalReportType || 'complete') === 'complete' ? '' : 'open'} style="margin-bottom:1rem">
-          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">📊 ${t2('Detail', 'Detalhe')}</summary>
-          <div style="margin-top:0.6rem">
+        ${renderTaxLossHarvest(w)}
+
+        <details ${(window._fiscalReportType || 'complete') === 'complete' ? '' : 'open'} class="fz-sec">
+          ${_secHead(_ic.detail, 'var(--bg3)', 'var(--text-muted)', t2('Detail', 'Detalhe'), t2('Lots, transactions and balances', 'Lotes, transações e saldos'), `<span style="font-size:0.72rem;color:var(--text-muted)">${fmt(disposals.length, 0)} ${t2('disposals', 'alienações')}</span>`)}
+          <div class="fz-body">
 
         ${_buildManualLiqPanel(w, fiscalYear, events)}
 
@@ -22510,9 +22544,9 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </div>
         </details>
 
-        <details style="margin-bottom:0.5rem">
-          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">⚖️ ${t2('Legal framework', 'Enquadramento legal')}</summary>
-          <div style="margin-top:0.6rem">
+        <details class="fz-sec">
+          ${_secHead(_ic.law, 'var(--bg3)', 'var(--text-muted)', t2('Legal framework', 'Enquadramento legal'), t2('Category B · AT citations', 'Categoria B · citações AT'), '')}
+          <div class="fz-body">
             ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
           </div>
         </details>
