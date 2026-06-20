@@ -21391,7 +21391,7 @@ function renderHistory(w) {
         <div>
           ${(state.lang||'pt')==='en'
             ? `Balances detected on <strong>${_nonIndexableChains.map(c=>c.toUpperCase()).join(', ')}</strong>. These networks don't support automatic transaction indexing (provider limitation), so their balances appear in your portfolio but their history isn't auto-imported. Values there are typically small. You can add transactions manually if needed.`
-            : `Saldos detetados em <strong>${_nonIndexableChains.map(c=>c.toUpperCase()).join(', ')}</strong>. Estas redes não suportam indexação automática de transações (limitação do fornecedor), por isso os saldos aparecem no património mas o histórico não é importado automaticamente. Os valores aí são normalmente pequenos. Podes adicionar transações manualmente se necessário.`}
+            : `Saldos detetados em <strong>${_nonIndexableChains.map(c=>c.toUpperCase()).join(', ')}</strong>. Estas redes ainda não têm indexação automática de transações no nosso fornecedor, por isso os saldos aparecem no património mas o histórico não é importado — o que significa que <strong>essas posições podem não estar refletidas no relatório fiscal</strong>. Podes adicionar as transações manualmente até resolvermos a indexação destas redes.`}
         </div>
       </div>
     ` : ''}
@@ -22279,7 +22279,18 @@ function renderFiscalEngineV2(w, fiscalYear) {
 
         ${_buildIntegrityPanel(warnings, undatedCount, lang, w.id)}
 
-        ${(yr && yr.stampDuty && yr.stampDuty.applies) ? `
+        ${(() => {
+          // O Imposto do Selo é uma obrigação MENSAL (DMIS) ligada à DATA de receção, não ao ano
+          // de IRS em vista. Por isso a exposição é mostrada TRANSVERSAL a todos os anos, com
+          // detalhe por ano — senão um airdrop de 2024 ficaria invisível ao ver 2026.
+          const byY = summary.byYear || {};
+          const yrs = Object.keys(byY).filter(y => byY[y].stampDuty && byY[y].stampDuty.applies).sort();
+          if (!yrs.length) return '';
+          const tCount = yrs.reduce((s, y) => s + (byY[y].stampDuty.liableCount || 0), 0);
+          const tLiable = yrs.reduce((s, y) => s + (byY[y].stampDuty.liableEUR || 0), 0);
+          const tDue = yrs.reduce((s, y) => s + (byY[y].stampDuty.dueEUR || 0), 0);
+          const perYear = yrs.map(y => `<strong style="color:var(--text)">${y}</strong>: ${fmt(byY[y].stampDuty.liableCount, 0)}× · €${fmt(byY[y].stampDuty.dueEUR)}`).join(' &nbsp;·&nbsp; ');
+          return `
         <div style="border:1px solid var(--amber);border-radius:14px;background:rgba(251,191,36,0.06);padding:15px 17px;margin-bottom:0.7rem">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
             <span style="font-size:1.05rem">⚠️</span>
@@ -22287,12 +22298,13 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </div>
           <div style="font-size:0.85rem;color:var(--text-muted);line-height:1.55">
             ${t2(
-              `You received <strong style="color:var(--text)">${fmt(yr.stampDuty.liableCount, 0)} gratuitous transfer(s)</strong> above €500 (total <strong style="color:var(--text)">€${fmt(yr.stampDuty.liableEUR)}</strong>). If characterised as gratuitous transmissions (donations), there is <strong style="color:var(--amber)">10% Stamp Duty (~€${fmt(yr.stampDuty.dueEUR)})</strong> to declare on the <strong>DMIS</strong> — separate from IRS, by the 20th of the following month. If instead they are remuneration, they fall under Cat. E (deferred to Cat. G on sale). Confirm the nature with your accountant — Taxesly does not advise.`,
-              `Recebeste <strong style="color:var(--text)">${fmt(yr.stampDuty.liableCount, 0)} transmissão(ões) gratuita(s)</strong> acima de €500 (total <strong style="color:var(--text)">€${fmt(yr.stampDuty.liableEUR)}</strong>). Se forem caracterizadas como transmissões gratuitas (doações), há <strong style="color:var(--amber)">10% de Imposto do Selo (~€${fmt(yr.stampDuty.dueEUR)})</strong> a declarar na <strong>DMIS</strong> — separado do IRS, até ao dia 20 do mês seguinte. Se forem remuneração, vão a Cat. E (diferida p/ Cat. G na venda). Confirma a natureza com o teu contabilista — a Taxesly não aconselha.`
+              `Across all years you received <strong style="color:var(--text)">${fmt(tCount, 0)} gratuitous transfer(s)</strong> above €500 (total <strong style="color:var(--text)">€${fmt(tLiable)}</strong>). If characterised as gratuitous transmissions (donations), there is <strong style="color:var(--amber)">10% Stamp Duty (~€${fmt(tDue)})</strong> to declare on the <strong>DMIS</strong> — a monthly obligation, separate from IRS, by the 20th of the month after each receipt. If instead they are remuneration, they fall under Cat. E (deferred to Cat. G on sale). Confirm the nature with your accountant — Taxesly does not advise.`,
+              `No conjunto dos anos recebeste <strong style="color:var(--text)">${fmt(tCount, 0)} transmissão(ões) gratuita(s)</strong> acima de €500 (total <strong style="color:var(--text)">€${fmt(tLiable)}</strong>). Se forem caracterizadas como transmissões gratuitas (doações), há <strong style="color:var(--amber)">10% de Imposto do Selo (~€${fmt(tDue)})</strong> a declarar na <strong>DMIS</strong> — obrigação mensal, separada do IRS, até ao dia 20 do mês seguinte a cada receção. Se forem remuneração, vão a Cat. E (diferida p/ Cat. G na venda). Confirma a natureza com o teu contabilista — a Taxesly não aconselha.`
             )}
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:0.8rem">${t2('By year', 'Por ano')}: ${perYear}</div>
           </div>
-        </div>
-        ` : ''}
+        </div>`;
+        })()}
 
         <details open class="fz-sec">
           ${_secHead(_ic.declare, 'rgba(59,130,246,0.12)', 'var(--gold)', t2('Where to declare', 'Onde declarar'), t2('By source · Annex J / G / G1', 'Por fonte · Anexo J / G / G1'), `<span style="font-size:0.7rem;font-weight:600;color:var(--gold);background:rgba(59,130,246,0.12);padding:4px 10px;border-radius:7px">Anexo J</span>`)}
