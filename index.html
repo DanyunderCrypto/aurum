@@ -8820,6 +8820,9 @@ const fifoEngine = (() => {
     const STAMP_DUTY_THRESHOLD_EUR = 500;
     const STAMP_DUTY_RATE = 0.10;
     const stampDutyByYear = {};
+    // DIAGNÓSTICO temporário: contar airdrops vistos / com preço / >€500, para perceber porque
+    // o Selo não dispara nos dados reais (spam-filtrados vs sem preço). Remover após confirmar.
+    let _adSeen = 0, _adPriced = 0, _adOver500 = 0, _adSpamSkip = 0;
     const _recStampDuty = (dateStr, eur) => {
       const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
       if (!y || !(eur > 0)) return;
@@ -9196,7 +9199,10 @@ const fifoEngine = (() => {
       // ─── Non-swap events: process each independently ────
       for (const e of txEvents) {
         const klass = classifyEvent(e);
-        if (klass === 'skip') continue;
+        if (klass === 'skip') {
+          try { if (e.direction === 'in' && typeof _isSpamToken === 'function' && _isSpamToken(e)) _adSpamSkip++; } catch (_) {}
+          continue;
+        }
 
         // ── Gas / dust filter ──────────────────────────────
         // Native-asset outflows below a dust threshold are overwhelmingly gas fees or
@@ -9255,6 +9261,7 @@ const fifoEngine = (() => {
           // Imposto do Selo: o valor à receção (que NÃO é base de custo) é registado à parte
           // para avaliar o limiar dos €500 das transmissões gratuitas. Não afeta a base €0.
           _recStampDuty(e.date, eventPriceEURTotal ?? 0);
+          { const _v = eventPriceEURTotal ?? 0; _adSeen++; if (_v > 0) _adPriced++; if (_v > 500) _adOver500++; }
         }
         else if (klass === 'reward') {
           // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
@@ -9428,6 +9435,7 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
+    try { console.warn(`[Selo diag] wallet=${opts && opts.walletId || '?'} · airdrops vistos=${_adSeen} · com preço=${_adPriced} · >€500=${_adOver500} · incoming spam-filtrados=${_adSpamSkip}`); } catch (_) {}
     const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
