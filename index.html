@@ -22229,8 +22229,17 @@ function renderFiscalEngineV2(w, fiscalYear) {
           </div>`;
         })()}
 
-        ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
-        ${_buildSourceSplitPanel(summary, fiscalYear, lang)}
+        <details open style="margin-bottom:1rem">
+          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">📑 ${t2('Where to declare', 'Onde declarar')}</summary>
+          <div style="margin-top:0.6rem">
+            ${_buildSourceSplitPanel(summary, fiscalYear, lang)}
+          </div>
+        </details>
+
+        <details ${(window._fiscalReportType || 'complete') === 'complete' ? '' : 'open'} style="margin-bottom:1rem">
+          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">📊 ${t2('Detail', 'Detalhe')}</summary>
+          <div style="margin-top:0.6rem">
+
         ${_buildManualLiqPanel(w, fiscalYear, events)}
 
         ${_buildFiscalSummaryBar(events, disposals, fiscalYear, lang)}
@@ -22497,6 +22506,16 @@ function renderFiscalEngineV2(w, fiscalYear) {
             </div>
           </div>
         ` : ''}
+
+          </div>
+        </details>
+
+        <details style="margin-bottom:0.5rem">
+          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text);padding:0.5rem 0">⚖️ ${t2('Legal framework', 'Enquadramento legal')}</summary>
+          <div style="margin-top:0.6rem">
+            ${_buildCategoryBPanel(summary.categoryBFlags, fiscalYear, lang)}
+          </div>
+        </details>
 
       </div>
     </div>
