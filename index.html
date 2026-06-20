@@ -8823,6 +8823,7 @@ const fifoEngine = (() => {
     // DIAGNÓSTICO temporário: contar airdrops vistos / com preço / >€500, para perceber porque
     // o Selo não dispara nos dados reais (spam-filtrados vs sem preço). Remover após confirmar.
     let _adSeen = 0, _adPriced = 0, _adOver500 = 0, _adSpamSkip = 0;
+    const _adSpamSamples = [];
     const _recStampDuty = (dateStr, eur) => {
       const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
       if (!y || !(eur > 0)) return;
@@ -9200,7 +9201,15 @@ const fifoEngine = (() => {
       for (const e of txEvents) {
         const klass = classifyEvent(e);
         if (klass === 'skip') {
-          try { if (e.direction === 'in' && typeof _isSpamToken === 'function' && _isSpamToken(e)) _adSpamSkip++; } catch (_) {}
+          try {
+            if (e.direction === 'in' && typeof _isSpamToken === 'function' && _isSpamToken(e)) {
+              _adSpamSkip++;
+              if (_adSpamSamples.length < 14) {
+                const _p = (typeof e.priceEUR === 'number' && e.priceEUR > 0) ? e.priceEUR : ((typeof e.priceUSD === 'number' && e.priceUSD > 0) ? e.priceUSD : null);
+                _adSpamSamples.push(`${e.asset || '?'} qty=${(+e.amount || 0)} preço=${_p === null ? 'NÃO' : _p} ${e.assetContract ? ('c=' + String(e.assetContract).slice(0, 10)) : ''}`);
+              }
+            }
+          } catch (_) {}
           continue;
         }
 
@@ -9435,7 +9444,7 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
-    try { console.warn(`[Selo diag] wallet=${opts && opts.walletId || '?'} · airdrops vistos=${_adSeen} · com preço=${_adPriced} · >€500=${_adOver500} · incoming spam-filtrados=${_adSpamSkip}`); } catch (_) {}
+    try { console.warn(`[Selo diag] wallet=${opts && opts.walletId || '?'} · airdrops vistos=${_adSeen} · com preço=${_adPriced} · >€500=${_adOver500} · incoming spam-filtrados=${_adSpamSkip}`); if (_adSpamSamples.length) console.warn('[Selo diag] amostra spam-filtrado (in):\n  ' + _adSpamSamples.join('\n  ')); } catch (_) {}
     const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
