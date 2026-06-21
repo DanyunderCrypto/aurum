@@ -8521,6 +8521,67 @@ const fifoEngine = (() => {
   const LEGIT_CONTRACTS = new Set([
     'base:0x102d758f688a4c1c5a80b116bd945d4455460282', // USD₮0 (USDT0) on Base — legit
   ]);
+
+  // ── Blocklist de spam servida pelo proxy (D1 com 8M+ contratos GoldRush) ──────
+  // Veredictos pré-carregados por _fetchSpamVerdicts() ANTES de o engine correr.
+  // _isSpamToken consulta este mapa logo a seguir à allowlist (que tem prioridade).
+  // Quando não há veredito (chain não coberta, ou token novo), cai no regex abaixo.
+  // Chave do mapa: "<chainIdNumérico>:<contrato lowercase>".
+  const _spamVerdicts = new Map();   // "1:0x.." -> { score, src }
+  const _spamChecked  = new Set();   // chaves já perguntadas (spam OU limpas) — evita repetir
+  // Nome-de-chain (engine) → chainId numérico (D1). Só as 6 chains da lista GoldRush.
+  const _SPAM_CHAIN_IDS = {
+    eth: 1, ethereum: 1, mainnet: 1,
+    base: 8453,
+    polygon: 137, pol: 137, matic: 137,
+    bsc: 56, bnb: 56, binance: 56,
+    optimism: 10, op: 10,
+    gnosis: 100, xdai: 100,
+  };
+  function _spamChainToId(chain) {
+    return _SPAM_CHAIN_IDS[String(chain || '').toLowerCase()] || null;
+  }
+  // Pergunta ao proxy /spam-check, em lote, quais dos contratos são spam conhecido.
+  // `items` = qualquer array de objetos com .chain (nome) e .assetContract/.contract.
+  // Popula _spamVerdicts. Idempotente, cacheado, e falha em silêncio (regex trata).
+  async function _fetchSpamVerdicts(items) {
+    try {
+      const base = (typeof PROXY_BASE === 'string' && PROXY_BASE) ? PROXY_BASE : '';
+      if (!base || !Array.isArray(items) || !items.length) return;
+      const pending = new Map(); // "cid:addr" -> { chain:cid, addr }
+      for (const it of items) {
+        const cid = _spamChainToId(it && it.chain);
+        const addr = String((it && (it.assetContract || it.contract)) || '').toLowerCase();
+        if (!cid || !/^0x[0-9a-f]{40}$/.test(addr)) continue;
+        const key = cid + ':' + addr;
+        if (_spamChecked.has(key) || pending.has(key)) continue;
+        pending.set(key, { chain: cid, addr });
+      }
+      if (!pending.size) return;
+      const all = Array.from(pending.values());
+      for (let i = 0; i < all.length; i += 500) {
+        const batch = all.slice(i, i + 500);
+        let resp;
+        try {
+          resp = await fetch(base + '/spam-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: batch }),
+          });
+        } catch { return; } // rede em baixo → desiste, o regex trata
+        if (!resp || !resp.ok) continue;
+        let data;
+        try { data = await resp.json(); } catch { continue; }
+        const found = (data && Array.isArray(data.found)) ? data.found : [];
+        for (const f of found) {
+          if (f && f.chain != null && f.addr) {
+            _spamVerdicts.set(f.chain + ':' + String(f.addr).toLowerCase(), { score: f.score, src: f.src });
+          }
+        }
+        for (const b of batch) _spamChecked.add(b.chain + ':' + b.addr); // marca lote como perguntado
+      }
+    } catch { /* nunca parte o load */ }
+  }
   const SPAM_NAME_PATTERNS = [
     /claim/i, /reward.*at/i, /visit/i, /\.(com|net|io|org|xyz|app|site|finance|cash|pro|vip|top|club)\b/i,
     /t\.me\//i, /airdrop.*at/i, /just keep clicking/i, /www\./i, /https?:/i,
@@ -8541,6 +8602,13 @@ const fifoEngine = (() => {
     // Allowlist by contract → never spam
     const contractKey = event.assetContract ? `${event.chain}:${(event.assetContract||'').toLowerCase()}` : null;
     if (contractKey && LEGIT_CONTRACTS.has(contractKey)) return false;
+
+    // Blocklist do proxy (D1, 8M+ contratos GoldRush). A allowlist acima tem
+    // SEMPRE prioridade; aqui só confirmamos spam conhecido. Sem veredito → regex abaixo.
+    if (event.assetContract && _spamVerdicts.size) {
+      const _cid = _spamChainToId(event.chain);
+      if (_cid && _spamVerdicts.has(_cid + ':' + (event.assetContract || '').toLowerCase())) return true;
+    }
 
     // Impostor check: a famous ticker with the WRONG contract is a scam reusing the symbol.
     // (e.g. fake "AAVE" on Base with billions of supply and a contract that isn't the real one.)
@@ -9684,6 +9752,8 @@ const fifoEngine = (() => {
     isLendingMovement: _isLendingMovement,
     isProtocolReceiptToken: _isProtocolReceiptToken,
     isSpamToken: _isSpamToken,
+    fetchSpamVerdicts: _fetchSpamVerdicts,
+    spamVerdicts: _spamVerdicts,
     summaryByYear,
     lotsApproachingExempt,
     STABLECOIN_SYMBOLS,
@@ -21055,6 +21125,14 @@ async function startIndexerForActiveWallet() {
         }
       }
     } catch (e) { /* non-fatal — reconciliation is a safety net, never blocks indexing */ }
+    // Pré-carrega os vereditos de spam do proxy (D1, 8M+ contratos) para os eventos
+    // agora indexados, ANTES do render final. Assim o relatório fiscal, holdings e
+    // History já refletem a blocklist. Idempotente, cacheado, e falha em silêncio.
+    try {
+      if (window.aurumFifoEngine?.fetchSpamVerdicts) {
+        await window.aurumFifoEngine.fetchSpamVerdicts(state.events || []);
+      }
+    } catch (e) { /* enhancement — nunca bloqueia o render */ }
     render();
   }
 }
