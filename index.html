@@ -8528,8 +8528,10 @@ const fifoEngine = (() => {
   // Quando não há veredito (chain não coberta, ou token novo), cai no regex abaixo.
   // Chave do mapa: "<chainIdNumérico>:<contrato lowercase>".
   const _spamVerdicts = new Map();   // "1:0x.." -> { score, src }
+  const _spamRescued  = new Set();   // "1:0x.." que o GoPlus confirmou serem REAIS (override do regex)
   const _spamChecked  = new Set();   // chaves já perguntadas (spam OU limpas) — evita repetir
-  // Nome-de-chain (engine) → chainId numérico (D1). Só as 6 chains da lista GoldRush.
+  // Nome-de-chain (engine) → chainId numérico. As 6 da GoldRush + outras que o GoPlus cobre
+  // (para o GoPlus apanhar/validar tokens em chains sem GoldRush, ex: Arbitrum).
   const _SPAM_CHAIN_IDS = {
     eth: 1, ethereum: 1, mainnet: 1,
     base: 8453,
@@ -8537,25 +8539,33 @@ const fifoEngine = (() => {
     bsc: 56, bnb: 56, binance: 56,
     optimism: 10, op: 10,
     gnosis: 100, xdai: 100,
+    arbitrum: 42161, arb: 42161,
+    avalanche: 43114, avax: 43114,
+    scroll: 534352,
+    linea: 59144,
   };
   function _spamChainToId(chain) {
     return _SPAM_CHAIN_IDS[String(chain || '').toLowerCase()] || null;
   }
-  // Pergunta ao proxy /spam-check, em lote, quais dos contratos são spam conhecido.
-  // `items` = qualquer array de objetos com .chain (nome) e .assetContract/.contract.
-  // Popula _spamVerdicts. Idempotente, cacheado, e falha em silêncio (regex trata).
+  // Pergunta ao proxy /spam-check, em lote, quais dos contratos são spam.
+  // `items` = array de objetos com .chain (nome) e .assetContract/.contract (e .priceEUR).
+  // Envia `valued` (token tem preço → vale a pena o GoPlus verificar, é onde um FP magoa).
+  // Popula _spamVerdicts (spam) e _spamRescued (falsos positivos salvos). Falha em silêncio.
   async function _fetchSpamVerdicts(items) {
     try {
       const base = (typeof PROXY_BASE === 'string' && PROXY_BASE) ? PROXY_BASE : '';
       if (!base || !Array.isArray(items) || !items.length) return;
-      const pending = new Map(); // "cid:addr" -> { chain:cid, addr }
+      const pending = new Map(); // "cid:addr" -> { chain:cid, addr, valued }
       for (const it of items) {
         const cid = _spamChainToId(it && it.chain);
         const addr = String((it && (it.assetContract || it.contract)) || '').toLowerCase();
         if (!cid || !/^0x[0-9a-f]{40}$/.test(addr)) continue;
         const key = cid + ':' + addr;
-        if (_spamChecked.has(key) || pending.has(key)) continue;
-        pending.set(key, { chain: cid, addr });
+        const valued = !!(it && typeof it.priceEUR === 'number' && it.priceEUR > 0);
+        const ex = pending.get(key);
+        if (ex) { if (valued) ex.valued = true; continue; }     // agrega: valued se QUALQUER evento tem preço
+        if (_spamChecked.has(key)) continue;
+        pending.set(key, { chain: cid, addr, valued });
       }
       if (!pending.size) return;
       const all = Array.from(pending.values());
@@ -8576,6 +8586,14 @@ const fifoEngine = (() => {
         for (const f of found) {
           if (f && f.chain != null && f.addr) {
             _spamVerdicts.set(f.chain + ':' + String(f.addr).toLowerCase(), { score: f.score, src: f.src });
+          }
+        }
+        const resc = (data && Array.isArray(data.rescued)) ? data.rescued : [];
+        for (const f of resc) {
+          if (f && f.chain != null && f.addr) {
+            const k = f.chain + ':' + String(f.addr).toLowerCase();
+            _spamRescued.add(k);
+            _spamVerdicts.delete(k); // se foi resgatado, não é spam
           }
         }
         for (const b of batch) _spamChecked.add(b.chain + ':' + b.addr); // marca lote como perguntado
@@ -8603,8 +8621,15 @@ const fifoEngine = (() => {
     const contractKey = event.assetContract ? `${event.chain}:${(event.assetContract||'').toLowerCase()}` : null;
     if (contractKey && LEGIT_CONTRACTS.has(contractKey)) return false;
 
-    // Blocklist do proxy (D1, 8M+ contratos GoldRush). A allowlist acima tem
-    // SEMPRE prioridade; aqui só confirmamos spam conhecido. Sem veredito → regex abaixo.
+    // Resgate do proxy (GoPlus confirmou token REAL): manda sobre o regex e a GoldRush.
+    // Só a allowlist acima tem mais prioridade. Evita esconder posições reais (ex: Pendle PTs).
+    if (event.assetContract && _spamRescued.size) {
+      const _cidR = _spamChainToId(event.chain);
+      if (_cidR && _spamRescued.has(_cidR + ':' + (event.assetContract || '').toLowerCase())) return false;
+    }
+
+    // Blocklist do proxy (D1, 8M+ contratos GoldRush + GoPlus). A allowlist e o resgate acima
+    // têm prioridade; aqui confirmamos spam conhecido. Sem veredito → regex abaixo.
     if (event.assetContract && _spamVerdicts.size) {
       const _cid = _spamChainToId(event.chain);
       if (_cid && _spamVerdicts.has(_cid + ':' + (event.assetContract || '').toLowerCase())) return true;
@@ -9754,6 +9779,7 @@ const fifoEngine = (() => {
     isSpamToken: _isSpamToken,
     fetchSpamVerdicts: _fetchSpamVerdicts,
     spamVerdicts: _spamVerdicts,
+    spamRescued: _spamRescued,
     summaryByYear,
     lotsApproachingExempt,
     STABLECOIN_SYMBOLS,
