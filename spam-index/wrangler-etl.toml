@@ -1,0 +1,7 @@
+name = "spam-index-etl"
+compatibility_date = "2026-05-29"
+
+[[d1_databases]]
+binding = "SPAM_DB"
+database_name = "spam_index"
+database_id = "e712e9ff-eb42-4461-90ed-f49fc2402277"
