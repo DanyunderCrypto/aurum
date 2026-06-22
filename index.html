@@ -6784,6 +6784,21 @@ const ADDRESS_BOOK = {
   '0x3ef3d8ba38ebe18db133cec108f4d14ce00dd9ae': { protocol: 'Merkl', type: 'airdrop_distributor', name: 'Distributor', kind: 'reward', mode: 'active' },   // multichain (mesmo endereço; doc oficial Merkl)
   '0xd152f549545093347a162dce210e7293f1452150': { protocol: 'Disperse', type: 'airdrop_distributor', name: 'Disperse.app', kind: 'multisend', mode: 'passive' }, // multichain (push — pode ser airdrop OU pagamento)
 
+  // ═══════════════════════════════════════════════
+  // LENDING — Mendi Finance (Linea) — fork de Compound; meTokens são receipt tokens.
+  // Receber o ativo destes contratos = LEVANTAMENTO de lending (não airdrop): a base
+  // de custo preserva-se (depósito↔levantamento não é alienação em PT). Endereços do
+  // doc oficial Mendi. (ZeroLend z0* já é apanhado pelos padrões de debt token.)
+  // ═══════════════════════════════════════════════
+  '0x333d8b480bdb25ea7be4dd87eeb359988ce1b30d': { protocol: 'Mendi', type: 'lending', name: 'meUSDC', chain: 'linea' },
+  '0xf669c3c03d9fdf4339e19214a749e52616300e89': { protocol: 'Mendi', type: 'lending', name: 'meUSDT', chain: 'linea' },
+  '0x1f27f81c1d13dd96a3b75d42e3d5d92b709869aa': { protocol: 'Mendi', type: 'lending', name: 'meDAI', chain: 'linea' },
+  '0x9be5e24f05bbafc28da814bd59284878b388a40f': { protocol: 'Mendi', type: 'lending', name: 'meWBTC', chain: 'linea' },
+  '0xceed853798ff1c95ceb4dc48f68394eb7a86a782': { protocol: 'Mendi', type: 'lending', name: 'mewstETH', chain: 'linea' },
+  '0x8a90d208666deec08123444f67bf5b1836074a67': { protocol: 'Mendi', type: 'lending', name: 'meezETH', chain: 'linea' },
+  '0x9b4971ac84054597eded7dc7b4b7e8a0c90753b5': { protocol: 'Mendi', type: 'lending', name: 'meweETH', chain: 'linea' },
+  '0x109f4af9ec6a5ede198f7a4d9d9d7390de29362a': { protocol: 'Mendi', type: 'lending', name: 'mewrsETH', chain: 'linea' },
+
   // SPRINT 5.5+: add hundreds more (PancakeSwap, Sushi, GMX, Aerodrome, Pendle, Yearn, etc.)
   // Tracking issues:
   //   - Pendle PT/YT contracts (LP-like with tax implications)
@@ -8512,7 +8527,7 @@ const fifoEngine = (() => {
   // Depositing collateral to a lending protocol is NOT a fiscal alienation under PT law
   // (you remain the economic owner). Lot acquisition date + basis must be preserved
   // across supply → withdraw. Only the yield (interest) counts as income (Cat. E).
-  const LENDING_PROTOCOLS = /aave|morpho|compound|spark|venus|fluid|euler|moonwell|radiant|seamless|benqi/i;
+  const LENDING_PROTOCOLS = /aave|morpho|compound|spark|venus|fluid|euler|moonwell|radiant|seamless|benqi|mendi|zerolend/i;
 
   // tx types that represent moving assets INTO/OUT OF a protocol without changing ownership
   const LENDING_TX_TYPES = new Set([
@@ -9809,6 +9824,7 @@ const fifoEngine = (() => {
     process,
     compareLiquidationReadings,
     classifyEvent,
+    isReceiptToken: _isProtocolReceiptToken,
     isLendingMovement: _isLendingMovement,
     isProtocolReceiptToken: _isProtocolReceiptToken,
     isSpamToken: _isSpamToken,
@@ -13386,10 +13402,22 @@ window.captureDefiIncome = captureDefiIncome;
 // cacheado PARA SEMPRE por (chain:txHash) — re-indexar não volta a pagar. Cap por passagem
 // para não rebentar com carteiras enormes; a cache faz convergir nas indexações seguintes.
 const _AIRDROP_T2_CAP = 60;
+// Métodos que NÃO são airdrop (withdraw/redeem/borrow/mint/deposit/unwrap/…) — selectors
+// keccak256 verificados. Se a tx chamou um destes, a entrada é uma operação de protocolo
+// (levantamento, empréstimo, mint de receipt), NÃO um claim — mesmo que a tenhas iniciado.
+const _NONCLAIM_SELECTORS = new Set([
+  '0x2e1a7d4d', '0x00f714ce', '0xf3fef3a3', '0xb460af94', // withdraw(...)  (inclui WETH unwrap)
+  '0xdb006a75', '0xba087652', '0x852a12e3',               // redeem / redeemUnderlying
+  '0xc5ebeaec', '0x371fd8e6', '0x0e752702',               // borrow / repay / repayBorrow
+  '0xa0712d68', '0x40c10f19', '0x1249c58b', '0x94bf804d', // mint(...)
+  '0xb6b55f25', '0x6e553f65', '0xd0e30db0', '0x617ba037', // deposit / supply
+  '0xde0e9a3e', '0x205c2878', '0x2e17de78', '0xe9fad8ee', '0x3d18b912', // unwrap/withdrawTo/unstake/exit/getReward
+]);
 async function _detectAirdropClaims() {
   if (!Array.isArray(state.events) || !state.events.length) return { detected: 0, fetched: 0, pending: 0 };
   if (!state.airdropTxCache || typeof state.airdropTxCache !== 'object') state.airdropTxCache = {};
   const cache = state.airdropTxCache;
+  const isReceipt = window.aurumFifoEngine?.isReceiptToken || (() => false);
 
   // Agrupar por (carteira|chain|txHash) para detetar se há perna de SAÍDA (pagou algo).
   const txGroups = new Map();
@@ -13399,55 +13427,67 @@ async function _detectAirdropClaims() {
     let g = txGroups.get(k);
     if (!g) { g = { ins: [], hasOut: false }; txGroups.set(k, g); }
     if (e.direction === 'in') g.ins.push(e);
-    else if (e.direction === 'out') g.hasOut = true; // erc20 OU ETH externo enviado
+    else if (e.direction === 'out') g.hasOut = true;
   }
 
-  // Candidatos: entrada ERC-20 'receive' genérica, sem saída, não-airdrop, sem override manual.
+  // Candidatos: entrada ERC-20 'receive' genérica, sem saída, não-airdrop, NÃO receipt token.
   const candidates = [];
   for (const g of txGroups.values()) {
-    if (g.hasOut) continue;                         // pagou algo → não é claim gratuito
+    if (g.hasOut) continue;                          // pagou algo → não é claim gratuito
     for (const e of g.ins) {
-      if (e.type !== 'receive') continue;           // já classificado (swap/lending/airdrop/…)
+      if (e.type !== 'receive') continue;            // já classificado (swap/lending/airdrop/…)
       if (e.category !== 'erc20') continue;          // airdrops são tokens (não ETH nativo)
       if (e._airdropSource) continue;                // já apanhado pelo Tier 1
       if (e.userOverride?.txType) continue;          // respeita reclassificação manual
+      if (isReceipt(e.asset)) continue;              // debt/receipt token (borrow/lending) → não é airdrop
       candidates.push(e);
     }
   }
   if (!candidates.length) return { detected: 0, fetched: 0, pending: 0 };
 
-  // Resolver iniciadores em falta (com cap; a cache é persistente, inclui negativos).
-  const need = [...new Set(candidates
-    .filter(e => !((e.chain + ':' + e.txHash) in cache))
-    .map(e => e.chain + ':' + e.txHash))];
+  // Buscar tx em falta. Guarda "init|sel" (iniciador + selector do método). Re-busca também
+  // entradas de formato ANTIGO (só init) MAS só onde iniciaste — são os candidatos a airdrop
+  // que precisam de validação por método; os negativos antigos ficam (não são airdrop na mesma).
+  const wlc = e => (e.walletAddress || '').toLowerCase();
+  const need = [...new Set(candidates.filter(e => {
+    const v = cache[e.chain + ':' + e.txHash];
+    if (typeof v !== 'string') return true;          // nunca verificado
+    if (v.indexOf('|') >= 0) return false;           // já tem método
+    return v && v === wlc(e);                         // formato antigo + iniciaste → re-valida método
+  }).map(e => e.chain + ':' + e.txHash))];
   let fetched = 0, pending = 0;
   for (const id of need) {
     if (fetched >= _AIRDROP_T2_CAP) { pending = need.length - fetched; break; }
     const sep = id.indexOf(':');
     const chain = id.slice(0, sep), txHash = id.slice(sep + 1);
-    let initiator = '';
+    let init = '', sel = '';
     try {
       const tx = await _alchemyRpc(chain, 'eth_getTransactionByHash', [txHash], resolveAlchemyKey({}));
-      if (tx && tx.from) initiator = String(tx.from).toLowerCase();
+      if (tx && tx.from) init = String(tx.from).toLowerCase();
+      if (tx && typeof tx.input === 'string' && tx.input.length >= 10) sel = tx.input.slice(0, 10).toLowerCase();
     } catch (_) {}
-    cache[id] = initiator; // '' = verificado mas desconhecido → não re-tenta
+    cache[id] = init + '|' + sel;
     fetched++;
   }
 
-  // Aplicar veredito: iniciador == a própria carteira → claim ATIVO de airdrop.
+  // Veredito: claim ATIVO sse a carteira iniciou E o método NÃO é de protocolo.
   let detected = 0;
   for (const e of candidates) {
-    const initiator = cache[e.chain + ':' + e.txHash];
-    if (initiator && initiator === e.walletAddress.toLowerCase()) {
-      e.type = 'airdrop';
-      e.txType = 'airdrop';
-      e._airdropSource = 'Claim';
-      e._airdropKind = 'airdrop';
-      e._airdropMode = 'active';
-      e._airdropTier = 2;
-      e._rescuedAirdrop = true;
-      detected++;
-    }
+    const raw = cache[e.chain + ':' + e.txHash];
+    if (typeof raw !== 'string' || !raw) continue;
+    const bar = raw.indexOf('|');
+    const init = bar >= 0 ? raw.slice(0, bar) : raw;
+    const sel  = bar >= 0 ? raw.slice(bar + 1) : '';
+    if (!init || init !== wlc(e)) continue;                 // não iniciaste → passivo (não é claim)
+    if (sel && _NONCLAIM_SELECTORS.has(sel)) continue;      // método = withdraw/borrow/… → não é airdrop
+    e.type = 'airdrop';
+    e.txType = 'airdrop';
+    e._airdropSource = 'Claim';
+    e._airdropKind = 'airdrop';
+    e._airdropMode = 'active';
+    e._airdropTier = 2;
+    e._rescuedAirdrop = true;
+    detected++;
   }
   return { detected, fetched, pending };
 }
