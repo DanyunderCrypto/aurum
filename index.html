@@ -13401,17 +13401,23 @@ window.captureDefiIncome = captureDefiIncome;
 // getAssetTransfers, por isso buscamos 1 RPC (eth_getTransactionByHash) por tx candidata,
 // cacheado PARA SEMPRE por (chain:txHash) — re-indexar não volta a pagar. Cap por passagem
 // para não rebentar com carteiras enormes; a cache faz convergir nas indexações seguintes.
-const _AIRDROP_T2_CAP = 60;
-// Métodos que NÃO são airdrop (withdraw/redeem/borrow/mint/deposit/unwrap/…) — selectors
-// keccak256 verificados. Se a tx chamou um destes, a entrada é uma operação de protocolo
-// (levantamento, empréstimo, mint de receipt), NÃO um claim — mesmo que a tenhas iniciado.
-const _NONCLAIM_SELECTORS = new Set([
-  '0x2e1a7d4d', '0x00f714ce', '0xf3fef3a3', '0xb460af94', // withdraw(...)  (inclui WETH unwrap)
-  '0xdb006a75', '0xba087652', '0x852a12e3',               // redeem / redeemUnderlying
-  '0xc5ebeaec', '0x371fd8e6', '0x0e752702',               // borrow / repay / repayBorrow
-  '0xa0712d68', '0x40c10f19', '0x1249c58b', '0x94bf804d', // mint(...)
-  '0xb6b55f25', '0x6e553f65', '0xd0e30db0', '0x617ba037', // deposit / supply
-  '0xde0e9a3e', '0x205c2878', '0x2e17de78', '0xe9fad8ee', '0x3d18b912', // unwrap/withdrawTo/unstake/exit/getReward
+const _AIRDROP_T2_CAP = 80;
+// Allowlist de métodos CLAIM (selectors keccak256 verificados). PRECISÃO PRIMEIRO: uma entrada
+// que iniciaste só é marcada se o método for um destes. Métodos desconhecidos (locks, mints
+// custom, deposit, addLiquidity, getReward não-standard…) NÃO são marcados — evita os falsos
+// positivos de operações DeFi. Mapeia selector → kind: 'airdrop' (distribuição) ou 'reward'.
+const _CLAIM_SELECTORS = new Map([
+  // distribuição de tokens → airdrop
+  ['0x4e71d92d','airdrop'],['0x379607f5','airdrop'],['0x1e83409a','airdrop'],['0xddd5e1b2','airdrop'],
+  ['0xaad3ec96','airdrop'],['0xc3490263','airdrop'],['0xb391c508','airdrop'],['0x2f52ebb7','airdrop'],
+  ['0xae0b51df','airdrop'],['0x2e7ba6ef','airdrop'],['0x3d13f874','airdrop'],['0xf72d82cf','airdrop'],
+  ['0x172bd6de','airdrop'],['0xb73be3a5','airdrop'],['0x48c54b9d','airdrop'],['0x46e04a2f','airdrop'],
+  ['0xdf8de3e7','airdrop'],['0x9a114cb2','airdrop'],['0x5b88349d','airdrop'],['0xe30d4440','airdrop'],
+  ['0x0bcae1ac','airdrop'],['0x5a95ba34','airdrop'],['0xd1058e59','airdrop'],['0x77329f35','airdrop'],
+  ['0x925489a8','airdrop'],['0x22c8018f','airdrop'],['0x315a095d','airdrop'],['0xd01c44cd','airdrop'],
+  ['0x86d1a69f','airdrop'],['0x19165587','airdrop'],
+  // incentivos / yield → reward (income; rótulo distinto, mesmo tratamento fiscal por agora)
+  ['0xb88a802f','reward'],['0xd279c191','reward'],['0x372500ab','reward'],['0xef5cfb8c','reward'],['0xf9f031df','reward'],
 ]);
 async function _detectAirdropClaims() {
   if (!Array.isArray(state.events) || !state.events.length) return { detected: 0, fetched: 0, pending: 0 };
@@ -13470,7 +13476,7 @@ async function _detectAirdropClaims() {
     fetched++;
   }
 
-  // Veredito: claim ATIVO sse a carteira iniciou E o método NÃO é de protocolo.
+  // Veredito: claim ATIVO sse a carteira iniciou E o método é um claim reconhecido (allowlist).
   let detected = 0;
   for (const e of candidates) {
     const raw = cache[e.chain + ':' + e.txHash];
@@ -13478,12 +13484,13 @@ async function _detectAirdropClaims() {
     const bar = raw.indexOf('|');
     const init = bar >= 0 ? raw.slice(0, bar) : raw;
     const sel  = bar >= 0 ? raw.slice(bar + 1) : '';
-    if (!init || init !== wlc(e)) continue;                 // não iniciaste → passivo (não é claim)
-    if (sel && _NONCLAIM_SELECTORS.has(sel)) continue;      // método = withdraw/borrow/… → não é airdrop
-    e.type = 'airdrop';
-    e.txType = 'airdrop';
-    e._airdropSource = 'Claim';
-    e._airdropKind = 'airdrop';
+    if (!init || init !== wlc(e)) continue;        // não iniciaste → passivo (não é claim)
+    const kind = sel ? _CLAIM_SELECTORS.get(sel) : null;
+    if (!kind) continue;                            // método não é um claim reconhecido → não marca (precisão)
+    e.type = kind;                                  // 'airdrop' ou 'reward' (display)
+    e.txType = 'airdrop';                           // fiscal: custo-zero diferido (igual p/ ambos por agora)
+    e._airdropSource = kind === 'reward' ? 'Reward claim' : 'Claim';
+    e._airdropKind = kind;
     e._airdropMode = 'active';
     e._airdropTier = 2;
     e._rescuedAirdrop = true;
