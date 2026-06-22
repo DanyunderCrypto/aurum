@@ -6771,6 +6771,19 @@ const ADDRESS_BOOK = {
   // ═══════════════════════════════════════════════
   '0xd9db270c1b5e3bd161e8c8503c55ceabee709552': { protocol: 'Safe', type: 'wallet', name: 'Singleton 1.3.0', chain: 'eth' },
 
+  // ═══════════════════════════════════════════════
+  // AIRDROP / CLAIM DISTRIBUTORS
+  // Uma transferência de ENTRADA a partir destes contratos = um claim/airdrop de tokens.
+  // O enrichEvent marca estes como txType:'airdrop' (custo-zero diferido, igual ao default
+  // seguro de hoje) e anota a fonte + kind + mode, para o relatório e a lógica do Selo.
+  //   kind:  'airdrop' (distribuição/claim de tokens)  ·  'reward' (incentivos/yield)  ·  'multisend' (envio em lote)
+  //   mode:  'active'  (chamaste claim, pagaste gás)    ·  'passive' (empurrado para ti)
+  // Endereços verificados no Etherscan/docs oficiais (jun-2026). Tier 2 (recibo) apanha os bespoke.
+  // ═══════════════════════════════════════════════
+  '0x8a2725a6f04816a5274ddd9feadd3bd0c253c1a6': { protocol: 'Hedgey', type: 'airdrop_distributor', name: 'Token Claims', kind: 'airdrop', mode: 'active', chain: 'eth' }, // confirmado pela tx RE do utilizador
+  '0x3ef3d8ba38ebe18db133cec108f4d14ce00dd9ae': { protocol: 'Merkl', type: 'airdrop_distributor', name: 'Distributor', kind: 'reward', mode: 'active' },   // multichain (mesmo endereço; doc oficial Merkl)
+  '0xd152f549545093347a162dce210e7293f1452150': { protocol: 'Disperse', type: 'airdrop_distributor', name: 'Disperse.app', kind: 'multisend', mode: 'passive' }, // multichain (push — pode ser airdrop OU pagamento)
+
   // SPRINT 5.5+: add hundreds more (PancakeSwap, Sushi, GMX, Aerodrome, Pendle, Yearn, etc.)
   // Tracking issues:
   //   - Pendle PT/YT contracts (LP-like with tax implications)
@@ -6821,6 +6834,23 @@ function enrichEvent(event) {
 
   // Derive action from direction + protocolType
   event.action = deriveAction(event, info);
+
+  // ── Airdrop / claim distributor detection (Tier 1) ──
+  // Uma ENTRADA vinda de um distribuidor conhecido é um claim/airdrop. Preservamos o
+  // tratamento custo-zero diferido (txType:'airdrop' → o motor já faz airdrop_acquisition)
+  // e anotamos fonte/kind/mode para o relatório e o Selo. NÃO sobrepõe reclassificação do
+  // utilizador (o classifier dá prioridade a event.userOverride.txType).
+  if (info.type === 'airdrop_distributor' && event.direction === 'in') {
+    event.txType = 'airdrop';
+    event._airdropSource = info.name || info.protocol;
+    event._airdropKind = info.kind || 'airdrop';   // airdrop | reward | multisend
+    event._airdropMode = info.mode || 'active';     // active (claimed) | passive (pushed)
+    // Claims ativos (chamaste claim() num distribuidor real) são receções genuínas, não
+    // spam de homóglifos — entram no FIFO mesmo que o token esteja numa lista de spam.
+    // Multisends passivos (Disperse push) podem ser spam dust — aí deixamos o detetor decidir.
+    if (event._airdropMode === 'active') event._rescuedAirdrop = true;
+  }
+
   return event;
 }
 
@@ -6841,6 +6871,9 @@ function deriveAction(event, protocolInfo) {
   }
   if (t === 'bridge') {
     return 'bridge';
+  }
+  if (t === 'airdrop_distributor') {
+    if (dir === 'in') return 'airdrop_claim';
   }
   if (t === 'cex') {
     if (dir === 'out') return 'deposit_to_cex';
