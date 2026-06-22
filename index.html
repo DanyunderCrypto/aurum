@@ -13376,6 +13376,83 @@ async function captureDefiIncome(w, key) {
 }
 window.captureDefiIncome = captureDefiIncome;
 
+// ── Tier 2: deteção de claims de airdrop por iniciador da tx ──
+// Para entradas genéricas ('receive') que o registo de distribuidores (Tier 1) NÃO apanhou,
+// confirmamos o padrão de CLAIM ativo: o utilizador INICIOU a tx (tx.from == a sua carteira),
+// recebeu um token ERC-20, e NÃO pagou nada em troca (sem perna de saída). Isto apanha os
+// airdrops com contrato PRÓPRIO (bespoke) — como o MerkleDistributor original do UNI, que um
+// registo de endereços nunca cobriria. O sinal decisivo (quem iniciou a tx) não vem do
+// getAssetTransfers, por isso buscamos 1 RPC (eth_getTransactionByHash) por tx candidata,
+// cacheado PARA SEMPRE por (chain:txHash) — re-indexar não volta a pagar. Cap por passagem
+// para não rebentar com carteiras enormes; a cache faz convergir nas indexações seguintes.
+const _AIRDROP_T2_CAP = 60;
+async function _detectAirdropClaims() {
+  if (!Array.isArray(state.events) || !state.events.length) return { detected: 0, fetched: 0, pending: 0 };
+  if (!state.airdropTxCache || typeof state.airdropTxCache !== 'object') state.airdropTxCache = {};
+  const cache = state.airdropTxCache;
+
+  // Agrupar por (carteira|chain|txHash) para detetar se há perna de SAÍDA (pagou algo).
+  const txGroups = new Map();
+  for (const e of state.events) {
+    if (!e || !e.txHash || !e.walletAddress || !e.chain || e.chain === 'bitcoin') continue;
+    const k = e.walletAddress + '|' + e.chain + '|' + e.txHash;
+    let g = txGroups.get(k);
+    if (!g) { g = { ins: [], hasOut: false }; txGroups.set(k, g); }
+    if (e.direction === 'in') g.ins.push(e);
+    else if (e.direction === 'out') g.hasOut = true; // erc20 OU ETH externo enviado
+  }
+
+  // Candidatos: entrada ERC-20 'receive' genérica, sem saída, não-airdrop, sem override manual.
+  const candidates = [];
+  for (const g of txGroups.values()) {
+    if (g.hasOut) continue;                         // pagou algo → não é claim gratuito
+    for (const e of g.ins) {
+      if (e.type !== 'receive') continue;           // já classificado (swap/lending/airdrop/…)
+      if (e.category !== 'erc20') continue;          // airdrops são tokens (não ETH nativo)
+      if (e._airdropSource) continue;                // já apanhado pelo Tier 1
+      if (e.userOverride?.txType) continue;          // respeita reclassificação manual
+      candidates.push(e);
+    }
+  }
+  if (!candidates.length) return { detected: 0, fetched: 0, pending: 0 };
+
+  // Resolver iniciadores em falta (com cap; a cache é persistente, inclui negativos).
+  const need = [...new Set(candidates
+    .filter(e => !((e.chain + ':' + e.txHash) in cache))
+    .map(e => e.chain + ':' + e.txHash))];
+  let fetched = 0, pending = 0;
+  for (const id of need) {
+    if (fetched >= _AIRDROP_T2_CAP) { pending = need.length - fetched; break; }
+    const sep = id.indexOf(':');
+    const chain = id.slice(0, sep), txHash = id.slice(sep + 1);
+    let initiator = '';
+    try {
+      const tx = await _alchemyRpc(chain, 'eth_getTransactionByHash', [txHash], resolveAlchemyKey({}));
+      if (tx && tx.from) initiator = String(tx.from).toLowerCase();
+    } catch (_) {}
+    cache[id] = initiator; // '' = verificado mas desconhecido → não re-tenta
+    fetched++;
+  }
+
+  // Aplicar veredito: iniciador == a própria carteira → claim ATIVO de airdrop.
+  let detected = 0;
+  for (const e of candidates) {
+    const initiator = cache[e.chain + ':' + e.txHash];
+    if (initiator && initiator === e.walletAddress.toLowerCase()) {
+      e.type = 'airdrop';
+      e.txType = 'airdrop';
+      e._airdropSource = 'Claim';
+      e._airdropKind = 'airdrop';
+      e._airdropMode = 'active';
+      e._airdropTier = 2;
+      e._rescuedAirdrop = true;
+      detected++;
+    }
+  }
+  return { detected, fetched, pending };
+}
+window._detectAirdropClaims = _detectAirdropClaims;
+
 // ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
 // Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
 // resistant to the fake-liquidity manipulation that plagues DEX-derived prices (USOR, POOL…).
@@ -21200,6 +21277,15 @@ async function startIndexerForActiveWallet() {
     try {
       if (window.aurumFifoEngine?.fetchSpamVerdicts) {
         await window.aurumFifoEngine.fetchSpamVerdicts(state.events || []);
+      }
+    } catch (e) { /* enhancement — nunca bloqueia o render */ }
+    // Tier 2 airdrop: confirma claims ativos (tx iniciada pela carteira) para entradas que o
+    // registo de distribuidores não cobriu. 1 RPC/tx, cacheado. Persiste se algo mudou.
+    try {
+      if (typeof _detectAirdropClaims === 'function') {
+        const r = await _detectAirdropClaims();
+        if (r && (r.detected > 0 || r.fetched > 0)) { try { await saveState(); } catch (_) {} }
+        if (r && r.pending > 0) errorLogger?.info?.(`Tier 2 airdrop: ${r.detected} detetado(s), ${r.pending} por verificar (reindexa para continuar).`);
       }
     } catch (e) { /* enhancement — nunca bloqueia o render */ }
     render();
