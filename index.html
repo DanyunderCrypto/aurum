@@ -6845,11 +6845,8 @@ function enrichEvent(event) {
     event._airdropSource = info.name || info.protocol;
     event._airdropKind = info.kind || 'airdrop';   // airdrop | reward | multisend
     event._airdropMode = info.mode || 'active';     // active (claimed) | passive (pushed)
-    // Rótulo de DISPLAY por kind (o txType fiscal fica sempre 'airdrop' = custo-zero diferido).
-    // event.type é só apresentação no motor, por isso é seguro diferenciá-lo aqui.
-    event.type = event._airdropKind === 'reward' ? 'reward'
-               : event._airdropKind === 'multisend' ? 'multisend'
-               : 'airdrop';
+    // O rótulo de DISPLAY (event.type) é definido pelo _classify (dono do type), que lê
+    // estes campos. Aqui ficamos só com a metadata + o txType fiscal (custo-zero diferido).
     // Claims ativos (chamaste claim() num distribuidor real) são receções genuínas, não
     // spam de homóglifos — entram no FIFO mesmo que o token esteja numa lista de spam.
     // Multisends passivos (Disperse push) podem ser spam dust — aí deixamos o detetor decidir.
@@ -11237,6 +11234,14 @@ const universalIndexer = (() => {
       txType = outs.length > 0 ? 'wrap' : 'unwrap';
     } else if (protocolTypes.includes('card')) {
       txType = 'card_funding';
+    } else if (protocolTypes.includes('airdrop_distributor') && ins.length > 0) {
+      // Distribuidor de airdrop/claim: usa o kind anotado pelo enrichEvent (airdrop|reward|
+      // |multisend) como rótulo de display. O txType FISCAL fica 'airdrop' (custo-zero), posto
+      // pelo enrichEvent e não tocado aqui — isto define só o e.type de apresentação.
+      const inEv = ins.find(e => e._airdropKind) || ins[0];
+      txType = inEv._airdropKind === 'reward' ? 'reward'
+             : inEv._airdropKind === 'multisend' ? 'multisend'
+             : 'airdrop';
     } else if (ins.length > 0 && outs.length > 0) {
       txType = 'swap';  // generic heuristic for unknown contracts
     } else if (ins.length > 0) {
