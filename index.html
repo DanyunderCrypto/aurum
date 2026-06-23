@@ -8166,6 +8166,58 @@ const priceCache = (() => {
 // ─────────────────────────────────────────────────
 const priceOracle = (() => {
 
+  // ── GeckoTerminal / CoinGecko on-chain — 3º degrau: preço para tokens FORA do DefiLlama ──
+  // Acha a pool mais líquida do token (cacheada) e lê o close diário (OHLCV) na data. Via a rota
+  // /gecko/ do worker (CoinGecko on-chain = dados GeckoTerminal). Gate de liquidez contra spam.
+  const _GT_NET = {
+    eth:'eth', ethereum:'eth', mainnet:'eth', base:'base', arbitrum:'arbitrum', arb:'arbitrum',
+    optimism:'optimism', op:'optimism', polygon:'polygon_pos', matic:'polygon_pos', pol:'polygon_pos',
+    bsc:'bsc', bnb:'bsc', avalanche:'avax', avax:'avax', gnosis:'xdai', scroll:'scroll', linea:'linea',
+    blast:'blast', zksync:'zksync', berachain:'berachain', soneium:'soneium', celo:'celo', mantle:'mantle',
+    zora:'zora', mode:'mode', unichain:'unichain', ink:'ink', sonic:'sonic', apechain:'apechain',
+    ronin:'ronin', abstract:'abstract', lens:'lens', rootstock:'rootstock',
+  };
+  const geckoTerminalAdapter = (() => {
+    const GT_MIN_LIQ_USD = 3000; // gate de liquidez — não confiar em pools rasas (preço de lixo)
+    async function _gt(path) {
+      try {
+        const r = await fetch(`${PROXY_BASE}/gecko/networks/${path}`, { headers: { 'Accept': 'application/json' } });
+        if (!r || !r.ok) return null;
+        return await r.json();
+      } catch (_) { return null; }
+    }
+    async function _topPool(net, contract) {
+      if (!state.gtPoolCache || typeof state.gtPoolCache !== 'object') state.gtPoolCache = {};
+      const key = net + ':' + contract;
+      if (key in state.gtPoolCache) return state.gtPoolCache[key] || null;  // inclui '' = sem pool
+      const j = await _gt(`${net}/tokens/${contract}/pools`);
+      let pool = '', bestLiq = 0;
+      const arr = (j && Array.isArray(j.data)) ? j.data : [];
+      for (const p of arr) {
+        const liq = parseFloat(p?.attributes?.reserve_in_usd || '0') || 0;
+        if (liq > bestLiq && p?.attributes?.address) { bestLiq = liq; pool = p.attributes.address; }
+      }
+      if (bestLiq < GT_MIN_LIQ_USD) pool = '';
+      state.gtPoolCache[key] = pool;
+      return pool || null;
+    }
+    async function getHistoricalPriceUSD(chain, contract, timestamp) {
+      const net = _GT_NET[chain];
+      if (!net || !contract || !contract.startsWith('0x')) return null;
+      const c = contract.toLowerCase();
+      const pool = await _topPool(net, c);
+      if (!pool) return null;
+      const j = await _gt(`${net}/pools/${pool}/ohlcv/day?before_timestamp=${timestamp}&limit=1&currency=usd`);
+      const list = j?.data?.attributes?.ohlcv_list;
+      if (Array.isArray(list) && list.length && Array.isArray(list[0])) {
+        const close = parseFloat(list[0][4]); // [ts, open, high, low, close, volume]
+        if (close > 0 && isFinite(close)) return close;
+      }
+      return null;
+    }
+    return { getHistoricalPriceUSD };
+  })();
+
   // Get USD price (1 token = X USD) at given date
   async function getPriceUSD(asset, chain, contract, dateStr, timestamp) {
     // Resolve o coinId primeiro — usado como chave do cache (inclui o contract,
@@ -8181,11 +8233,17 @@ const priceOracle = (() => {
 
     // 3. Fetch from DefiLlama
     const r = await defiLlamaAdapter.getHistoricalPrice(coinId, timestamp);
-    if (!r || typeof r.price !== 'number') return null;
+    let priceUSD = (r && typeof r.price === 'number') ? r.price : null;
+
+    // 3b. Fallback GeckoTerminal (on-chain DEX) para tokens fora do DefiLlama (long-tail).
+    if (priceUSD === null && contract && contract.startsWith('0x')) {
+      priceUSD = await geckoTerminalAdapter.getHistoricalPriceUSD(chain, contract, timestamp);
+    }
+    if (priceUSD === null) return null;
 
     // 4. Persist to cache (mesma chave por coinId)
-    await priceCache.setPriceUSD(asset, chain, dateStr, r.price, coinId);
-    return r.price;
+    await priceCache.setPriceUSD(asset, chain, dateStr, priceUSD, coinId);
+    return priceUSD;
   }
 
   // Get USD→EUR rate at given date
