@@ -15212,7 +15212,39 @@ function renderDashboardFiscalHero(w) {
   const gainColor = yr.anexoG.gain > 0 ? 'sv-amber' : yr.anexoG.gain < 0 ? 'sv-red' : '';
   const taxColor = yr.taxEstimateEUR > 0 ? 'sv-red' : 'sv-green';
 
-  return `
+  // ── Rendimentos por categoria, por ano (FMV à receção) — resumo para o TOC ──
+  const _byY = (fifoState.summary && fifoState.summary.byYear) || {};
+  const _td = 'padding:0.4rem 0.6rem;font-variant-numeric:tabular-nums';
+  const _muted = 'color:var(--text-muted);font-size:0.85em';
+  const _incRows = Object.keys(_byY).sort().map(yk => {
+    const ic = _byY[yk].incomeByCategory || {};
+    const a = ic.airdrop || { eur:0, count:0, eurMissing:0 };
+    const r = ic.reward  || { eur:0, count:0, eurMissing:0 };
+    if (!a.count && !r.count) return '';
+    const miss = (a.eurMissing||0) + (r.eurMissing||0);
+    return `<tr style="border-top:1px solid var(--card-glass-border)">
+      <td style="${_td};font-family:var(--mono)">${yk}</td>
+      <td style="${_td};text-align:right">€${fmt(a.eur)} <span style="${_muted}">(${a.count})</span></td>
+      <td style="${_td};text-align:right">€${fmt(r.eur)} <span style="${_muted}">(${r.count})</span></td>
+      <td style="${_td};text-align:right">${miss ? `<span class="sv-amber">${miss}</span>` : '<span style="'+_muted+'">—</span>'}</td>
+    </tr>`;
+  }).filter(Boolean).join('');
+  const incomeTableHtml = _incRows ? `
+    <div style="margin-bottom:1.5rem;padding:1rem;background:var(--card-glass);border:1px solid var(--card-glass-border);border-radius:var(--radius);backdrop-filter:blur(8px)">
+      <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:0.6rem">Rendimentos por categoria · FMV à receção</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr style="color:var(--text-muted);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em">
+          <th style="${_td};text-align:left">Ano</th>
+          <th style="${_td};text-align:right">Airdrops</th>
+          <th style="${_td};text-align:right">Rewards / Yield</th>
+          <th style="${_td};text-align:right">Sem preço</th>
+        </tr></thead>
+        <tbody>${_incRows}</tbody>
+      </table>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.6rem;line-height:1.4">Regime diferido (Art. 10.º n.º 20): informativo — tributa na alienação como G/G1. "Sem preço" = à espera de preço histórico (carrega os preços para preencher). Rewards não contam para o Imposto do Selo.</div>
+    </div>` : '';
+
+  return `${incomeTableHtml}
     <div class="fiscal-hero" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;margin-bottom:1.5rem;padding:1rem;background:var(--card-glass);border:1px solid var(--card-glass-border);border-radius:var(--radius);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:var(--card-glass-shadow, none)">
 
       <div style="display:flex;flex-direction:column;gap:0.3rem">
