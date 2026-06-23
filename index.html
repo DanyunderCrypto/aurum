@@ -9421,9 +9421,12 @@ const fifoEngine = (() => {
           // full proceeds when sold to fiat. Open a lot at basis €0. Do NOT record Cat. E.
           // (We deliberately ignore the market value at receipt as cost basis — it stays €0.)
           _openLot(e, e.amount, 0, 'airdrop');
-          // Imposto do Selo: o valor à receção (que NÃO é base de custo) é registado à parte
-          // para avaliar o limiar dos €500 das transmissões gratuitas. Não afeta a base €0.
-          _recStampDuty(e.date, eventPriceEURTotal ?? 0);
+          // Imposto do Selo: SÓ para airdrops GRATUITOS (transmissão sem contrapartida). Rewards
+          // /yield ganhos (kind 'reward') são lote custo-zero diferido na mesma, mas NÃO são
+          // transmissão gratuita → não contam para o limiar dos €500 do Selo.
+          if (e._airdropKind !== 'reward') {
+            _recStampDuty(e.date, eventPriceEURTotal ?? 0);
+          }
         }
         else if (klass === 'reward') {
           // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
