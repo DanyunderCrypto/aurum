@@ -13504,6 +13504,7 @@ async function _detectAirdropClaims() {
       if (e._airdropSource) continue;                // já apanhado pelo Tier 1
       if (e.userOverride?.txType) continue;          // respeita reclassificação manual
       if (isReceipt(e.asset)) continue;              // debt/receipt token (borrow/lending) → não é airdrop
+      if (/^0x0+$/.test((e.counterparty?.address || '').toLowerCase())) continue; // mint do 0x0 (pontos/loyalty/debt) — merkle airdrops transferem, não mintam
       candidates.push(e);
     }
   }
