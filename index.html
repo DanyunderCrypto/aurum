@@ -13401,7 +13401,7 @@ window.captureDefiIncome = captureDefiIncome;
 // getAssetTransfers, por isso buscamos 1 RPC (eth_getTransactionByHash) por tx candidata,
 // cacheado PARA SEMPRE por (chain:txHash) — re-indexar não volta a pagar. Cap por passagem
 // para não rebentar com carteiras enormes; a cache faz convergir nas indexações seguintes.
-const _AIRDROP_T2_CAP = 100;
+const _AIRDROP_T2_CAP = 300;
 // Sinal UNIVERSAL de claim: o evento emitido. Todo o merkle distributor (Uniswap/OZ e os
 // milhares de forks) emite um evento Claimed/Claim no recibo da tx. É muito mais robusto que
 // o selector do método (que cada projeto personaliza). Tópicos keccak256 verificados.
@@ -13542,6 +13542,43 @@ async function _detectAirdropClaims() {
   return { detected, fetched, pending };
 }
 window._detectAirdropClaims = _detectAirdropClaims;
+
+// Backfill de datas: algumas chains (Scroll, zkSync, Berachain, Linea, Blast…) devolvem
+// transfers SEM metadata.blockTimestamp, deixando eventos sem data — e sem data não há preço
+// histórico. Resolvemos via eth_getBlockByNumber (1 RPC por BLOCO, cacheado; muitos eventos
+// partilham bloco) em paralelo (chunks) para convergir depressa.
+const _BACKFILL_TS_CAP = 600;
+async function _backfillTimestamps() {
+  if (!Array.isArray(state.events) || !state.events.length) return { filled: 0, fetched: 0, pending: 0 };
+  if (!state.blockTsCache || typeof state.blockTsCache !== 'object') state.blockTsCache = {};
+  const cache = state.blockTsCache;
+  const dateless = state.events.filter(e => e && !e.timestamp && e.blockNumber && e.chain && e.chain !== 'bitcoin');
+  if (!dateless.length) return { filled: 0, fetched: 0, pending: 0 };
+  let need = [...new Set(dateless
+    .filter(e => !((e.chain + ':' + e.blockNumber) in cache))
+    .map(e => e.chain + ':' + e.blockNumber))];
+  const pending = Math.max(0, need.length - _BACKFILL_TS_CAP);
+  need = need.slice(0, _BACKFILL_TS_CAP);
+  let fetched = 0;
+  for (let i = 0; i < need.length; i += 8) {
+    await Promise.all(need.slice(i, i + 8).map(async id => {
+      const sep = id.indexOf(':');
+      const chain = id.slice(0, sep), block = parseInt(id.slice(sep + 1), 10);
+      try {
+        const b = await _alchemyRpc(chain, 'eth_getBlockByNumber', ['0x' + block.toString(16), false], resolveAlchemyKey({}));
+        cache[id] = (b && b.timestamp) ? parseInt(b.timestamp, 16) : 0;
+      } catch (_) { cache[id] = 0; }
+      fetched++;
+    }));
+  }
+  let filled = 0;
+  for (const e of dateless) {
+    const ts = cache[e.chain + ':' + e.blockNumber];
+    if (ts && ts > 0) { e.timestamp = ts; e.date = new Date(ts * 1000).toISOString().slice(0, 10); filled++; }
+  }
+  return { filled, fetched, pending };
+}
+window._backfillTimestamps = _backfillTimestamps;
 
 // ── Chainlink price oracle (most reliable pricing — immune to fake DEX pairs) ──
 // Ported from a battle-tested LP tracker. Chainlink feeds give oracle-grade USD prices,
@@ -21378,6 +21415,14 @@ async function startIndexerForActiveWallet() {
         if (r && r.pending > 0) errorLogger?.info?.(`Tier 2 airdrop: ${r.detected} detetado(s), ${r.pending} por verificar (reindexa para continuar).`);
       }
     } catch (e) { /* enhancement — nunca bloqueia o render */ }
+    // Backfill de datas em falta (chains sem blockTimestamp no getAssetTransfers) → destrava preços.
+    try {
+      if (typeof _backfillTimestamps === 'function') {
+        const bf = await _backfillTimestamps();
+        if (bf && bf.filled > 0) { try { await saveState(); } catch (_) {} }
+        if (bf && bf.pending > 0) errorLogger?.info?.(`Datas: ${bf.filled} preenchidas, ${bf.pending} blocos por resolver (reindexa).`);
+      }
+    } catch (e) { /* enhancement */ }
     render();
   }
 }
