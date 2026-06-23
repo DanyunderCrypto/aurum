@@ -8999,6 +8999,20 @@ const fifoEngine = (() => {
       if (eur > STAMP_DUTY_THRESHOLD_EUR) { b.liableEUR += eur; b.liableCount++; }
     };
 
+    // Income por categoria e ano (FMV à receção): airdrops, rewards/yield. Para o resumo que o
+    // TOC vê primeiro. No regime diferido é INFORMATIVO (tributa na alienação como G/G1); com o
+    // modo Cat. E ligado, é a base do rendimento na receção.
+    const incomeByYear = {};
+    const _recIncome = (dateStr, cat, eur) => {
+      const y = (dateStr && dateStr.length >= 4) ? dateStr.slice(0, 4) : null;
+      if (!y || !cat) return;
+      if (!incomeByYear[y]) incomeByYear[y] = {};
+      if (!incomeByYear[y][cat]) incomeByYear[y][cat] = { eur: 0, count: 0, eurMissing: 0 };
+      const b = incomeByYear[y][cat];
+      b.count++;
+      if (eur > 0) b.eur += eur; else b.eurMissing++;  // eurMissing = ainda sem preço (a carregar)
+    };
+
     // Group events by txHash to process swaps atomically
     const eventsByTx = new Map();
     for (const e of sorted) {
@@ -9427,6 +9441,7 @@ const fifoEngine = (() => {
           if (e._airdropKind !== 'reward') {
             _recStampDuty(e.date, eventPriceEURTotal ?? 0);
           }
+          _recIncome(e.date, e._airdropKind === 'reward' ? 'reward' : 'airdrop', eventPriceEURTotal ?? 0);
         }
         else if (klass === 'reward') {
           // Genuine Category E income (e.g. asset-backed-token dividends conferring a residual
@@ -9600,7 +9615,7 @@ const fifoEngine = (() => {
     }
 
     // ── Build summary ──────────────────────────────────────
-    const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear);
+    const summary = _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear, incomeByYear);
 
     // CAMADA 1: reportar os eventos sem data como aviso de integridade (não entram
     // no cálculo, mas o utilizador tem de saber que existem e podem afetar o relatório).
@@ -9686,7 +9701,7 @@ const fifoEngine = (() => {
   }
 
   // ── Aggregation helpers ───────────────────────────────────
-  function _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear) {
+  function _buildSummary(disposals, rewards, lots, permutaByYear, stampDutyByYear, incomeByYear) {
     const byYear = {};
 
     const ensureYear = y => {
@@ -9706,9 +9721,20 @@ const fifoEngine = (() => {
         permutaCount: 0,
         // Imposto do Selo (transmissões gratuitas > €500): 10% via DMIS, FORA do IRS. Sinalização.
         stampDuty: { grossEUR: 0, count: 0, liableEUR: 0, liableCount: 0, dueEUR: 0, applies: false },
+        // Rendimento por categoria à receção (FMV): airdrops, rewards/yield. Resumo para o TOC.
+        incomeByCategory: { airdrop: { eur: 0, count: 0, eurMissing: 0 }, reward: { eur: 0, count: 0, eurMissing: 0 } },
       };
       return byYear[y];
     };
+
+    for (const yk of Object.keys(incomeByYear || {})) {
+      const Y = ensureYear(yk);
+      for (const cat of Object.keys(incomeByYear[yk])) {
+        if (!Y.incomeByCategory[cat]) Y.incomeByCategory[cat] = { eur: 0, count: 0, eurMissing: 0 };
+        const src = incomeByYear[yk][cat], dst = Y.incomeByCategory[cat];
+        dst.eur += src.eur || 0; dst.count += src.count || 0; dst.eurMissing += src.eurMissing || 0;
+      }
+    }
 
     for (const d of disposals) {
       const y = ensureYear(d.fiscalYear);
