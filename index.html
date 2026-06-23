@@ -7833,13 +7833,31 @@ function dayStartTs(ts) {
 }
 
 // Resolve UniversalEvent → DefiLlama coin ID (or null if unknown)
+// Mapeia a chave de chain da app → slug do DefiLlama. Onde difere: eth→ethereum, zksync→era,
+// gnosis→xdai, avalanche→avax, zkevm→polygon_zkevm. As restantes coincidem.
+const DEFILLAMA_CHAIN = {
+  eth: 'ethereum', ethereum: 'ethereum', mainnet: 'ethereum',
+  zksync: 'era', zksyncera: 'era', era: 'era',
+  gnosis: 'xdai', xdai: 'xdai',
+  avalanche: 'avax', avax: 'avax',
+  bsc: 'bsc', bnb: 'bsc', binance: 'bsc',
+  polygon: 'polygon', matic: 'polygon', pol: 'polygon',
+  zkevm: 'polygon_zkevm', polygonzkevm: 'polygon_zkevm',
+  arbitrum: 'arbitrum', arb: 'arbitrum',
+  optimism: 'optimism', op: 'optimism',
+  rootstock: 'rsk', rsk: 'rsk', worldchain: 'wc',
+};
 function resolveCoinId(asset, chain, contract) {
   if (!asset) return null;
   const ASSET = asset.toUpperCase();
 
-  // Prefer direct contract address if available
+  // Prefer direct contract address if available.
+  // CRÍTICO: o DefiLlama usa SLUGS próprios, diferentes das chaves da app — 'eth' tem de ser
+  // 'ethereum', zkSync é 'era', Gnosis é 'xdai', Avalanche é 'avax'. Sem este mapa, TODOS os
+  // tokens ETH não-mapeados ficavam sem preço (pediam 'eth:0x…' que o DefiLlama rejeita).
   if (contract && contract.startsWith('0x') && contract.length === 42) {
-    return `${chain}:${contract.toLowerCase()}`;
+    const slug = DEFILLAMA_CHAIN[chain] || chain;
+    return `${slug}:${contract.toLowerCase()}`;
   }
 
   // Solana: SOL nativo via coingecko; tokens SPL via mint (base58, não 0x).
