@@ -21546,19 +21546,31 @@ async function startIndexerForActiveWallet() {
     } catch (e) { /* enhancement — nunca bloqueia o render */ }
     // Tier 2 airdrop: confirma claims ativos (tx iniciada pela carteira) para entradas que o
     // registo de distribuidores não cobriu. 1 RPC/tx, cacheado. Persiste se algo mudou.
+    // LOOP até esgotar os candidatos numa SÓ indexação — o utilizador já não precisa de
+    // reindexar 30x. Renderiza periodicamente para os airdrops irem aparecendo. Máx. de
+    // passagens limita o pior caso (cada uma ~18s; a maioria das carteiras acaba em poucas).
     try {
       if (typeof _detectAirdropClaims === 'function') {
-        const r = await _detectAirdropClaims();
-        if (r && (r.detected > 0 || r.fetched > 0)) { try { await saveState(); } catch (_) {} }
-        if (r && r.pending > 0) errorLogger?.info?.(`Tier 2 airdrop: ${r.detected} detetado(s), ${r.pending} por verificar (reindexa para continuar).`);
+        let pass = 0, r;
+        do {
+          r = await _detectAirdropClaims();
+          if (r && (r.detected > 0 || r.fetched > 0)) { try { await saveState(); } catch (_) {} }
+          pass++;
+          if (pass % 4 === 0) { try { render(); } catch (_) {} }  // progresso visível
+        } while (r && r.pending > 0 && pass < 40);
+        if (r && r.pending > 0) errorLogger?.info?.(`Tier 2 airdrop: ainda ${r.pending} por verificar — reindexa para continuar.`);
       }
     } catch (e) { /* enhancement — nunca bloqueia o render */ }
-    // Backfill de datas em falta (chains sem blockTimestamp no getAssetTransfers) → destrava preços.
+    // Backfill de datas em falta (chains sem blockTimestamp) → destrava preços. Também em loop.
     try {
       if (typeof _backfillTimestamps === 'function') {
-        const bf = await _backfillTimestamps();
-        if (bf && bf.filled > 0) { try { await saveState(); } catch (_) {} }
-        if (bf && bf.pending > 0) errorLogger?.info?.(`Datas: ${bf.filled} preenchidas, ${bf.pending} blocos por resolver (reindexa).`);
+        let pass = 0, bf;
+        do {
+          bf = await _backfillTimestamps();
+          if (bf && bf.filled > 0) { try { await saveState(); } catch (_) {} }
+          pass++;
+        } while (bf && bf.pending > 0 && pass < 40);
+        if (bf && bf.pending > 0) errorLogger?.info?.(`Datas: ainda ${bf.pending} blocos por resolver — reindexa.`);
       }
     } catch (e) { /* enhancement */ }
     render();
