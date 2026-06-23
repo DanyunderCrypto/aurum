@@ -13401,27 +13401,56 @@ window.captureDefiIncome = captureDefiIncome;
 // getAssetTransfers, por isso buscamos 1 RPC (eth_getTransactionByHash) por tx candidata,
 // cacheado PARA SEMPRE por (chain:txHash) — re-indexar não volta a pagar. Cap por passagem
 // para não rebentar com carteiras enormes; a cache faz convergir nas indexações seguintes.
-const _AIRDROP_T2_CAP = 80;
-// Allowlist de métodos CLAIM (selectors keccak256 verificados). PRECISÃO PRIMEIRO: uma entrada
-// que iniciaste só é marcada se o método for um destes. Métodos desconhecidos (locks, mints
-// custom, deposit, addLiquidity, getReward não-standard…) NÃO são marcados — evita os falsos
-// positivos de operações DeFi. Mapeia selector → kind: 'airdrop' (distribuição) ou 'reward'.
-const _CLAIM_SELECTORS = new Map([
+const _AIRDROP_T2_CAP = 100;
+// Sinal UNIVERSAL de claim: o evento emitido. Todo o merkle distributor (Uniswap/OZ e os
+// milhares de forks) emite um evento Claimed/Claim no recibo da tx. É muito mais robusto que
+// o selector do método (que cada projeto personaliza). Tópicos keccak256 verificados.
+// Lê-se via eth_getTransactionReceipt (dá o iniciador E os logs numa só chamada).
+const _CLAIM_EVENT_TOPICS = new Map([
   // distribuição de tokens → airdrop
+  ['0x4ec90e965519d92681267467f775ada5bd214aa92c0dc93d90a5e880ce9ed026','airdrop'], // Claimed(uint256,address,uint256) — Uniswap/OZ
+  ['0xd8138f8a3f377c5259ca548e70e4c2de94f129f5a11036a15b69513cba2b426a','airdrop'], // Claimed(address,uint256)
+  ['0x987d620f307ff6b94d58743cb7a7509f24071586a77759b77c2d4e29f75a2f9a','airdrop'], // Claimed(address,uint256,uint256)
+  ['0xd9cb1e2714d65a111c0f20f060176ad657496bd47a3de04ec7c3d4ca232112ac','airdrop'], // Claimed(uint256,address,uint256,uint256)
+  ['0x47cee97cb7acd717b3c0aa1435d004cd5b3c8c57d70dbceb4e4458bbd60e39d4','airdrop'], // Claim(address,uint256)
+  ['0x3ed1528b0fdc7c5207c1bf935e34a667e13656b9ed165260c522be0bc544f303','airdrop'], // Claim(uint256,address,uint256)
+  ['0x34fcbac0073d7c3d388e51312faf357774904998eeb8fca628b9e6f65ee1cbf7','airdrop'], // Claim(address,uint256,uint256)
+  ['0xb94bf7f9302edf52a596286915a69b4b0685574cffdedd0712e3c62f2550f0ba','airdrop'], // Claimed(uint256,uint256,address,uint256) — Sablier
+  ['0x896e034966eaaf1adc54acc0f257056febbd300c9e47182cf761982cf1f5e430','airdrop'], // TokensClaimed(address,uint256)
+  ['0x880f2ef2613b092f1a0a819f294155c98667eb294b7e6bf7a3810278142c1a1c','airdrop'], // TokensClaimed(uint256,address,uint256)
+  ['0x650e45f04ef8a0c267b2f78d983913f69ae3a353b2b32de5429307522be0ab55','airdrop'], // AirdropClaimed(address,uint256)
+  ['0x106e78f4438686ffff0ca4b3ec52c71cf3ef479de98aeaad834f46f440552e97','airdrop'], // MerkleClaim(address,uint256)
+  // incentivos / yield → reward (income; rótulo distinto, mesmo tratamento fiscal por agora)
+  ['0xe2403640ba68fed3a2f88b7557551d1993f84b99bb10ff833f0cf8db0c5e0486','reward'], // RewardPaid(address,uint256) — Synthetix
+  ['0x106f923f993c2149d49b4255ff723acafa1f2d94393f561d3eda32ae348f7241','reward'], // RewardClaimed(address,uint256)
+  ['0x0aa4d283470c904c551d18bb894d37e17674920f3261a7f854be501e25f421b7','reward'], // RewardClaimed(address,address,uint256)
+  ['0xfc30cddea38e2bf4d6ea7d3f9ed3b6ad7f176419f4963bd81318067a4aee73fe','reward'], // RewardsClaimed(address,uint256)
+  ['0x9310ccfcb8de723f578a9e4282ea9f521f05ae40dc08f3068dfad528a65ee3c7','reward'], // RewardsClaimed(address,address,uint256)
+  ['0x5637d7f962248a7f05a7ab69eec6446e31f3d0a299d997f135a65c62806e7891','reward'], // RewardsClaimed(address,address,address,uint256) — Aave
+  ['0xf7a40077ff7a04c7e61f6f26fb13774259ddf1b6bce9ecf26a8276cdd3992683','reward'], // Claimed(address,address,uint256) — Merkl
+  ['0xc9695243a805adb74c91f28311176c65b417e842d5699893cef56d18bfa48cba','reward'], // Harvest(address,uint256)
+  ['0x71bab65ced2e5750775a0613be067df48ef06cf92a496ebf7663ae0660924954','reward'], // Harvest(address,uint256,uint256)
+  ['0xdf72051fd030d6527c405708cf7dd274525583218f86213d26aef85df1699205','reward'], // DistributedReward(address,uint256)
+  ['0xb649c98f58055c520df0dcb5709eff2e931217ff2fb1e21376130d31bbb1c0af','airdrop'], // Distributed(address,uint256)
+  ['0xce3bcb6e219596cf26007ffdfaae8953bc3f76e3f36c0a79b23e28020da3222e','airdrop'], // Claimed(uint256,address,address,uint256)
+  ['0x18e22050893aa2ece2423f6a3f2c7d3468eda73cb9fb8a8b623b1f27a2fc65a9','airdrop'], // Claim(uint256,uint256,address,uint256)
+]);
+// REFORÇO por método (allowlist de selectors claim*). Usado SÓ quando iniciaste a tx mas o recibo
+// não trouxe um evento de claim reconhecido — apanha airdrops com eventos custom. Combinação
+// evento+método = a abordagem de confiança 95% da pesquisa.
+const _CLAIM_SELECTORS = new Map([
   ['0x4e71d92d','airdrop'],['0x379607f5','airdrop'],['0x1e83409a','airdrop'],['0xddd5e1b2','airdrop'],
   ['0xaad3ec96','airdrop'],['0xc3490263','airdrop'],['0xb391c508','airdrop'],['0x2f52ebb7','airdrop'],
-  ['0xae0b51df','airdrop'],['0x2e7ba6ef','airdrop'],['0x3d13f874','airdrop'],['0xf72d82cf','airdrop'],
-  ['0x172bd6de','airdrop'],['0xb73be3a5','airdrop'],['0x48c54b9d','airdrop'],['0x46e04a2f','airdrop'],
-  ['0xdf8de3e7','airdrop'],['0x9a114cb2','airdrop'],['0x5b88349d','airdrop'],['0xe30d4440','airdrop'],
-  ['0x0bcae1ac','airdrop'],['0x5a95ba34','airdrop'],['0xd1058e59','airdrop'],['0x77329f35','airdrop'],
-  ['0x925489a8','airdrop'],['0x22c8018f','airdrop'],['0x315a095d','airdrop'],['0xd01c44cd','airdrop'],
-  ['0x86d1a69f','airdrop'],['0x19165587','airdrop'],
-  // incentivos / yield → reward (income; rótulo distinto, mesmo tratamento fiscal por agora)
-  ['0xb88a802f','reward'],['0xd279c191','reward'],['0x372500ab','reward'],['0xef5cfb8c','reward'],['0xf9f031df','reward'],
+  ['0xae0b51df','airdrop'],['0x2e7ba6ef','airdrop'],['0x3d13f874','airdrop'],['0x46e04a2f','airdrop'],
+  ['0x0bcae1ac','airdrop'],['0xd01c44cd','airdrop'],['0x86d1a69f','airdrop'],['0x19165587','airdrop'],
+  ['0xb88a802f','reward'],['0x372500ab','reward'],['0xef5cfb8c','reward'],['0x3d18b912','reward'],['0x4641257d','reward'],
 ]);
 async function _detectAirdropClaims() {
   if (!Array.isArray(state.events) || !state.events.length) return { detected: 0, fetched: 0, pending: 0 };
   if (!state.airdropTxCache || typeof state.airdropTxCache !== 'object') state.airdropTxCache = {};
+  // Versão da cache: v4 = "init|kind|evidência". Combina evento Claimed (recibo) + método claim
+  // (reforço). Formatos antigos incompatíveis → limpa uma vez para re-validar.
+  if (state.airdropTxCacheV !== 4) { state.airdropTxCache = {}; state.airdropTxCacheV = 4; }
   const cache = state.airdropTxCache;
   const isReceipt = window.aurumFifoEngine?.isReceiptToken || (() => false);
 
@@ -13451,48 +13480,62 @@ async function _detectAirdropClaims() {
   }
   if (!candidates.length) return { detected: 0, fetched: 0, pending: 0 };
 
-  // Buscar tx em falta. Guarda "init|sel" (iniciador + selector do método). Re-busca também
-  // entradas de formato ANTIGO (só init) MAS só onde iniciaste — são os candidatos a airdrop
-  // que precisam de validação por método; os negativos antigos ficam (não são airdrop na mesma).
+  // Buscar recibo (eth_getTransactionReceipt dá o iniciador E os logs numa só chamada).
+  // Guarda "init|kind|ev": kind = ''|'airdrop'|'reward'; ev = 'e' (evento) | 'm' (método) | ''.
+  // Sinal primário = evento Claimed/Reward nos logs. REFORÇO = se iniciaste mas não houve evento
+  // reconhecido, verifica o método claim* (2ª chamada, só nesse caso). Cache permanente.
   const wlc = e => (e.walletAddress || '').toLowerCase();
-  const need = [...new Set(candidates.filter(e => {
-    const v = cache[e.chain + ':' + e.txHash];
-    if (typeof v !== 'string') return true;          // nunca verificado
-    if (v.indexOf('|') >= 0) return false;           // já tem método
-    return v && v === wlc(e);                         // formato antigo + iniciaste → re-valida método
-  }).map(e => e.chain + ':' + e.txHash))];
+  const idWallet = {};
+  for (const e of candidates) { const id = e.chain + ':' + e.txHash; if (!(id in idWallet)) idWallet[id] = wlc(e); }
+  const need = [...new Set(candidates
+    .filter(e => !((e.chain + ':' + e.txHash) in cache))
+    .map(e => e.chain + ':' + e.txHash))];
   let fetched = 0, pending = 0;
   for (const id of need) {
     if (fetched >= _AIRDROP_T2_CAP) { pending = need.length - fetched; break; }
     const sep = id.indexOf(':');
     const chain = id.slice(0, sep), txHash = id.slice(sep + 1);
-    let init = '', sel = '';
+    let init = '', kind = '', ev = '';
     try {
-      const tx = await _alchemyRpc(chain, 'eth_getTransactionByHash', [txHash], resolveAlchemyKey({}));
-      if (tx && tx.from) init = String(tx.from).toLowerCase();
-      if (tx && typeof tx.input === 'string' && tx.input.length >= 10) sel = tx.input.slice(0, 10).toLowerCase();
+      const r = await _alchemyRpc(chain, 'eth_getTransactionReceipt', [txHash], resolveAlchemyKey({}));
+      if (r && r.from) init = String(r.from).toLowerCase();
+      if (r && Array.isArray(r.logs)) {
+        for (const log of r.logs) {
+          const t0 = log && Array.isArray(log.topics) && log.topics[0] ? String(log.topics[0]).toLowerCase() : '';
+          const k = t0 && _CLAIM_EVENT_TOPICS.get(t0);
+          if (k) { kind = (kind === 'airdrop' || k === 'airdrop') ? 'airdrop' : k; ev = 'e'; if (kind === 'airdrop') break; }
+        }
+      }
+      // Reforço por método: iniciaste, mas sem evento reconhecido → confirma pelo selector.
+      if (!kind && init && init === idWallet[id]) {
+        const tx = await _alchemyRpc(chain, 'eth_getTransactionByHash', [txHash], resolveAlchemyKey({}));
+        if (tx && typeof tx.input === 'string' && tx.input.length >= 10) {
+          const mk = _CLAIM_SELECTORS.get(tx.input.slice(0, 10).toLowerCase());
+          if (mk) { kind = mk; ev = 'm'; }
+        }
+      }
     } catch (_) {}
-    cache[id] = init + '|' + sel;
+    cache[id] = init + '|' + kind + '|' + ev;
     fetched++;
   }
 
-  // Veredito: claim ATIVO sse a carteira iniciou E o método é um claim reconhecido (allowlist).
+  // Veredito: claim ATIVO sse a carteira iniciou E há sinal de claim (evento OU método).
   let detected = 0;
   for (const e of candidates) {
     const raw = cache[e.chain + ':' + e.txHash];
     if (typeof raw !== 'string' || !raw) continue;
-    const bar = raw.indexOf('|');
-    const init = bar >= 0 ? raw.slice(0, bar) : raw;
-    const sel  = bar >= 0 ? raw.slice(bar + 1) : '';
+    const p = raw.split('|');
+    const init = p[0] || '', kind = p[1] || '', ev = p[2] || '';
     if (!init || init !== wlc(e)) continue;        // não iniciaste → passivo (não é claim)
-    const kind = sel ? _CLAIM_SELECTORS.get(sel) : null;
-    if (!kind) continue;                            // método não é um claim reconhecido → não marca (precisão)
+    if (kind !== 'airdrop' && kind !== 'reward') continue; // sem sinal de claim → não marca (precisão)
     e.type = kind;                                  // 'airdrop' ou 'reward' (display)
     e.txType = 'airdrop';                           // fiscal: custo-zero diferido (igual p/ ambos por agora)
     e._airdropSource = kind === 'reward' ? 'Reward claim' : 'Claim';
     e._airdropKind = kind;
     e._airdropMode = 'active';
     e._airdropTier = 2;
+    e._airdropEvidence = ev === 'm' ? 'método claim()' : 'evento Claimed';  // justificação p/ o utilizador
+    e._airdropConfidence = ev === 'm' ? 'média' : 'alta';
     e._rescuedAirdrop = true;
     detected++;
   }
