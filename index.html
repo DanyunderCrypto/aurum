@@ -8246,11 +8246,11 @@ const priceOracle = (() => {
   // está fechado atrás de key). Temos o bloco em cada evento. Via a rota /moralis/ do worker (já com
   // a key). Cache permanente por bloco (histórico é imutável). Chains não suportadas → null → manual.
   const _MORALIS_CHAIN = {
+    // Só chains que o endpoint de preço do Moralis suporta. scroll/zksync/blast/etc devolvem 400 →
+    // removidos (esses tokens ficam pelo DefiLlama ou manual). Evita ruído na consola e chamadas inúteis.
     eth:'eth', ethereum:'eth', base:'base', arbitrum:'arbitrum', optimism:'optimism',
     polygon:'polygon', matic:'polygon', pol:'polygon', bsc:'bsc', bnb:'bsc',
     avalanche:'avalanche', avax:'avalanche', gnosis:'gnosis', linea:'linea', fantom:'fantom',
-    cronos:'cronos', mantle:'mantle', blast:'blast', zksync:'zksync', scroll:'scroll',
-    moonbeam:'moonbeam', chiliz:'chiliz', opbnb:'opbnb',
   };
   const moralisPriceAdapter = (() => {
     let _mLast = 0; const _mGap = 350; // Moralis é generoso; throttle leve para poupar CU
