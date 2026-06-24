@@ -8178,7 +8178,9 @@ const priceOracle = (() => {
     ronin:'ronin', abstract:'abstract', lens:'lens', rootstock:'rootstock',
   };
   const geckoTerminalAdapter = (() => {
-    const GT_MIN_LIQ_USD = 3000; // gate de liquidez — não confiar em pools rasas (preço de lixo)
+    const GT_MIN_LIQ_USD = 300; // gate de liquidez — baixo: tokens de airdrop têm pools finas
+                                 // (ZKJ tinha ~$569). Rejeita só pools quase mortas. Preço de pool
+                                 // fina é real (OHLCV = trades reais), mas convém o utilizador rever.
     // Throttle dedicado: o Demo do CoinGecko limita o ritmo (e dá 429 em rajada). Espaçamos as
     // chamadas e recuamos no 429. Como pool e preço são cacheados, este custo é único.
     let _gtLast = 0, _gtGap = 1300;
@@ -8203,7 +8205,11 @@ const priceOracle = (() => {
       } catch (_) { return null; }
     }
     async function _topPool(net, contract) {
-      if (!state.gtPoolCache || typeof state.gtPoolCache !== 'object') state.gtPoolCache = {};
+      // v2: o portão de liquidez baixou (3000→300); limpa a cache de pools uma vez para os
+      // tokens antes rejeitados ('') voltarem a ser resolvidos.
+      if (!state.gtPoolCache || typeof state.gtPoolCache !== 'object' || state.gtPoolCacheV !== 2) {
+        state.gtPoolCache = {}; state.gtPoolCacheV = 2;
+      }
       const key = net + ':' + contract;
       if (key in state.gtPoolCache) return state.gtPoolCache[key] || null;  // inclui '' = sem pool
       const j = await _gt(`${net}/tokens/${contract}/pools`);
