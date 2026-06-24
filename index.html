@@ -8181,9 +8181,9 @@ const priceOracle = (() => {
     const GT_MIN_LIQ_USD = 300; // gate de liquidez — baixo: tokens de airdrop têm pools finas
                                  // (ZKJ tinha ~$569). Rejeita só pools quase mortas. Preço de pool
                                  // fina é real (OHLCV = trades reais), mas convém o utilizador rever.
-    // Throttle dedicado: o Demo do CoinGecko limita o ritmo (e dá 429 em rajada). Espaçamos as
-    // chamadas e recuamos no 429. Como pool e preço são cacheados, este custo é único.
-    let _gtLast = 0, _gtGap = 1300;
+    // Throttle dedicado: a GeckoTerminal pública limita a ~30/min. Espaçamos ~2,2s e recuamos no 429.
+    // Como pool e preço são cacheados (cliente + worker), este custo é único.
+    let _gtLast = 0, _gtGap = 2200;
     async function _gtThrottle() {
       const now = Date.now();
       const wait = _gtLast + _gtGap - now;
@@ -8193,14 +8193,14 @@ const priceOracle = (() => {
     async function _gt(path) {
       await _gtThrottle();
       try {
-        const r = await fetch(`${PROXY_BASE}/gecko/networks/${path}`, { headers: { 'Accept': 'application/json' } });
+        const r = await fetch(`${PROXY_BASE}/gt/networks/${path}`, { headers: { 'Accept': 'application/json' } });
         if (r && r.status === 429) {                                  // rate limit → recua e desiste desta tentativa
-          _gtGap = Math.min(9000, Math.round(_gtGap * 1.7));
-          await new Promise(res => setTimeout(res, 2500));
+          _gtGap = Math.min(12000, Math.round(_gtGap * 1.7));
+          await new Promise(res => setTimeout(res, 3000));
           return null;
         }
         if (!r || !r.ok) return null;
-        if (_gtGap > 1300) _gtGap = Math.max(1300, Math.round(_gtGap * 0.9)); // recupera o ritmo
+        if (_gtGap > 2200) _gtGap = Math.max(2200, Math.round(_gtGap * 0.9)); // recupera o ritmo
         return await r.json();
       } catch (_) { return null; }
     }
