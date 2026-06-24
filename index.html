@@ -8242,6 +8242,43 @@ const priceOracle = (() => {
     return { getHistoricalPriceUSD };
   })();
 
+  // ── Moralis — preço histórico POR BLOCO (fallback real: o OHLCV grátis do GeckoTerminal/CoinGecko
+  // está fechado atrás de key). Temos o bloco em cada evento. Via a rota /moralis/ do worker (já com
+  // a key). Cache permanente por bloco (histórico é imutável). Chains não suportadas → null → manual.
+  const _MORALIS_CHAIN = {
+    eth:'eth', ethereum:'eth', base:'base', arbitrum:'arbitrum', optimism:'optimism',
+    polygon:'polygon', matic:'polygon', pol:'polygon', bsc:'bsc', bnb:'bsc',
+    avalanche:'avalanche', avax:'avalanche', gnosis:'gnosis', linea:'linea', fantom:'fantom',
+    cronos:'cronos', mantle:'mantle', blast:'blast', zksync:'zksync', scroll:'scroll',
+    moonbeam:'moonbeam', chiliz:'chiliz', opbnb:'opbnb',
+  };
+  const moralisPriceAdapter = (() => {
+    let _mLast = 0; const _mGap = 350; // Moralis é generoso; throttle leve para poupar CU
+    async function _mThrottle() {
+      const n = Date.now(); const w = _mLast + _mGap - n;
+      _mLast = Math.max(n, _mLast + _mGap);
+      if (w > 0) await new Promise(r => setTimeout(r, w));
+    }
+    async function getHistoricalPriceUSD(chain, contract, blockNumber) {
+      const mc = _MORALIS_CHAIN[chain];
+      if (!mc || !contract || !String(contract).startsWith('0x') || !blockNumber || isNaN(blockNumber)) return null;
+      const c = String(contract).toLowerCase();
+      if (!state.moralisPxCache || typeof state.moralisPxCache !== 'object') state.moralisPxCache = {};
+      const key = mc + ':' + c + ':' + blockNumber;
+      if (key in state.moralisPxCache) return state.moralisPxCache[key];      // inclui null cacheado
+      await _mThrottle();
+      try {
+        const r = await fetch(`${PROXY_BASE}/moralis/erc20/${c}/price?chain=${mc}&to_block=${blockNumber}`, { headers: { 'Accept': 'application/json' } });
+        if (!r || !r.ok) { state.moralisPxCache[key] = null; return null; }     // chain não suportada/sem pool → manual
+        const j = await r.json();
+        const px = (j && typeof j.usdPrice === 'number' && j.usdPrice > 0 && isFinite(j.usdPrice)) ? j.usdPrice : null;
+        state.moralisPxCache[key] = px;
+        return px;
+      } catch (_) { return null; }
+    }
+    return { getHistoricalPriceUSD };
+  })();
+
   // Get USD price (1 token = X USD) at given date
   async function getPriceUSD(asset, chain, contract, dateStr, timestamp) {
     // Resolve o coinId primeiro — usado como chave do cache (inclui o contract,
@@ -8484,13 +8521,13 @@ const priceOracle = (() => {
         }
       }
 
-      // Fallback GeckoTerminal (on-chain DEX) para o que o DefiLlama não cobriu (long-tail:
-      // EIGEN edge, ZORA, ZKJ, tokens obscuros…). Throttled + cacheado; só corre p/ os que faltam.
-      if (usd === null && event.assetContract && String(event.assetContract).startsWith('0x') && !opts.signal?.aborted) {
+      // Fallback Moralis (preço histórico POR BLOCO) para o que o DefiLlama não cobriu (long-tail:
+      // ZKJ, KERNEL, RED, GPS…). Throttled + cacheado por bloco; só corre p/ os que faltam e têm bloco.
+      if (usd === null && event.assetContract && String(event.assetContract).startsWith('0x') && event.blockNumber && !opts.signal?.aborted) {
         try {
-          const gt = await geckoTerminalAdapter.getHistoricalPriceUSD(event.chain, event.assetContract, dayTs);
-          if (gt && gt > 0) {
-            usd = gt; priceNote = null;
+          const mp = await moralisPriceAdapter.getHistoricalPriceUSD(event.chain, event.assetContract, event.blockNumber);
+          if (mp && mp > 0) {
+            usd = mp; priceNote = null;
             try { await priceCache.setPriceUSD(event.asset, event.chain, dateStr, usd, coinId); usdCache.set(cacheKey, usd); } catch {}
           }
         } catch (_) {}
