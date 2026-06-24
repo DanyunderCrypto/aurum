@@ -8521,17 +8521,10 @@ const priceOracle = (() => {
         }
       }
 
-      // Fallback Moralis (preço histórico POR BLOCO) para o que o DefiLlama não cobriu (long-tail:
-      // ZKJ, KERNEL, RED, GPS…). Throttled + cacheado por bloco; só corre p/ os que faltam e têm bloco.
-      if (usd === null && event.assetContract && String(event.assetContract).startsWith('0x') && event.blockNumber && !opts.signal?.aborted) {
-        try {
-          const mp = await moralisPriceAdapter.getHistoricalPriceUSD(event.chain, event.assetContract, event.blockNumber);
-          if (mp && mp > 0) {
-            usd = mp; priceNote = null;
-            try { await priceCache.setPriceUSD(event.asset, event.chain, dateStr, usd, coinId); usdCache.set(cacheKey, usd); } catch {}
-          }
-        } catch (_) {}
-      }
+      // NOTA: o fallback Moralis-por-bloco foi REMOVIDO do fluxo de massa. A key do Moralis é
+      // partilhada por todos os utilizadores e tem quota diária dura — varrer a carteira inteira
+      // esgotava-a (401 em catadupa) para ganhar pouquíssimos tokens. O DefiLlama é a fonte de massa.
+      // O long-tail sem DefiLlama trata-se na fila de revisão manual + na feature de Selo (first-price).
 
       const rate = rateCache.get(dateStr);
 
