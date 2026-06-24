@@ -8476,6 +8476,18 @@ const priceOracle = (() => {
         }
       }
 
+      // Fallback GeckoTerminal (on-chain DEX) para o que o DefiLlama não cobriu (long-tail:
+      // EIGEN edge, ZORA, ZKJ, tokens obscuros…). Throttled + cacheado; só corre p/ os que faltam.
+      if (usd === null && event.assetContract && String(event.assetContract).startsWith('0x') && !opts.signal?.aborted) {
+        try {
+          const gt = await geckoTerminalAdapter.getHistoricalPriceUSD(event.chain, event.assetContract, dayTs);
+          if (gt && gt > 0) {
+            usd = gt; priceNote = null;
+            try { await priceCache.setPriceUSD(event.asset, event.chain, dateStr, usd, coinId); usdCache.set(cacheKey, usd); } catch {}
+          }
+        } catch (_) {}
+      }
+
       const rate = rateCache.get(dateStr);
 
       if (typeof usd === 'number' && typeof rate === 'number') {
