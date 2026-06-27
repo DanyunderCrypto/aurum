@@ -16556,7 +16556,8 @@ function renderPortfolioCharts(w) {
       }
       // 1b. PREÇO DO PORTFOLIO API — a Alchemy já devolveu o preço USD do token
       // na mesma chamada dos saldos. Fonte fiável e gratuita (sem pedido extra).
-      if (ppu == null && h._portfolioPriceUSD != null && h._portfolioPriceUSD > 0) {
+      if (ppu == null && h._portfolioPriceUSD != null && h._portfolioPriceUSD > 0 &&
+          !window.aurumFifoEngine?.isSpamToken?.({ asset: h.asset, chain: h.chain, assetContract: h.contract, amount: h.qty })) {
         ppu = h._portfolioPriceUSD * eurRate; ppuSrc = 'alchemy';
       }
       // Native tokens (ETH, POL — contract null) get their price from the live market feed
@@ -16598,6 +16599,23 @@ function renderPortfolioCharts(w) {
       const value = h.qty * ppu;
       if (value < 0.01) continue;
       if (value > 100_000_000) continue;
+      // GUARDA ANTI-SPAM-VALORIZADO (caso BOOM): token DESCONHECIDO (fora do mapa de preços),
+      // não-nativo, valorizado SÓ por fonte não-oracle (alchemy/dexscreener/event), e que o
+      // utilizador APENAS recebeu (nunca comprou/trocou para dentro) → airdrop não solicitado /
+      // spam com preço inflacionado (ex: BOOM 62k un = €1349). Não conta para o total; aparece
+      // na lista como "sem mercado fiável". Airdrops LEGÍTIMOS (ARB/OP/ZK) escapam porque estão
+      // no mapa de preços (getUsdPrice>0). Tokens COMPRADos/trocados também escapam. Zero impacto fiscal.
+      if ((ppuSrc === 'alchemy' || ppuSrc === 'dexscreener' || ppuSrc === 'event') && !h.native &&
+          (typeof getUsdPrice === 'function' ? getUsdPrice(h.asset) : 1) <= 0) {
+        const _cl = (h.contract || '').toLowerCase();
+        const _evs = (state.events || []).filter(e => e && e.asset === h.asset && (e.assetContract || '').toLowerCase() === _cl);
+        const _acquired = _evs.some(e => e.type === 'swap' || /buy|trade|purchase/.test((e.txType || e.type || '').toLowerCase()));
+        if (!_acquired) {
+          unpricedCount++;
+          if (unpricedSamples.length < 6) unpricedSamples.push(h.asset + ' (recebido, sem mercado fiável)');
+          continue;
+        }
+      }
       // GUARDA DE SANIDADE (rede de segurança contra preços-fantasma, ex: DexScreener a casar
       // "SUP" com par errado → $1.643 em vez de $0,009 → €107k falsos). Um holding com valor
       // ENORME cujo preço veio de fonte NÃO-oracle (dexscreener/evento) é quase de certeza
